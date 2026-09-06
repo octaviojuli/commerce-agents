@@ -27,8 +27,9 @@ Left out, and why:
   ``test_campaign_previews_carry_budget_audience_and_copy``,
   ``test_two_staged_restocks_both_count_when_applied``: all need the merchant portal, which
   this example does not have.
-- ``test_showcase_products_are_catalog_records_plus_the_backends_stamps``: needs
-  ``storefront-web/lib/showcase-fixtures.ts``, and this example has no web app yet.
+- ``test_showcase_products_are_catalog_records_plus_the_backends_stamps``: reads the
+  catalog through ``load_catalog(main.DATA_DIR)``, and this example has no ``catalog.json``;
+  ``storefront-web/lib/showcase-fixtures.ts`` is checked against the live records by hand.
 - ``test_presentation_extensions_advertise_their_payload_models``: the deployment registers
   no presentation extension.
 - ``test_orders_route_lists_the_callers_own_orders_newest_first`` and

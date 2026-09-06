@@ -10,11 +10,13 @@ paid for: a hold is the only write, and it expires on its own.
 ## Run
 
 ```bash
-python scripts/run_demo.py tour --api-only      # API :8004
+python scripts/run_demo.py tour                 # API :8004 + advisor workbench :3004
+python scripts/run_demo.py tour --api-only      # the API alone
 ```
 
-The advisor's web workbench (`storefront-web/`, :3004) is a later phase, so run the
-API-only form; the default form looks for a web app that is not there yet.
+The workbench is `storefront-web/`, a Next app in the `examples/` npm workspace; it calls
+the API cross-origin at `http://localhost:8004`. There is no merchant portal, so `--merchant`
+and `--all` have nothing to start.
 
 Or start the API yourself:
 
