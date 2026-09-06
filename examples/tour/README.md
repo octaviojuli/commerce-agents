@@ -58,6 +58,15 @@ refusal names the sibling departures that can take it.
   plain dataclasses, so a real ERP maps onto them without importing this example.
   `ErpSoldOut` carries the sibling departure ids; every `ErpError` message is
   advisor-facing Chinese.
+- `api/http_erp.py`: `HttpErpClient`, the same Protocol over a real 旅行社 ERP's HTTP API.
+  It maps fields and errors and nothing else: the six calls become JSON requests, the ERP's
+  `code` becomes the matching `ErpError` and its Chinese `message` is kept as written, a
+  timeout, a refused connection, a 5xx, or a body that is not JSON becomes `ErpUnavailable`,
+  and a route missing a required field is dropped with a warning instead of failing the
+  search. Holds carry an `Idempotency-Key` over the session, departure, and party, so a
+  retry cannot take the seats twice. `api/main.py` builds it when `TOUR_ERP_BASE_URL` is
+  set, sending `TOUR_ERP_TOKEN` as the bearer, and `MockErpClient` when it is not; hold
+  expiry notices are the mock's alone, so `deliver_hold_events` does nothing against HTTP.
 - `api/mock_erp.py`: `MockErpClient`, that Protocol over `data/`. Routes are ranked by how
   much of the query's Chinese text (character 2-grams, plus a small synonym set) each field
   holds, then by price. Holds live in memory, expire after the departure's
@@ -135,7 +144,8 @@ enumerated fields.
 ## The ERP contract
 
 `ErpClient` in `api/erp_client.py` is the seam: the six calls and the records they
-exchange. `MockErpClient` in `api/mock_erp.py` is the one implementation here. What the
+exchange. `MockErpClient` in `api/mock_erp.py` answers them from `data/`, and
+`HttpErpClient` in `api/http_erp.py` answers them over HTTP. What the
 calls owe — the ranking, the window, the sold-out siblings, the hold rules and their
 expiry — is stated as tests in `api/tests/test_mock_erp.py`, so a second client is held to
 the same rules.

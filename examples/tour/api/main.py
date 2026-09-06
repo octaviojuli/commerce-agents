@@ -1,7 +1,7 @@
 # Copyright 2026 Anthropic PBC
 # SPDX-License-Identifier: Apache-2.0
 
-"""ACME 旅行社 example API: the mock 旅行社 ERP behind the shared storefront routes, the
+"""ACME 旅行社 example API: the 旅行社 ERP behind the shared storefront routes, the
 advisor's live seat holds on every cart payload, and the ERP's expiry notices delivered as
 app events. There is no merchant portal in this example.
 
@@ -10,6 +10,7 @@ app events. There is no merchant portal in this example.
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -27,12 +28,24 @@ from demo_common import (
 from shopping_agent_runtime import ShoppingAgent
 
 from .agent_config import build_shopping_config
+from .erp_client import ErpClient
+from .http_erp import HttpErpClient
 from .mock_erp import MockErpClient
 from .tour_backend import DATA_DIR, TourBackend, TourToolExecutor
 
 load_demo_env(DATA_DIR.parent)
 
-erp = MockErpClient()
+
+def build_erp() -> ErpClient:
+    """A real 旅行社 ERP when TOUR_ERP_BASE_URL names one, the fixtures in ``data/``
+    otherwise. TOUR_ERP_TOKEN is the bearer the host sends; it never reaches the model."""
+    base_url = os.environ.get("TOUR_ERP_BASE_URL", "").strip()
+    if base_url:
+        return HttpErpClient(base_url, os.environ.get("TOUR_ERP_TOKEN", ""))
+    return MockErpClient()
+
+
+erp = build_erp()
 backend = TourBackend(erp)
 agent = ShoppingAgent(
     backend=backend,
@@ -63,7 +76,9 @@ def holds_payload(record: SessionRecord) -> dict:
 def deliver_hold_events() -> None:
     """Queue the ERP's expiry notices on every live session of the advisor they concern;
     the next turn hands them to the agent."""
-    for note in erp.collect_notifications():
+    # Only the mock notices its own expiries, so this is a no-op against an HTTP ERP.
+    collect = getattr(erp, "collect_notifications", None)
+    for note in collect() if collect else ():
         for record in host.sessions.sessions_for_user(note.advisor_id):
             record.pending_app_events.append(note.message)
             host.sessions.save(record)  # outside a request, so nothing else writes it back
