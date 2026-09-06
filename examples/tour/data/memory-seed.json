@@ -1,0 +1,6 @@
+{
+  "demo-user": [
+    {"key": "选品倾向", "value": "客群以家庭为主，优先推纯玩小团，购物团只在客人明确要低价时才报", "category": "preference", "updated_at": "2026-08-18T09:20:00Z"},
+    {"key": "报价习惯", "value": "习惯一次给客人 3 条不同价位的线路对比，再按酒店等级与车型讲差别", "category": "preference", "updated_at": "2026-08-29T02:40:00Z"}
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "_comment": "In-flight orders (processing/shipped/delayed) are re-dated at load time relative to dates_anchored_to (demo_common.storefront_fixtures.redate_in_flight_orders), so estimates always read current. Author their dates as if dates_anchored_to were today. The tour demo starts with no booked orders; seat holds are made during the session.",
+  "dates_anchored_to": "2026-09-06",
+  "orders": []
+}
