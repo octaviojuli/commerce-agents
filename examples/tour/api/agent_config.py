@@ -6,9 +6,25 @@ there is no merchant config beside it."""
 
 from __future__ import annotations
 
+import os
+
 from shopping_agent import ShoppingAgentConfig
 
 _DEFAULTS = ShoppingAgentConfig()
+
+
+def _models() -> tuple[str, str]:
+    """The turn model and the memory-extraction model, from ``TOUR_MODEL`` and
+    ``TOUR_MEMORY_MODEL``. The agency picks the provider by pointing the Anthropic SDK at an
+    Anthropic-compatible endpoint (``ANTHROPIC_BASE_URL`` + ``ANTHROPIC_API_KEY``), and the
+    model ids that endpoint serves are not Claude's, so both come from the environment;
+    unset, the repo defaults stand. A provider that serves one model runs extraction on it too."""
+    model = os.environ.get("TOUR_MODEL") or _DEFAULTS.model
+    memory_model = os.environ.get("TOUR_MEMORY_MODEL") or (
+        model if os.environ.get("TOUR_MODEL") else _DEFAULTS.memory_model
+    )
+    return model, memory_model
+
 
 # 旅行社 vocabulary added to the policy-grounding lexicon: the rules an advisor is asked
 # to quote rather than paraphrase.
@@ -30,7 +46,10 @@ _ORDER_TERMS = ("报名单", "订单", "占位", "锁位", "过期")
 
 
 def build_shopping_config() -> ShoppingAgentConfig:
+    model, memory_model = _models()
     return ShoppingAgentConfig(
+        model=model,
+        memory_model=memory_model,
         brand_name="ACME 旅行社",
         assistant_name="选团助手",
         brand_voice="像一位资深旅游顾问：直接、懂行、主动说明取舍",

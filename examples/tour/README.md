@@ -22,8 +22,12 @@ Or start the API yourself:
 uvicorn tour.api.main:app --app-dir examples --reload --port 8004
 ```
 
-Chat needs `ANTHROPIC_API_KEY` in the repo-root `.env` or the environment; reading the
-catalog does not.
+Chat needs a model. Copy `.env.example` in this directory to `.env` and fill in one block:
+an Anthropic key alone runs the repo's default Claude models; DeepSeek or Kimi run through
+their Anthropic-compatible endpoints by setting `ANTHROPIC_BASE_URL`, the provider's key as
+`ANTHROPIC_API_KEY`, and the provider's model ids as `TOUR_MODEL` and `TOUR_MEMORY_MODEL`
+(`api/agent_config.py` reads the two). Reading the catalog needs no key. A third-party
+endpoint ignores prompt caching, so `cache_read_input_tokens` stays at zero there.
 
 ## Try
 
