@@ -97,6 +97,16 @@ refusal names the sibling departures that can take it.
   the ERP's hold allowance; 旅行社 terms added to the policy and order lexicons; and
   `domain_search_notes` stating how a Chinese date phrase becomes a window and that a
   booking takes a departure id.
+- `api/shortlist.py`: `present_shortlist`, the one presentation extension. The model names
+  one to five 团期 it has seen and writes the title; the server joins each to its 线路, names
+  in Chinese the ids it dropped for want of provenance, refuses the call when nothing is
+  left, and mints the customer's link through `TourBackend.create_share_link`, which holds
+  the token and the shortlist's ids in memory so the link's contents never pass through the
+  model. `POST /api/share/{token}/choose` is where the customer's page answers: it takes no
+  session, because the customer is not a user here, and the 团期 they chose becomes an app
+  event on the advisor's conversation, or on their other live sessions when that one has
+  ended. `TOUR_SHARE_BASE_URL` is the origin the link points at, `http://localhost:3004` by
+  default; the page itself is not part of this example.
 - `api/main.py`: the host. Every cart payload carries the conversation's 占位 with what is
   left of each TTL, and the ERP's expiry notices are drained before a turn and handed to the
   agent as app events on it.

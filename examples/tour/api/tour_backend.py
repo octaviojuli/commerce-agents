@@ -11,6 +11,8 @@ the advisor reads that back to the customer."""
 
 from __future__ import annotations
 
+import os
+import secrets
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -82,6 +84,12 @@ MAX_LABELS = 4
 MIN_RESULTS = 2
 RELAX_WINDOW_DAYS = 7
 RELAX_DAYS_SPAN = 2
+
+# Where the customer's copy of a shortlist lives: the advisor pastes the link into their
+# own chat with the customer. The page is not part of this example; the link and the token
+# in it are, because the choose route reads that token back.
+DEFAULT_SHARE_BASE_URL = "http://localhost:3004"
+SHARE_TOKEN_BYTES = 12
 
 _STATUS_TEXT = {"confirmed": "已成团", "pending": "待成团", "closed": "已截止"}
 
@@ -309,6 +317,17 @@ class SearchContext:
     child_ages: list[int]
 
 
+@dataclass(frozen=True)
+class ShareRecord:
+    """One shortlist as the customer's page sees it: the conversation that sent it, the
+    advisor who owns that conversation, and the only 团期 ids the page may choose from."""
+
+    session_id: str
+    advisor_id: str
+    departure_ids: list[str]
+    created_at: datetime
+
+
 class TourToolExecutor(ShoppingToolExecutor):
     """The ERP refuses a hold with a rule the advisor can act on (报名截止, 占位上限, 占位已
     过期); relay it so the model says what stands in the way instead of reporting an outage.
@@ -348,6 +367,8 @@ class TourBackend(StorefrontBackend):
         self._variants: dict[str, ProductDetails] = {}
         # The holds the last cart read saw, per session, for the sync cart payload.
         self._hold_snapshots: dict[str, list[HoldRecord]] = {}
+        # The shortlists sent to a customer, by the token in their link.
+        self._shares: dict[str, ShareRecord] = {}
 
     # -- the searched window and party ------------------------------------------------
 
@@ -774,6 +795,29 @@ class TourBackend(StorefrontBackend):
         TTL runs out, because releasing one is an async write and this call is not."""
         self._contexts.pop(session_id, None)
         self._hold_snapshots.pop(session_id, None)
+
+    # -- the shortlist the advisor sends the customer -------------------------------------
+
+    async def create_share_link(
+        self, session_id: str, advisor_id: str, departure_ids: list[str]
+    ) -> str:
+        """Mint the customer's link to a shortlist of 团期. The token and the ids behind it
+        stay on the server: the model asks for a card and never sees this call's arguments
+        or its result, and the customer's page can only choose among the ids stored here."""
+        token = secrets.token_urlsafe(SHARE_TOKEN_BYTES)
+        self._shares[token] = ShareRecord(
+            session_id=session_id,
+            advisor_id=advisor_id,
+            departure_ids=list(departure_ids),
+            created_at=datetime.now(UTC),
+        )
+        # Read per call: the host loads .env after this module is imported.
+        base = os.environ.get("TOUR_SHARE_BASE_URL", DEFAULT_SHARE_BASE_URL).rstrip("/")
+        return f"{base}/s/{token}"
+
+    def share_record(self, token: str) -> ShareRecord | None:
+        """The shortlist behind a link's token, for the route the customer's page calls."""
+        return self._shares.get(token)
 
     def recent_orders(self, limit: int = 6) -> list[Order]:
         return newest_orders(self._orders, limit)

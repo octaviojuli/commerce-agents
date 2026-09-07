@@ -30,8 +30,10 @@ Left out, and why:
 - ``test_showcase_products_are_catalog_records_plus_the_backends_stamps``: reads the
   catalog through ``load_catalog(main.DATA_DIR)``, and this example has no ``catalog.json``;
   ``storefront-web/lib/showcase-fixtures.ts`` is checked against the live records by hand.
-- ``test_presentation_extensions_advertise_their_payload_models``: the deployment registers
-  no presentation extension.
+- ``test_presentation_extensions_advertise_their_payload_models``: it collects the portal's
+  extensions too, through the ``merchant_extensions`` fixture that is built from the
+  ``merchant`` one, and this example has no portal to build. ``test_shortlist.py`` holds
+  ``present_shortlist``, the deployment's one extension, to the same rule.
 - ``test_orders_route_lists_the_callers_own_orders_newest_first`` and
   ``test_orders_are_newest_first_per_user_and_resolve_case_insensitively``: both require a
   non-empty order history, and the demo starts with no 报名单 — every booking in it is a
