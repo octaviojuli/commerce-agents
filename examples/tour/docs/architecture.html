@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ACME 旅行社选团助手 · 架构与业务流</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper: #f5f5f5; --color-paper-2: #ececec; --color-ink: #2d3142; --color-muted: #4f5d75;
+      --color-soft: #7a8399; --color-rule: rgba(45,49,66,0.12); --color-accent: #eb6c36;
+      --color-accent-tint: rgba(235,108,54,0.08); --color-link: #2e5aa8;
+      --font-sans: 'Geist', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+      --font-serif: 'Instrument Serif', 'Songti SC', 'Times New Roman', serif;
+      --font-mono: 'Geist Mono', ui-monospace, Menlo, 'PingFang SC', monospace;
+    }
+    body { font-family: var(--font-sans); background: var(--color-paper); min-height: 100vh; padding: 3rem 2rem; color: var(--color-ink); }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { margin-bottom: 2.5rem; }
+    .header-eyebrow, .section-eyebrow { font-family: var(--font-mono); font-size: 0.66rem; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--color-muted); margin-bottom: 0.75rem; }
+    h1 { font-family: var(--font-serif); font-size: clamp(1.75rem, 3vw + 1rem, 2.5rem); font-weight: 400; letter-spacing: -0.02em; line-height: 1.1; margin-bottom: 0.5rem; }
+    h2 { font-family: var(--font-serif); font-size: 1.5rem; font-weight: 400; letter-spacing: -0.01em; margin-bottom: 0.25rem; }
+    .subtitle { font-size: 1rem; line-height: 1.55; color: var(--color-muted); max-width: 60ch; }
+    .section { margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid rgba(45,49,66,0.10); }
+    .section .subtitle { margin-bottom: 1.25rem; font-size: 0.9rem; }
+    .diagram-container { background: transparent; border: none; padding: 0; overflow-x: auto; }
+    svg { width: 100%; min-width: 900px; display: block; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1.25rem; font-size: 0.8125rem; background: #fff; border: 1px solid var(--color-rule); border-radius: 6px; overflow: hidden; }
+    th, td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid rgba(45,49,66,0.08); vertical-align: top; }
+    th { font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-muted); font-weight: 500; background: var(--color-paper-2); }
+    td code { font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-ink); }
+    td .err { color: var(--color-accent); }
+    tr:last-child td { border-bottom: none; }
+    .cards { display: grid; grid-template-columns: 1.1fr 1fr 0.9fr; gap: 1rem; margin-top: 1.5rem; }
+    @media (max-width: 900px) { .cards { grid-template-columns: 1fr; } }
+    .card { background: #ffffff; border-radius: 6px; border: 1px solid var(--color-rule); padding: 1.25rem; }
+    .card-header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.875rem; padding-bottom: 0.875rem; border-bottom: 1px solid rgba(45,49,66,0.08); }
+    .card-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .card-dot.ink { background: var(--color-ink); } .card-dot.muted { background: var(--color-muted); } .card-dot.coral { background: var(--color-accent); } .card-dot.link { background: var(--color-link); }
+    .card h3 { font-size: 0.875rem; font-weight: 600; }
+    .card ul { list-style: none; color: var(--color-muted); font-size: 0.8125rem; line-height: 1.55; }
+    .card li { margin-bottom: 0.3rem; padding-left: 0.875rem; position: relative; }
+    .card li::before { content: '—'; position: absolute; left: 0; color: rgba(45,49,66,0.25); font-size: 0.75rem; }
+    .footer { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid rgba(45,49,66,0.10); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; color: var(--color-soft); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="header">
+      <p class="header-eyebrow">examples/tour · 2026-09-07</p>
+      <h1>ACME 旅行社选团助手</h1>
+      <p class="subtitle">门店顾问侧的散拼团销售助手：线路是商品族，团期是变体，ERP 占位是唯一的写操作。五张图分别说明系统架构、两层选团流程、锁位与分享回写、数据模型与映射、占位生命周期，最后是交给 ERP 团队的接口契约。</p>
+    </div>
+
+    <!-- ══════════════════════ 1. ARCHITECTURE ══════════════════════ -->
+    <div class="section">
+      <p class="section-eyebrow">01 · 系统架构</p>
+      <h2>组件与连接</h2>
+      <p class="subtitle">顾问在工作台里对话，宿主把对话交给 Agent 循环，工具调用落到 TourBackend，再经 ErpClient 协议进入 Mock 或真实 ERP。模型服务通过 Anthropic 兼容接口接入，可换 DeepSeek 或 Kimi。</p>
+      <div class="diagram-container">
+      <svg viewBox="0 0 1000 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="arch-title arch-desc">
+        <title id="arch-title">ACME 旅行社选团助手系统架构</title>
+        <desc id="arch-desc">架构图：顾问工作台和客人分享页通过 HTTP 进入 FastAPI 宿主，宿主驱动 ShoppingAgent 与 TourBackend，TourBackend 经 ErpClient 协议调用 MockErpClient 或 HttpErpClient 到旅行社 ERP，Agent 通过 Anthropic 兼容接口调用模型服务。</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+          <marker id="arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline points="0 0, 8 3, 0 6" fill="none" stroke="#4f5d75" stroke-width="1.2"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- zones -->
+        <rect x="24" y="168" width="176" height="224" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <rect x="36" y="172" width="64" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="68" y="181" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">门店 · 浏览器</text>
+        <rect x="240" y="168" width="400" height="224" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <rect x="252" y="172" width="120" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="312" y="181" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">API 宿主 · UVICORN :8004</text>
+        <rect x="664" y="240" width="320" height="200" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <rect x="676" y="244" width="136" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="744" y="253" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">ERPCLIENT PROTOCOL · 6 CALLS</text>
+
+        <!-- arrows (before boxes) -->
+        <!-- workbench -> host -->
+        <line x1="184" y1="232" x2="264" y2="232" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <rect x="196" y="212" width="56" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="224" y="221" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">REST + SSE</text>
+        <!-- share page -> host (bottom port) -->
+        <path d="M 184,340 H 288 Q 296,340 296,332 V 264" fill="none" stroke="#2e5aa8" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow-link)"/>
+        <rect x="248" y="296" width="40" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="268" y="305" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CHOOSE</text>
+        <!-- host -> agent -->
+        <line x1="408" y1="232" x2="456" y2="232" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="416" y="212" width="32" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="432" y="221" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CHAT</text>
+        <!-- host -> backend (cart routes) -->
+        <path d="M 336,264 V 336 Q 336,344 344,344 H 456" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="344" y="292" width="72" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="380" y="301" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CART ROUTES</text>
+        <!-- agent -> backend (tools) -->
+        <line x1="536" y1="264" x2="536" y2="312" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+        <rect x="544" y="282" width="40" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="564" y="291" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">TOOLS</text>
+        <!-- agent -> model -->
+        <path d="M 616,232 H 728 Q 736,232 736,224 V 144 Q 736,136 744,136 H 856" fill="none" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <rect x="760" y="116" width="80" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="800" y="125" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">MESSAGES API</text>
+        <!-- backend -> mock -->
+        <path d="M 616,328 H 644 Q 652,328 652,320 V 312 Q 652,304 660,304 H 688" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <!-- backend -> http (optional) -->
+        <path d="M 616,360 H 644 Q 652,360 652,368 V 392 Q 652,400 660,400 H 688" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <!-- http -> erp -->
+        <line x1="800" y1="400" x2="856" y2="400" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <rect x="810" y="380" width="36" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="828" y="389" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HTTPS</text>
+
+        <!-- nodes -->
+        <!-- workbench (UI / input) -->
+        <rect x="40" y="200" width="144" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="40" y="200" width="144" height="64" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <rect x="48" y="206" width="22" height="12" rx="2" fill="transparent" stroke="rgba(122,131,153,0.4)" stroke-width="0.8"/>
+        <text x="59" y="215" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">UI</text>
+        <text x="112" y="234" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">顾问工作台</text>
+        <text x="112" y="250" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Next.js :3004</text>
+        <!-- share page (optional) -->
+        <rect x="40" y="312" width="144" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="40" y="312" width="144" height="56" rx="6" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="112" y="338" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">客人分享页</text>
+        <text x="112" y="354" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">/s/{token} · Phase 3</text>
+        <!-- host -->
+        <rect x="264" y="200" width="144" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="264" y="200" width="144" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="272" y="206" width="30" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="287" y="215" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HOST</text>
+        <text x="336" y="234" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Storefront 宿主</text>
+        <text x="336" y="250" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">FastAPI · demo_common</text>
+        <!-- agent -->
+        <rect x="456" y="200" width="160" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="456" y="200" width="160" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="464" y="206" width="38" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="483" y="215" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">AGENT</text>
+        <text x="536" y="234" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">ShoppingAgent</text>
+        <text x="536" y="250" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">skills · gates · TourToolExecutor</text>
+        <!-- backend (focal) -->
+        <rect x="456" y="312" width="160" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="456" y="312" width="160" height="64" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <rect x="464" y="318" width="52" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+        <text x="490" y="327" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">BACKEND</text>
+        <text x="536" y="346" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">TourBackend</text>
+        <text x="536" y="362" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">线路 · 团期 · 占位 → Product</text>
+        <!-- mock erp (store) -->
+        <rect x="688" y="272" width="112" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="688" y="272" width="112" height="64" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="696" y="278" width="34" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+        <text x="713" y="287" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MOCK</text>
+        <text x="744" y="306" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">MockErpClient</text>
+        <text x="744" y="322" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">data/*.json · TTL 占位</text>
+        <!-- http erp (backend) -->
+        <rect x="688" y="368" width="112" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="688" y="368" width="112" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="696" y="374" width="34" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="713" y="383" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HTTP</text>
+        <text x="744" y="402" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">HttpErpClient</text>
+        <text x="744" y="418" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">TOUR_ERP_BASE_URL</text>
+        <!-- real erp (external) -->
+        <rect x="856" y="368" width="112" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="856" y="368" width="112" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <rect x="864" y="374" width="26" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+        <text x="877" y="383" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+        <text x="912" y="402" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">旅行社 ERP</text>
+        <text x="912" y="418" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Bearer · JSON</text>
+        <!-- model service (external) -->
+        <rect x="856" y="104" width="112" height="64" rx="6" fill="#f5f5f5"/>
+        <rect x="856" y="104" width="112" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <rect x="864" y="110" width="26" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+        <text x="877" y="119" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LLM</text>
+        <text x="912" y="138" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">模型服务</text>
+        <text x="912" y="154" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Claude · DeepSeek · Kimi</text>
+
+        <!-- legend -->
+        <line x1="30" y1="464" x2="970" y2="464" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="30" y="484" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+        <rect x="100" y="476" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <text x="120" y="484" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">焦点：领域映射</text>
+        <rect x="236" y="476" width="14" height="10" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="256" y="484" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">服务 / 代码</text>
+        <rect x="356" y="476" width="14" height="10" rx="2" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text x="376" y="484" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">数据 / 状态</text>
+        <rect x="476" y="476" width="14" height="10" rx="2" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="496" y="484" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">外部系统</text>
+        <line x1="596" y1="481" x2="610" y2="481" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+        <text x="616" y="484" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">HTTP 调用</text>
+        <line x1="716" y1="481" x2="730" y2="481" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <text x="736" y="484" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">可选路径</text>
+        <line x1="836" y1="481" x2="850" y2="481" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+        <text x="856" y="484" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">工具调用</text>
+      </svg>
+      </div>
+    </div>
+
+    <!-- ══════════════════════ 2. SEQUENCE A ══════════════════════ -->
+    <div class="section">
+      <p class="section-eyebrow">02 · 业务流 · 两层选团</p>
+      <h2>先选线路，再对团期</h2>
+      <p class="subtitle">顾问用一句话描述客人需求。第一层搜索返回线路（商品族），第二层在一条线路上展开团期（变体），报价按本次人数结构计算。模型只看到 TourBackend 返回的数据，ERP 凭证由宿主持有。</p>
+      <div class="diagram-container">
+      <svg viewBox="0 0 1000 480" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="seqa-title seqa-desc">
+        <title id="seqa-title">两层选团时序：选线路再对团期</title>
+        <desc id="seqa-desc">时序图：顾问提出需求，选团助手调用 search_products，TourBackend 向 ERP 查线路和团期并返回线路卡；顾问指定一条线路后，助手调用 get_product_details，后端向 ERP 查该线路的团期与本次人数报价并返回团期卡。</desc>
+        <defs>
+          <marker id="sa-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="sa-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+          <marker id="sa-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- lifelines -->
+        <line x1="160" y1="64" x2="160" y2="432" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="400" y1="64" x2="400" y2="432" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="640" y1="64" x2="640" y2="432" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="880" y1="64" x2="880" y2="432" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <!-- activation bars -->
+        <rect x="396" y="104" width="8" height="136" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="636" y="128" width="8" height="88" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="876" y="152" width="8" height="40" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="396" y="272" width="8" height="136" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="636" y="296" width="8" height="88" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="876" y="320" width="8" height="40" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+
+        <!-- layer markers -->
+        <text x="24" y="100" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.12em">L1 选线路</text>
+        <text x="24" y="268" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.12em">L2 对团期</text>
+
+        <!-- messages -->
+        <line x1="164" y1="112" x2="396" y2="112" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#sa-arrow)"/>
+        <rect x="180" y="92" width="200" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="280" y="101" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">客人需求：10月中旬 伊犁 8–10天 2大2小 纯玩</text>
+
+        <line x1="404" y1="136" x2="636" y2="136" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#sa-arrow)"/>
+        <rect x="428" y="116" width="184" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="520" y="125" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">search_products(filters.attributes)</text>
+
+        <line x1="644" y1="160" x2="876" y2="160" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#sa-arrow-link)"/>
+        <rect x="672" y="140" width="176" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="760" y="149" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">search_routes · list_departures</text>
+
+        <line x1="876" y1="184" x2="644" y2="184" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sa-arrow)"/>
+        <rect x="676" y="164" width="168" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="760" y="173" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">RouteRecord · DepartureRecord</text>
+
+        <line x1="636" y1="208" x2="404" y2="208" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sa-arrow)"/>
+        <rect x="436" y="188" width="168" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="520" y="197" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">family Product · 起价 · match</text>
+
+        <line x1="396" y1="232" x2="164" y2="232" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sa-arrow)"/>
+        <rect x="184" y="212" width="192" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="280" y="221" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">present_products · 3–5 条线路 + 取舍</text>
+
+        <line x1="164" y1="280" x2="396" y2="280" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#sa-arrow)"/>
+        <rect x="180" y="260" width="200" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="280" y="269" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">那条 10 天的线路，10/15 前后有什么团？</text>
+
+        <line x1="404" y1="304" x2="636" y2="304" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#sa-arrow)"/>
+        <rect x="440" y="284" width="160" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="520" y="293" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">get_product_details(RT-1022)</text>
+
+        <line x1="644" y1="328" x2="876" y2="328" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#sa-arrow-link)"/>
+        <rect x="668" y="308" width="184" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="760" y="317" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">list_departures(窗口±7天, 2大2小)</text>
+
+        <line x1="876" y1="352" x2="644" y2="352" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sa-arrow)"/>
+        <rect x="676" y="332" width="168" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="760" y="341" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">party_quote_total · seats_left</text>
+
+        <line x1="636" y1="376" x2="404" y2="376" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sa-arrow)"/>
+        <rect x="436" y="356" width="168" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="520" y="365" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">variant Products · quote_party</text>
+
+        <line x1="396" y1="400" x2="164" y2="400" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#sa-arrow-accent)"/>
+        <rect x="176" y="380" width="208" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="280" y="389" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">团期卡：余位 · 成团状态 · 2大2小总价</text>
+
+        <!-- actors -->
+        <rect x="96" y="24" width="128" height="40" rx="6" fill="#f5f5f5"/>
+        <rect x="96" y="24" width="128" height="40" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <text x="160" y="42" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">顾问</text>
+        <text x="160" y="56" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">工作台 :3004</text>
+        <rect x="336" y="24" width="128" height="40" rx="6" fill="#f5f5f5"/>
+        <rect x="336" y="24" width="128" height="40" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="400" y="42" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">选团助手</text>
+        <text x="400" y="56" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">ShoppingAgent · LLM</text>
+        <rect x="576" y="24" width="128" height="40" rx="6" fill="#f5f5f5"/>
+        <rect x="576" y="24" width="128" height="40" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="640" y="42" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">TourBackend</text>
+        <text x="640" y="56" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">SearchContext</text>
+        <rect x="816" y="24" width="128" height="40" rx="6" fill="#f5f5f5"/>
+        <rect x="816" y="24" width="128" height="40" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="880" y="42" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">ERP</text>
+        <text x="880" y="56" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Mock / HTTP</text>
+
+        <!-- legend -->
+        <line x1="30" y1="448" x2="970" y2="448" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="30" y="468" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+        <line x1="100" y1="465" x2="114" y2="465" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#sa-arrow)"/>
+        <text x="120" y="468" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">工具调用</text>
+        <line x1="220" y1="465" x2="234" y2="465" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#sa-arrow-link)"/>
+        <text x="240" y="468" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">ERP 调用</text>
+        <line x1="340" y1="465" x2="354" y2="465" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sa-arrow)"/>
+        <text x="360" y="468" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">返回</text>
+        <line x1="440" y1="465" x2="454" y2="465" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#sa-arrow-accent)"/>
+        <text x="460" y="468" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">关键结果</text>
+      </svg>
+      </div>
+    </div>
+
+    <!-- ══════════════════════ 3. SEQUENCE B ══════════════════════ -->
+    <div class="section">
+      <p class="section-eyebrow">03 · 业务流 · 锁位与分享</p>
+      <h2>占位、满团拒绝、清单回写</h2>
+      <p class="subtitle">锁位是唯一的写操作，购物车只收团期 ID。有位时 ERP 返回带过期时间的占位；满位或已截止时模型只拿到 ID 级别的拒绝，再向顾问报兄弟团期。清单的分享链接由服务端生成，客人在分享页的选择以待处理事件回到顾问的下一轮对话。</p>
+      <div class="diagram-container">
+      <svg viewBox="0 0 1000 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="seqb-title seqb-desc">
+        <title id="seqb-title">锁位、满团拒绝与分享回写时序</title>
+        <desc id="seqb-desc">时序图：顾问要求锁位，助手调用 add_to_cart，后端向 ERP 发 POST /holds；有位时返回占位并把倒计时推给顾问，满位时返回 SOLD_OUT 与兄弟团期，助手只报 id；随后顾问让助手生成清单，后端生成分享链接，客人在分享页选择后经 choose 路由写回待处理事件。</desc>
+        <defs>
+          <marker id="sb-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="sb-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+          <marker id="sb-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+          <marker id="sb-arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline points="0 0, 8 3, 0 6" fill="none" stroke="#4f5d75" stroke-width="1.2"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- lifelines -->
+        <line x1="104" y1="64" x2="104" y2="552" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="304" y1="64" x2="304" y2="552" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="504" y1="64" x2="504" y2="552" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="704" y1="64" x2="704" y2="552" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+        <line x1="904" y1="64" x2="904" y2="552" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+
+        <!-- alt frame -->
+        <rect x="88" y="184" width="640" height="184" rx="4" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+        <rect x="88" y="184" width="40" height="16" rx="2" fill="#f5f5f5" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+        <text x="108" y="196" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">ALT</text>
+        <text x="140" y="208" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">[seats_left ≥ 4 且未截止]</text>
+        <line x1="96" y1="280" x2="720" y2="280" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="140" y="300" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">[SOLD_OUT · DEADLINE_PASSED · HOLD_LIMIT]</text>
+
+        <!-- activation bars -->
+        <rect x="300" y="104" width="8" height="160" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="500" y="128" width="8" height="112" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="700" y="152" width="8" height="184" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="300" y="392" width="8" height="136" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="500" y="416" width="8" height="40" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="900" y="464" width="8" height="40" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+
+        <!-- messages -->
+        <line x1="108" y1="112" x2="300" y2="112" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#sb-arrow)"/>
+        <rect x="124" y="92" width="160" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="204" y="101" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">就 10/14 那个团，锁 4 个位置</text>
+
+        <line x1="308" y1="136" x2="500" y2="136" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#sb-arrow)"/>
+        <rect x="316" y="116" width="176" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="404" y="125" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">add_to_cart(DP-1022-20261014, 4)</text>
+
+        <line x1="508" y1="160" x2="700" y2="160" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#sb-arrow-link)"/>
+        <rect x="520" y="140" width="168" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="604" y="149" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">POST /holds · Idempotency-Key</text>
+
+        <line x1="700" y1="232" x2="508" y2="232" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sb-arrow)"/>
+        <rect x="516" y="212" width="176" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="604" y="221" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">201 HoldRecord · expires_at +30min</text>
+
+        <line x1="300" y1="256" x2="108" y2="256" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#sb-arrow-accent)"/>
+        <rect x="124" y="236" width="160" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="204" y="245" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">cart_update · holds 倒计时</text>
+
+        <line x1="700" y1="324" x2="508" y2="324" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sb-arrow)"/>
+        <rect x="512" y="304" width="184" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="604" y="313" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">409 + sibling_departure_ids</text>
+
+        <line x1="300" y1="348" x2="108" y2="348" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sb-arrow)"/>
+        <rect x="116" y="328" width="176" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="204" y="337" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Unavailable：只报兄弟团期 id</text>
+
+        <line x1="108" y1="400" x2="300" y2="400" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#sb-arrow)"/>
+        <rect x="116" y="380" width="176" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="204" y="389" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">把 10/14 和 10/21 做成清单发客人</text>
+
+        <line x1="308" y1="424" x2="500" y2="424" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#sb-arrow)"/>
+        <rect x="316" y="404" width="176" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="404" y="413" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">present_shortlist → 生成 token</text>
+
+        <line x1="500" y1="448" x2="308" y2="448" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sb-arrow)"/>
+        <rect x="320" y="428" width="168" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="404" y="437" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">share_url（模型看不到 token）</text>
+
+        <line x1="308" y1="472" x2="900" y2="472" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sb-arrow-open)"/>
+        <rect x="740" y="452" width="120" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="800" y="461" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">分享链接 /s/{token}</text>
+
+        <line x1="900" y1="496" x2="508" y2="496" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#sb-arrow-link)"/>
+        <rect x="724" y="476" width="152" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="800" y="485" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">POST /api/share/{token}/choose</text>
+
+        <line x1="500" y1="520" x2="308" y2="520" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sb-arrow-open)"/>
+        <rect x="316" y="500" width="176" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="404" y="509" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">pending_app_events → 下一轮</text>
+
+        <!-- actors -->
+        <rect x="40" y="24" width="128" height="40" rx="6" fill="#f5f5f5"/>
+        <rect x="40" y="24" width="128" height="40" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <text x="104" y="42" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">顾问</text>
+        <text x="104" y="56" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">工作台 :3004</text>
+        <rect x="240" y="24" width="128" height="40" rx="6" fill="#f5f5f5"/>
+        <rect x="240" y="24" width="128" height="40" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="304" y="42" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">选团助手</text>
+        <text x="304" y="56" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">ShoppingAgent · LLM</text>
+        <rect x="440" y="24" width="128" height="40" rx="6" fill="#f5f5f5"/>
+        <rect x="440" y="24" width="128" height="40" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="504" y="42" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">TourBackend</text>
+        <text x="504" y="56" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">+ 宿主路由</text>
+        <rect x="640" y="24" width="128" height="40" rx="6" fill="#f5f5f5"/>
+        <rect x="640" y="24" width="128" height="40" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <text x="704" y="42" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">ERP</text>
+        <text x="704" y="56" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Mock / HTTP</text>
+        <rect x="840" y="24" width="128" height="40" rx="6" fill="#f5f5f5"/>
+        <rect x="840" y="24" width="128" height="40" rx="6" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="904" y="42" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">客人分享页</text>
+        <text x="904" y="56" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Phase 3 · 静态页</text>
+
+        <!-- legend -->
+        <line x1="30" y1="568" x2="970" y2="568" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="30" y="588" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+        <line x1="100" y1="585" x2="114" y2="585" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#sb-arrow)"/>
+        <text x="120" y="588" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">工具调用</text>
+        <line x1="220" y1="585" x2="234" y2="585" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#sb-arrow-link)"/>
+        <text x="240" y="588" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">HTTP 调用</text>
+        <line x1="340" y1="585" x2="354" y2="585" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sb-arrow)"/>
+        <text x="360" y="588" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">返回</text>
+        <line x1="440" y1="585" x2="454" y2="585" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sb-arrow-open)"/>
+        <text x="460" y="588" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">异步 / 事件</text>
+        <line x1="580" y1="585" x2="594" y2="585" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#sb-arrow-accent)"/>
+        <text x="600" y="588" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">关键结果</text>
+      </svg>
+      </div>
+    </div>
+
+    <!-- ══════════════════════ 4. ER / DATA MODEL ══════════════════════ -->
+    <div class="section">
+      <p class="section-eyebrow">04 · 数据模型</p>
+      <h2>ERP 记录如何映射为 Agent 侧类型</h2>
+      <p class="subtitle">左列是 ErpClient 返回的记录，中列是 shopping_agent 核心包定义的类型，右列是 TourBackend 按会话保存的内存状态。核心包零改动：映射全部发生在 TourBackend 内。</p>
+      <div class="diagram-container">
+      <svg viewBox="0 0 1000 780" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="er-title er-desc">
+        <title id="er-title">线路、团期、占位与 Product 类型的映射</title>
+        <desc id="er-desc">ER 图：线路一对多团期，团期一对多占位；线路映射为商品族 Product，团期映射为变体 Product，占位映射为购物车行；SearchContext 按会话保存时段与人数并关联占位，ShareRecord 保存分享 token。</desc>
+        <defs>
+          <marker id="er-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- column eyebrows -->
+        <text x="40" y="60" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.14em">ERP 侧 · ERPCLIENT 记录</text>
+        <text x="352" y="60" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.14em">AGENT 侧 · SHOPPING_AGENT 类型</text>
+        <text x="712" y="284" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.14em">会话状态 · TOURBACKEND 内存</text>
+
+        <!-- relationships (before boxes) -->
+        <line x1="140" y1="256" x2="140" y2="304" stroke="#4f5d75" stroke-width="1.2"/>
+        <text x="148" y="270" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">1</text>
+        <text x="148" y="298" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">N</text>
+        <line x1="140" y1="504" x2="140" y2="552" stroke="#4f5d75" stroke-width="1.2"/>
+        <text x="148" y="518" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">1</text>
+        <text x="148" y="546" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">N</text>
+        <line x1="828" y1="448" x2="828" y2="552" stroke="#4f5d75" stroke-width="1.2"/>
+        <text x="836" y="462" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">1</text>
+        <text x="836" y="546" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">N</text>
+        <path d="M 712,400 H 608 Q 600,400 600,408 V 720 Q 600,728 592,728 H 148 Q 140,728 140,720 V 712" fill="none" stroke="#4f5d75" stroke-width="1.2"/>
+        <text x="692" y="394" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">1</text>
+        <text x="148" y="724" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">N</text>
+        <rect x="608" y="560" width="72" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="644" y="569" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SESSION_KEY</text>
+        <!-- mapping arrows (dashed) -->
+        <line x1="240" y1="168" x2="352" y2="168" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#er-arrow)"/>
+        <rect x="268" y="148" width="56" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="296" y="157" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FAMILY</text>
+        <line x1="240" y1="400" x2="352" y2="400" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#er-arrow)"/>
+        <rect x="264" y="380" width="64" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="296" y="389" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">VARIANT</text>
+        <line x1="240" y1="616" x2="352" y2="616" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#er-arrow)"/>
+        <rect x="260" y="596" width="72" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="296" y="605" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CART LINE</text>
+
+        <!-- Route -->
+        <rect x="40" y="80" width="200" height="176" rx="6" fill="#f5f5f5"/>
+        <rect x="40" y="80" width="200" height="176" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="48" y="88" width="46" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="71" y="97" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ENTITY</text>
+        <text x="48" y="118" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">线路 RouteRecord</text>
+        <line x1="40" y1="124" x2="240" y2="124" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <text x="48" y="140" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace"># route_id  RT-1021</text>
+        <text x="48" y="156" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">route_name · supplier_name</text>
+        <text x="48" y="172" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">days · nights · departure_city</text>
+        <text x="48" y="188" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">hotel_level · vehicle</text>
+        <text x="48" y="204" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">shopping_stops · child_min_age</text>
+        <text x="48" y="220" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">intensity · fit_tags[]</text>
+        <text x="48" y="236" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">highlights[] · summary</text>
+        <text x="48" y="252" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">itinerary_brief</text>
+
+        <!-- Departure (focal) -->
+        <rect x="40" y="304" width="200" height="200" rx="6" fill="#f5f5f5"/>
+        <rect x="40" y="304" width="200" height="200" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <rect x="48" y="312" width="46" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+        <text x="71" y="321" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ENTITY</text>
+        <text x="48" y="342" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">团期 DepartureRecord</text>
+        <line x1="40" y1="348" x2="240" y2="348" stroke="rgba(235,108,54,0.30)" stroke-width="0.8"/>
+        <text x="48" y="364" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace"># departure_id  DP-1022-20261014</text>
+        <text x="48" y="380" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">→ route_id</text>
+        <text x="48" y="396" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">depart_date · return_date</text>
+        <text x="48" y="412" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">seats_total · seats_left</text>
+        <text x="48" y="428" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">group_status · booking_deadline</text>
+        <text x="48" y="444" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">confirmed · pending · closed</text>
+        <text x="48" y="460" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">adult_price · child_price</text>
+        <text x="48" y="476" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">single_supplement · hold_ttl</text>
+        <text x="48" y="492" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">party_quote_total  按人数计算</text>
+
+        <!-- Hold -->
+        <rect x="40" y="552" width="200" height="160" rx="6" fill="#f5f5f5"/>
+        <rect x="40" y="552" width="200" height="160" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="48" y="560" width="46" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+        <text x="71" y="569" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ENTITY</text>
+        <text x="48" y="590" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">占位 HoldRecord</text>
+        <line x1="40" y1="596" x2="240" y2="596" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <text x="48" y="612" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace"># hold_id  HOLD-…</text>
+        <text x="48" y="628" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">→ departure_id</text>
+        <text x="48" y="644" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">adults · children</text>
+        <text x="48" y="660" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">expires_at  TTL 30 min</text>
+        <text x="48" y="676" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">total_price</text>
+        <text x="48" y="692" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">advisor_id · session_key</text>
+        <text x="48" y="708" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">sweep → hold_expired 事件</text>
+
+        <!-- Product family -->
+        <rect x="352" y="80" width="200" height="144" rx="6" fill="#f5f5f5"/>
+        <rect x="352" y="80" width="200" height="144" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="360" y="88" width="34" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="377" y="97" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TYPE</text>
+        <text x="360" y="118" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Product · family</text>
+        <line x1="352" y1="124" x2="552" y2="124" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <text x="360" y="140" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace"># product_id = route_id</text>
+        <text x="360" y="156" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">price = 窗口内最低成人价 (起)</text>
+        <text x="360" y="172" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">in_stock = 有团期坐得下</text>
+        <text x="360" y="188" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">options.depart_date[]</text>
+        <text x="360" y="204" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">attributes.match · mismatch</text>
+        <text x="360" y="220" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">labels ≤ 4 · specs (展示)</text>
+
+        <!-- Product variant -->
+        <rect x="352" y="304" width="200" height="160" rx="6" fill="#f5f5f5"/>
+        <rect x="352" y="304" width="200" height="160" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="360" y="312" width="34" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="377" y="321" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TYPE</text>
+        <text x="360" y="342" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Product · variant</text>
+        <line x1="352" y1="348" x2="552" y2="348" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <text x="360" y="364" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace"># product_id = departure_id</text>
+        <text x="360" y="380" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">→ variant_of = route_id</text>
+        <text x="360" y="396" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">option_values.depart_date</text>
+        <text x="360" y="412" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">price = adult_price</text>
+        <text x="360" y="428" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">in_stock = 余位≥人数 且未截止</text>
+        <text x="360" y="444" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">attributes.party_quote_total</text>
+        <text x="360" y="460" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">quote_party  "2大2小"</text>
+
+        <!-- CartItem -->
+        <rect x="352" y="552" width="200" height="128" rx="6" fill="#f5f5f5"/>
+        <rect x="352" y="552" width="200" height="128" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="360" y="560" width="34" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text x="377" y="569" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TYPE</text>
+        <text x="360" y="590" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">CartItem · 购物车行</text>
+        <line x1="352" y1="596" x2="552" y2="596" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <text x="360" y="612" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace"># product_id = departure_id</text>
+        <text x="360" y="628" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">quantity = adults + children</text>
+        <text x="360" y="644" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">price = total_price / quantity</text>
+        <text x="360" y="660" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">line_total ≈ ERP 总价 (±1 元)</text>
+        <text x="360" y="676" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">holds[] 附在 /api/cart 响应</text>
+
+        <!-- SearchContext -->
+        <rect x="712" y="304" width="232" height="144" rx="6" fill="#f5f5f5"/>
+        <rect x="712" y="304" width="232" height="144" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="720" y="312" width="42" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+        <text x="741" y="321" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">STATE</text>
+        <text x="720" y="342" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">SearchContext · 会话</text>
+        <line x1="712" y1="348" x2="944" y2="348" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <text x="720" y="364" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace"># session_id</text>
+        <text x="720" y="380" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">depart_from · depart_to</text>
+        <text x="720" y="396" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">adults · children · child_ages[]</text>
+        <text x="720" y="412" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">每次 search_products 覆盖写入</text>
+        <text x="720" y="428" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">无上下文 → 今起 60 天 · 2大0小</text>
+
+        <!-- ShareRecord -->
+        <rect x="712" y="552" width="232" height="128" rx="6" fill="#f5f5f5"/>
+        <rect x="712" y="552" width="232" height="128" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="720" y="560" width="42" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+        <text x="741" y="569" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">STATE</text>
+        <text x="720" y="590" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">ShareRecord · 分享</text>
+        <line x1="712" y1="596" x2="944" y2="596" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <text x="720" y="612" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace"># token  服务端生成，模型不可见</text>
+        <text x="720" y="628" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">→ session_id · advisor_id</text>
+        <text x="720" y="644" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">departure_ids[] ≤ 5</text>
+        <text x="720" y="660" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">created_at</text>
+        <text x="720" y="676" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">choose → pending_app_events</text>
+
+        <!-- legend -->
+        <line x1="30" y1="744" x2="970" y2="744" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text x="30" y="764" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.14em">LEGEND</text>
+        <text x="100" y="764" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">#</text>
+        <text x="112" y="764" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">主键</text>
+        <text x="180" y="764" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">→</text>
+        <text x="192" y="764" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">外键</text>
+        <text x="260" y="764" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace">1 / N</text>
+        <text x="292" y="764" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">基数</text>
+        <line x1="360" y1="761" x2="374" y2="761" stroke="#4f5d75" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#er-arrow)"/>
+        <text x="380" y="764" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">映射为 Agent 侧类型</text>
+        <rect x="520" y="756" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <text x="540" y="764" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">焦点：报价与余位都在团期上</text>
+      </svg>
+      </div>
+    </div>
+
+    <!-- ══════════════════════ 5. HOLD STATE MACHINE + ERP CONTRACT ══════════════════════ -->
+    <div class="section">
+      <p class="section-eyebrow">05 · 占位生命周期与 ERP 接口</p>
+      <h2>一个团期从报价到占位释放</h2>
+      <p class="subtitle">占位由 ERP 决定过期时间，宿主在每轮对话前把过期通知写入待处理事件。改量是先释放再占位，失败时恢复原占位。下表是交给 ERP 团队的 HTTP 契约与错误码映射。</p>
+      <div class="diagram-container">
+      <svg viewBox="0 0 1000 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="hold-title hold-desc">
+        <title id="hold-title">占位生命周期状态机</title>
+        <desc id="hold-desc">状态机：团期报价后，余位足够时进入占位中；满位、截止或超限则停留在报价并返回拒绝；占位中可改量、被释放或因 TTL 到期而过期，释放与过期都回补余位并结束。</desc>
+        <defs>
+          <marker id="st-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="st-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- transitions -->
+        <line x1="56" y1="140" x2="96" y2="140" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#st-arrow)"/>
+        <line x1="240" y1="140" x2="352" y2="140" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#st-arrow-accent)"/>
+        <rect x="252" y="120" width="88" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="296" y="129" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">ADD [余位≥人数]</text>
+        <!-- self loop: quoted -->
+        <path d="M 144,112 V 96 Q 144,88 152,88 H 184 Q 192,88 192,96 V 112" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#st-arrow)"/>
+        <rect x="76" y="60" width="184" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="168" y="69" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">[满位/截止/超限] 拒绝 + 兄弟团期 ID</text>
+        <!-- self loop: active -->
+        <path d="M 400,112 V 96 Q 400,88 408,88 H 456 Q 464,88 464,96 V 112" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
+        <rect x="348" y="60" width="168" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="432" y="69" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">UPDATE 改量 · 失败恢复原占位</text>
+        <!-- active -> released -->
+        <path d="M 512,128 H 568 Q 576,128 576,120 V 84 Q 576,76 584,76 H 640" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#st-arrow)"/>
+        <rect x="468" y="96" width="96" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="516" y="105" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">REMOVE_FROM_CART</text>
+        <!-- active -> expired -->
+        <path d="M 512,152 H 568 Q 576,152 576,160 V 196 Q 576,204 584,204 H 640" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#st-arrow)"/>
+        <rect x="468" y="172" width="96" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="516" y="181" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">TTL 到期 · SWEEP</text>
+        <!-- to end -->
+        <line x1="784" y1="76" x2="872" y2="76" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#st-arrow)"/>
+        <rect x="796" y="56" width="64" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="828" y="65" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">余位回补</text>
+        <line x1="784" y1="204" x2="872" y2="204" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#st-arrow)"/>
+        <rect x="788" y="184" width="80" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="828" y="193" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">回补 + APP EVENT</text>
+
+        <!-- start / end -->
+        <circle cx="48" cy="140" r="6" fill="#2d3142"/>
+        <circle cx="880" cy="76" r="8" fill="none" stroke="#2d3142" stroke-width="1"/>
+        <circle cx="880" cy="76" r="5" fill="#2d3142"/>
+        <circle cx="880" cy="204" r="8" fill="none" stroke="#2d3142" stroke-width="1"/>
+        <circle cx="880" cy="204" r="5" fill="#2d3142"/>
+
+        <!-- states -->
+        <rect x="96" y="112" width="144" height="56" rx="8" fill="#f5f5f5"/>
+        <rect x="96" y="112" width="144" height="56" rx="8" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="168" y="136" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">报价</text>
+        <text x="168" y="152" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">quoted · 团期已列出</text>
+        <rect x="352" y="112" width="160" height="56" rx="8" fill="#f5f5f5"/>
+        <rect x="352" y="112" width="160" height="56" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <text x="432" y="136" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">占位中</text>
+        <text x="432" y="152" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">HOLD-… · expires_at</text>
+        <rect x="640" y="48" width="144" height="56" rx="8" fill="#f5f5f5"/>
+        <rect x="640" y="48" width="144" height="56" rx="8" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text x="712" y="72" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">已释放</text>
+        <text x="712" y="88" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">released</text>
+        <rect x="640" y="176" width="144" height="56" rx="8" fill="#f5f5f5"/>
+        <rect x="640" y="176" width="144" height="56" rx="8" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text x="712" y="200" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">已过期</text>
+        <text x="712" y="216" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">expired · hold_expired</text>
+      </svg>
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>ErpClient 调用</th><th>HTTP 契约</th><th>关键字段</th><th>错误码 → 异常 → 模型看到的</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>search_routes(RouteQuery)</code></td><td><code>POST /routes/search</code></td><td>destination · depart_from/to · days_min/max · adults · children · child_ages · no_shopping · hotel_level · limit ≤ 20</td><td>缺必填字段的线路：丢弃并记日志，不进入结果</td></tr>
+          <tr><td><code>list_departures(route_id, …)</code></td><td><code>GET /routes/{route_id}/departures</code></td><td>窗口 · 人数结构 → seats_left 扣除未过期占位 · party_quote_total</td><td>—</td></tr>
+          <tr><td><code>get_departure(departure_id, …)</code></td><td><code>GET /departures/{departure_id}</code></td><td>单条同结构报价</td><td><span class="err">404 DEPARTURE_NOT_FOUND</span> → <code>None</code></td></tr>
+          <tr><td><code>create_hold(departure_id, adults, children, advisor_id, session_key)</code></td><td><code>POST /holds</code> + <code>Idempotency-Key</code></td><td>201 → hold_id · expires_at · total_price · seats_left_after</td><td><span class="err">409 SOLD_OUT</span> + sibling_departure_ids → <code>ErpSoldOut</code> → <code>Unavailable("id; in stock: ids")</code><br><span class="err">409 DEADLINE_PASSED</span> / <span class="err">409 HOLD_LIMIT</span> → <code>ErpDeadlinePassed</code> / <code>ErpHoldLimit</code> → "Nothing changed: …"<br><span class="err">404 DEPARTURE_NOT_FOUND</span> → <code>ErpHoldNotFound</code></td></tr>
+          <tr><td><code>release_hold(hold_id, advisor_id)</code></td><td><code>DELETE /holds/{hold_id}</code> + <code>X-Advisor-Id</code></td><td>释放后 seats_left 立即回补</td><td><span class="err">403 NOT_OWNER</span> / <span class="err">404 HOLD_NOT_FOUND</span> → <code>ErpHoldNotFound</code></td></tr>
+          <tr><td><code>list_holds(advisor_id, session_key)</code></td><td><code>GET /holds?advisor_id=&amp;session_key=</code></td><td>只返回未过期占位 → 购物车行 + holds 倒计时</td><td>网络超时 · 5xx · 非 JSON → <code>ErpUnavailable</code> → "工具暂时不可用"</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header"><span class="card-dot coral"></span><h3>顺序由后端强制</h3></div>
+        <ul>
+          <li>购物车只接受团期 ID（DP-…），线路 ID 被 gate 与后端两层拦截</li>
+          <li>搜索结果不足 2 条时按 时段±7天 → 天数±2 → 放弃软条件 三档放宽，并标 match / mismatch</li>
+          <li>报价按本次人数结构计算，无上下文时如实标注 2大0小</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot ink"></span><h3>模型只看到数据，不碰凭证</h3></div>
+        <ul>
+          <li>ERP Bearer、分享 token、ANTHROPIC_API_KEY 都由宿主持有</li>
+          <li>Unavailable 消息只含 ID，不含中文描述</li>
+          <li>模型 ID 与接口地址来自环境变量，可换 DeepSeek / Kimi</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-dot link"></span><h3>端口与运行</h3></div>
+        <ul>
+          <li>API :8004 · 工作台 :3004</li>
+          <li><code>python scripts/run_demo.py tour</code></li>
+          <li><code>python scripts/smoke_chat.py --vertical tour</code></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>examples/tour · ACME 旅行社 · 架构与业务流</span>
+      <span>branch tour-vertical · 2026-09-07</span>
+    </div>
+
+  </div>
+</body>
+</html>
