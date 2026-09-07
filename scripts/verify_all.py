@@ -26,7 +26,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
 EXAMPLES = REPO_ROOT / "examples"
 NEXT = EXAMPLES / "node_modules" / ".bin" / "next"
-VERTICALS = ("retail", "travel", "telecom", "entertainment")
+# tour ships a storefront only; the build loop skips an app directory a vertical lacks.
+VERTICALS = ("retail", "travel", "telecom", "entertainment", "tour")
 
 
 class Step:
@@ -97,6 +98,8 @@ def main() -> int:
                 )
             for vertical in VERTICALS:
                 for app in ("storefront-web", "merchant-web"):
+                    if not (EXAMPLES / vertical / app).is_dir():
+                        continue
                     steps.append(
                         Step(
                             f"{vertical} {app} (next build)",
