@@ -59,21 +59,25 @@ def build_shopping_config() -> ShoppingAgentConfig:
             "(上旬=1–10, 中旬=11–20, 下旬=21–end of month; a bare month is the whole month; "
             "国庆=10-01..10-07); adults (default 2); children and child_ages (e.g. '5|9') when named; "
             "days_min/days_max when a length is given; no_shopping=yes when the customer wants "
-            "纯玩. Search returns routes (lines). A route's departures with seats and quotes come "
-            "only from get_product_details on that route; book with the departure id (DP-…), never the "
-            "route id (RT-…). add_to_cart quantity is the whole party (adults + children). "
-            "State the expanded date window back to the advisor once."
+            "纯玩; hotel_level (四钻, 五钻) when a standard is named. Search returns routes (lines) "
+            "and matches destination against route names and tags, so a destination the catalog "
+            "does not name in either finds nothing. A route's departures and their list prices come "
+            "only from get_product_details on that route (RT-…); this customer's own price for one "
+            "departure comes from get_product_details on that departure id (DP-…). Book with the "
+            "departure id, never the route id. add_to_cart quantity is the whole party (adults + "
+            "children) and writes a 占位 order; the cart cannot remove or resize one — the advisor "
+            "does that in the ERP. State the expanded date window back to the advisor once."
         ),
         # Nothing ships: the customer joins the group at its 集合地点, which the route's
         # specs carry, so the fulfillment tool is not registered at all.
         enable_fulfillment=False,
-        # One line is one 团期 and its quantity is the whole party; the ERP allows three
-        # live holds per conversation.
+        # One line is one 团期 and its quantity is the whole party; a conversation writes at
+        # most three 占位 orders, because every one of them is a real order in the ERP.
         max_quantity_per_item=20,
         max_cart_lines=3,
         policy_intent_terms=_DEFAULTS.policy_intent_terms + _POLICY_TERMS,
         order_intent_terms=_DEFAULTS.order_intent_terms + _ORDER_TERMS,
         # The two id shapes this catalog has, replacing the defaults: nothing else in the
         # conversation reads as a product id.
-        product_id_patterns=(r"\bRT-\d{4}\b", r"\bDP-\d{4}-\d{8}\b"),
+        product_id_patterns=(r"\bRT-\d+\b", r"\bDP-\d+\b"),
     )

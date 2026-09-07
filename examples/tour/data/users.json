@@ -3,6 +3,7 @@
     {
       "user_id": "demo-user",
       "display_name": "林晓（工号 demo-user）",
+      "mobile": "13900000001",
       "loyalty_tier": "ACME 旅行社 金牌门店顾问",
       "default_location": "上海",
       "preferences": {
@@ -16,6 +17,7 @@
     {
       "user_id": "demo-user-2",
       "display_name": "周珩（工号 demo-user-2）",
+      "mobile": "13900000002",
       "loyalty_tier": "ACME 旅行社 门店顾问",
       "default_location": "上海",
       "preferences": {

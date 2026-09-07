@@ -9,9 +9,9 @@ from demo_common import SESSION_HEADER
 from tour.api.shortlist import build_shortlist_extension
 
 ROUTE = "RT-1022"
-FIRST = "DP-1022-20260916"
-SECOND = "DP-1022-20261014"
-UNSEEN = "DP-1022-20991231"
+FIRST = "DP-3012"
+SECOND = "DP-3017"
+UNSEEN = "DP-399999"
 
 
 async def _seen_shortlist(executor):
@@ -75,10 +75,10 @@ async def test_a_shortlist_joins_each_departure_to_its_route_and_carries_a_share
 
 async def test_a_route_never_searched_is_fetched_for_the_card(executor):
     # Opening a 团期 by id puts the departure in provenance and not its 线路.
-    await executor.execute("get_product_details", {"product_id": "DP-1021-20261017"})
+    await executor.execute("get_product_details", {"product_id": "DP-3008"})
     result = await executor.execute(
         "present_shortlist",
-        {"title": "客人指定的团期", "departure_ids": ["DP-1021-20261017"]},
+        {"title": "客人指定的团期", "departure_ids": ["DP-3008"]},
     )
     assert not result.is_error
     item = _ui_payload(result)["payload"]["items"][0]
