@@ -60,11 +60,15 @@ export function groupProgress(product: Product): string | null {
   return `${confirmed}/${minimum}`;
 }
 
-/** Which of the ERP's three prices a quote came from, so the advisor knows what they read. */
+/**
+ * What the party total beside it was made at. A 团期 the ERP quoted this customer totals at
+ * the 同业价, which is what an order is booked at; one it has only listed totals at the 市场价
+ * and the 同业价 is still to be found; one it has priced neither way has no total at all.
+ */
 const QUOTE_SOURCE: Record<string, string> = {
-  customer: "同行价",
-  list: "挂牌价",
-  none: "暂无报价",
+  customer: "按同业价",
+  list: "按市场价，同业价待查",
+  none: "报价待查",
 };
 
 export function quoteSourceText(source?: string): string | null {
@@ -138,17 +142,39 @@ export function departureSpecs(product: Product): Spec[] {
 }
 
 /** "成人 ¥7,880 · 儿童 ¥4,980"; a head the ERP prices at zero is left off. */
-export function perHeadPrices(product: Product): string | null {
-  const attrs = product.attributes ?? {};
+function perHead(adult?: string, child?: string): string | null {
   const heads: [string, string | undefined][] = [
-    ["成人", attrs.adult_price],
-    ["儿童", attrs.child_price],
+    ["成人", adult],
+    ["儿童", child],
   ];
   const priced = heads
     .map(([label, raw]) => [label, Number(raw)] as const)
     .filter(([, value]) => Number.isFinite(value) && value > 0)
     .map(([label, value]) => `${label} ${formatYuan(value)}`);
   return priced.length ? priced.join(" · ") : null;
+}
+
+/**
+ * The 同业价 per head: the advisor's settlement price, which an order is booked at. A 团期 the
+ * ERP has only listed carries its 市场价 in these keys instead, so it has no 同业价 to show and
+ * says so beside the 市场价 row rather than repeating that price as if it were one.
+ */
+export function tradePerHead(product: Product): string | null {
+  const attrs = product.attributes ?? {};
+  if (attrs.quote_source !== "customer") return null;
+  return perHead(attrs.adult_price, attrs.child_price);
+}
+
+/** The 市场价 per head: the departure's own price, which is what the customer is shown. */
+export function marketPerHead(product: Product): string | null {
+  const attrs = product.attributes ?? {};
+  return perHead(attrs.market_adult_price, attrs.market_child_price);
+}
+
+/** "¥7,880", the 市场价 for one adult; the customer-facing figure a card quotes on one line. */
+export function marketAdultYuan(product: Product): string | null {
+  const value = Number(product.attributes?.market_adult_price);
+  return Number.isFinite(value) && value > 0 ? formatYuan(value) : null;
 }
 
 /** "2大2小合计 25,720 元", the quote the departure was priced for; nothing unpriced. */

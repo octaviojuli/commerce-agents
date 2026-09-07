@@ -179,7 +179,10 @@ Single prompts worth trying after those turns:
 `storefront-web/` is the advisor's workbench, Chinese throughout: 线路 cards read the
 trade-offs an advisor reads out off a family's attributes (`days`, `depart_city`, `tags`,
 `features`, `match`, `mismatch`), 团期 cards read a variant's (`depart_date`, `seats_left`,
-`seats_total`, `group_status`, `party_quote_total`, `quote_party`), the bag counts each 预留
+`seats_total`, `group_status`, `party_quote_total`, `quote_party`) and name both of its prices
+per head, the 同业价 an order is booked at (`adult_price`, `child_price`) above the 市场价 the
+customer is shown (`market_adult_price`, `market_child_price`), with the party's total on the
+同业价 and `quote_source` saying which of the two it was made at, the bag counts each 预留
 down and flips to 已过期 at zero, and `present_shortlist`, `present_guide` and `checkout`
 each have a card. Its `showcase` page renders every card from a snapshot of one advisor
 search, which `api/tests/test_showcase.py` holds to the live records.

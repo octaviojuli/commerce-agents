@@ -12,11 +12,12 @@ import {
   formatYuan,
   groupProgress,
   isDeparture,
+  marketPerHead,
   partyQuote,
-  perHeadPrices,
   quoteSourceText,
   routeSpecs,
   routeTags,
+  tradePerHead,
 } from "@/lib/format";
 import type { Product, ProductsPayload } from "@/lib/types";
 import { MismatchNote, SeatsPill, SkeletonCard, SpecGrid, StatusPill, Tag } from "./shared";
@@ -66,11 +67,12 @@ function RouteCard({ product }: { product: Product }) {
   );
 }
 
-/** A 团期: the dates, the 团号, what is left of it, and what this party pays. */
+/** A 团期: the dates, the 团号, what is left of it, and both prices this party is quoted. */
 function DepartureCard({ product }: { product: Product }) {
   const attrs = product.attributes ?? {};
   const quote = partyQuote(product);
-  const perHead = perHeadPrices(product);
+  const trade = tradePerHead(product);
+  const market = marketPerHead(product);
   const source = quoteSourceText(attrs.quote_source);
   return (
     <>
@@ -80,16 +82,29 @@ function DepartureCard({ product }: { product: Product }) {
         <SeatsPill product={product} />
       </div>
       <SpecGrid specs={departureSpecs(product)} cols={1} />
-      <div className="mt-auto flex flex-wrap items-end justify-between gap-x-3 gap-y-1 pt-1">
-        {perHead ? (
-          <span className="tg-num text-[12.5px] text-(--ink-soft)">{perHead}</span>
+      <div className="mt-auto flex flex-col gap-1 pt-1">
+        {/* Both of the ERP's prices, each named: the 同业价 the order is booked at, and the
+            市场价 the customer is shown. A 团期 the ERP has only listed has no 同业价 yet. */}
+        {trade ? (
+          <span className="tg-num text-[12.5px] text-(--ink-2)">
+            <span className="tg-label mr-1">同业价</span>
+            {trade}
+          </span>
+        ) : attrs.quote_source === "list" ? (
+          <span className="tg-label">同业价待查</span>
         ) : null}
-        {/* Which of the ERP's prices this is: the customer's own, the list, or none yet. */}
-        <span className="ml-auto text-right">
+        {market ? (
+          <span className="tg-num text-[12.5px] text-(--ink-soft)">
+            <span className="tg-label mr-1">市场价</span>
+            {market}
+          </span>
+        ) : null}
+        {/* The party's total, and which of the two prices it was made at. */}
+        <span className="flex flex-wrap items-baseline justify-end gap-x-1.5 text-right">
           {quote ? (
             <span className="tg-num text-[15px] font-bold text-(--accent)">{quote}</span>
           ) : null}
-          {source ? <span className="tg-label ml-1.5">{source}</span> : null}
+          {source ? <span className="tg-label">{source}</span> : null}
         </span>
       </div>
     </>

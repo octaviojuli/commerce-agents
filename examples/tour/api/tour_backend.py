@@ -317,18 +317,28 @@ def _variant_attributes(
 
 
 def _variant_summary(
-    row: DepartureRecord, price: PriceInfo | None, source: str, adults: int, children: int
+    row: DepartureRecord,
+    price: PriceInfo | None,
+    market: PriceInfo | None,
+    source: str,
+    adults: int,
+    children: int,
 ) -> str:
-    """The 团期 in one line. A total the 同业价 made is the advisor's own; one the 市场价 made
-    says so, because that is the customer's price and not what the order would be booked at."""
+    """The 团期 in one line, on both of its prices: a total the 同业价 made is the advisor's own
+    and names the 市场价 beside it, so the sentence says what the order is booked at and what
+    the customer is shown; one the 市场价 made says so, because that is the customer's price and
+    not what the order would be booked at."""
     status = _STATUS_TEXT.get(_group_status(row), _group_status(row))
     party = _party_label(adults, children)
+    seats = f"余位 {row.available_seats}/{row.plan_guests}，{status}"
     total = _party_total(price, adults, children)
     if total is None:
-        return f"余位 {row.available_seats}/{row.plan_guests}，{status}，{party}报价待查"
-    said = "（市场价，同业价待查）" if source == "list" else ""
-    quote = f"{party}合计 {_number(total)} 元{said}"
-    return f"余位 {row.available_seats}/{row.plan_guests}，{status}，{quote}"
+        return f"{seats}，{party}报价待查"
+    if source == "list":
+        return f"{seats}，市场价 {party}合计 {_number(total)} 元（同业价待查）"
+    listed = market.adult if market is not None else 0.0
+    beside = f"（市场价成人 {_number(listed)} 元）" if listed > 0 else ""
+    return f"{seats}，同业价 {party}合计 {_number(total)} 元{beside}"
 
 
 def _flat(text: str) -> str:
@@ -739,7 +749,7 @@ class TourBackend(StorefrontBackend):
             ),
             in_stock=row.available_seats >= party,
             short_description=_variant_summary(
-                row, price, source, context.adults, context.children
+                row, price, market, source, context.adults, context.children
             ),
             option_values={"depart_date": row.depart_date.isoformat()},
             variant_of=route_id_of(row.route_id),

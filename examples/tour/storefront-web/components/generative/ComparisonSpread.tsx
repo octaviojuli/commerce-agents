@@ -20,8 +20,9 @@ const HIDDEN = new Set([
   "quote_party",
   "party_quote_total",
   "quote_source",
-  "adult_price",
   "elder_price",
+  // 成人 is the head the two lines are argued on, so each price gets one row at that head.
+  "market_child_price",
   "seats_left",
   "seats_total",
   "confirm_count",
@@ -37,6 +38,10 @@ const LABELS: Record<string, string> = {
   period_code: "团号",
   depart_date: "出发日期",
   group_status: "成团状态",
+  // Both of a 团期's prices, at the head they are argued on: what the order is booked at,
+  // and what the customer is shown.
+  adult_price: "同业价（成人）",
+  market_adult_price: "市场价（成人）",
   child_price: "儿童价",
   single_room_diff: "单房差",
 };
@@ -49,17 +54,22 @@ const ORDER = [
   "depart_date",
   "period_code",
   "group_status",
+  "adult_price",
+  "market_adult_price",
   "child_price",
   "single_room_diff",
 ];
 
-const MAX_ROWS = 7;
+const MAX_ROWS = 8;
 
-// A 线路编号 or a 团号 tells the two apart; it is not what the dearer one buys.
-const IDENTIFIERS = new Set(["route_code", "period_code"]);
+// A 线路编号 or a 团号 tells the two apart, and the 成人 prices are the gap itself; none of
+// them is what the dearer one buys.
+const NOT_A_BUY = new Set(["route_code", "period_code", "adult_price", "market_adult_price"]);
 
 const UNITS: Record<string, (raw: string) => string> = {
   days: (raw) => `${raw} 天`,
+  adult_price: (raw) => formatYuan(Number(raw)),
+  market_adult_price: (raw) => formatYuan(Number(raw)),
   child_price: (raw) => formatYuan(Number(raw)),
   single_room_diff: (raw) => formatYuan(Number(raw)),
 };
@@ -101,7 +111,7 @@ function rowKeys(products: Product[]): string[] {
 function deltaBuys(high: Product, low: Product, keys: string[]): string[] {
   const buys: string[] = [];
   for (const key of keys) {
-    if (IDENTIFIERS.has(key)) continue;
+    if (NOT_A_BUY.has(key)) continue;
     const highText = cellText(high, key);
     const lowText = cellText(low, key);
     if (highText !== "—" && highText !== lowText) buys.push(`${label(key)} ${highText}`);

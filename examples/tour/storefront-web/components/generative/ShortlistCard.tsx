@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { dateLabel, groupProgress, partyQuote, routeSpecs } from "@/lib/format";
+import { dateLabel, groupProgress, marketAdultYuan, partyQuote, routeSpecs } from "@/lib/format";
 import type { Product, ShortlistPayload } from "@/lib/types";
 import { SeatsPill, StatusPill } from "./shared";
 
@@ -26,12 +26,17 @@ function tradeOffs(route: Product): string {
     .join(" · ");
 }
 
-/** One 团期: when it leaves, what it is, what is left of it, and what this party pays. */
+/**
+ * One 团期: when it leaves, what it is, what is left of it, and both prices — the 同业价 this
+ * party's total is made at, and the 市场价 for one adult, which is the figure the customer
+ * reads on the page this card is sent to.
+ */
 function Row({ departure, route }: { departure: Product; route: Product }) {
   const attrs = departure.attributes ?? {};
   const depart = dateLabel(attrs.depart_date);
   const specs = tradeOffs(route);
   const quote = partyQuote(departure);
+  const market = marketAdultYuan(departure);
   return (
     <li className="ac-reveal flex flex-wrap items-start justify-between gap-x-4 gap-y-1.5 border-t border-dashed border-(--line) py-3 first:border-t-0 first:pt-0">
       <div className="min-w-0 flex-1">
@@ -49,10 +54,18 @@ function Row({ departure, route }: { departure: Product; route: Product }) {
           <div className="mt-0.5 text-[12.5px] leading-snug text-(--ink-soft)">{specs}</div>
         ) : null}
       </div>
-      {quote ? (
-        <span className="tg-num shrink-0 text-right text-[15px] font-bold text-(--accent)">
-          {quote}
-        </span>
+      {quote || market ? (
+        <div className="shrink-0 text-right">
+          {quote ? (
+            <div className="tg-num text-[15px] font-bold text-(--accent)">
+              <span className="tg-label mr-1">同业价</span>
+              {quote}
+            </div>
+          ) : null}
+          {market ? (
+            <div className="tg-num tg-label mt-0.5">市场价 成人 {market}</div>
+          ) : null}
+        </div>
       ) : null}
     </li>
   );

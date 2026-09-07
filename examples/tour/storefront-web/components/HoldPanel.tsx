@@ -12,7 +12,13 @@
 
 import { AskLink, BagPanel, TotalRow, useCatalogIndex, useStoreFrame } from "web-shared";
 import { fetchProducts } from "@/lib/api";
-import { dateLabel, formatCountdown, formatYuan, formatYuanText } from "@/lib/format";
+import {
+  dateLabel,
+  formatCountdown,
+  formatYuan,
+  formatYuanText,
+  marketAdultYuan,
+} from "@/lib/format";
 import { isWaitlist, lineTitle, useHoldClock } from "@/lib/holds";
 import type { CartItem, CartPayload, Hold, Product } from "@/lib/types";
 
@@ -50,16 +56,21 @@ function HoldState({ hold, seconds, waitlisted }: { hold?: Hold; seconds: number
 function HoldLine({
   item,
   route,
+  departure,
   hold,
   seconds,
 }: {
   item: CartItem;
   route?: Product;
+  departure?: Product;
   hold?: Hold;
   seconds: number | null;
 }) {
   const depart = dateLabel(item.option_values?.depart_date);
   const waitlisted = isWaitlist(item);
+  // A cart line carries only the price the order was booked at, which is the 同业价; the 市场价
+  // beside it comes from the 团期 record, and a line whose 团期 this page has not read shows none.
+  const market = departure ? marketAdultYuan(departure) : null;
   return (
     <div>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -75,12 +86,14 @@ function HoldLine({
       {depart ? <div className="tg-label mt-0.5">出发 {depart}</div> : null}
       <div className="mt-1.5 flex items-baseline justify-between gap-3">
         <span className="tg-num text-[12px] text-(--ink-soft)">
+          <span className="tg-label mr-1">同业价</span>
           {formatYuan(item.price)} × {item.quantity} 人
         </span>
         <span className="tg-num shrink-0 text-[15px] font-bold text-(--ink)">
           {formatYuan(item.line_total)}
         </span>
       </div>
+      {market ? <div className="tg-num tg-label mt-0.5">市场价 {market}/人</div> : null}
     </div>
   );
 }
@@ -169,6 +182,7 @@ export default function HoldPanel({
               <HoldLine
                 item={item}
                 route={routeOf(item, index)}
+                departure={index[item.product_id]}
                 hold={hold}
                 seconds={hold ? (seconds[hold.hold_id] ?? null) : null}
               />

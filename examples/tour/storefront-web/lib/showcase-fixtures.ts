@@ -126,7 +126,7 @@ const DEPARTURE_1007: Product = {
     quote_source: "customer"
   },
   in_stock: true,
-  short_description: "余位 4/6，已成团，2大2小合计 25720 元",
+  short_description: "余位 4/6，已成团，同业价 2大2小合计 25720 元（市场价成人 7880 元）",
   option_values: { depart_date: "2026-10-07" },
   variant_of: "RT-1022"
 };
@@ -160,7 +160,7 @@ const DEPARTURE_1014: Product = {
     quote_source: "customer"
   },
   in_stock: true,
-  short_description: "余位 5/6，待成团，2大2小合计 25720 元",
+  short_description: "余位 5/6，待成团，同业价 2大2小合计 25720 元（市场价成人 7880 元）",
   option_values: { depart_date: "2026-10-14" },
   variant_of: "RT-1022"
 };
@@ -194,7 +194,7 @@ const DEPARTURE_1021: Product = {
     quote_source: "customer"
   },
   in_stock: true,
-  short_description: "余位 5/6，待成团，2大2小合计 25120 元",
+  short_description: "余位 5/6，待成团，同业价 2大2小合计 25120 元（市场价成人 7580 元）",
   option_values: { depart_date: "2026-10-21" },
   variant_of: "RT-1022"
 };
