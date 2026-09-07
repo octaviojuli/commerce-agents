@@ -1,0 +1,186 @@
+// Copyright 2026 Anthropic PBC
+// SPDX-License-Identifier: Apache-2.0
+
+"use client";
+
+/** `present_products`: a shortlist of 线路, or the 团期 of one route. */
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  attrList,
+  departureSpecs,
+  formatYuan,
+  isDeparture,
+  partyQuote,
+  routeSpecs,
+} from "@/lib/format";
+import type { Product, ProductsPayload } from "@/lib/types";
+import { MismatchNote, SeatsPill, SkeletonCard, SpecGrid, StatusPill, Tag } from "./shared";
+
+const MAX_TAGS = 4;
+
+/** A route: the trade-offs that separate it from the line beside it, then its 起价. */
+function RouteCard({ product }: { product: Product }) {
+  const attrs = product.attributes ?? {};
+  const tags = (product.labels ?? attrList(attrs.fit_tags)).slice(0, MAX_TAGS);
+  return (
+    <>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <h4 className="text-[15.5px] font-semibold leading-snug text-(--ink)">{product.title}</h4>
+        {attrs.destination ? <span className="tg-label">{attrs.destination}</span> : null}
+      </div>
+      {tags.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {tags.map((tag) => (
+            <Tag key={tag} text={tag} />
+          ))}
+        </div>
+      ) : null}
+      <SpecGrid specs={routeSpecs(product)} />
+      <MismatchNote product={product} />
+      {product.short_description ? (
+        <p className="line-clamp-2 text-[13px] leading-relaxed text-(--ink-soft)">
+          {product.short_description}
+        </p>
+      ) : null}
+      <div className="mt-auto flex items-end justify-between gap-2 pt-1">
+        <span className="text-[12px] text-(--ink-soft)">
+          {product.in_stock === false ? "窗口内无余位" : `${attrs.departure_city ?? ""} 出发`}
+        </span>
+        <span className="whitespace-nowrap text-right">
+          <span className="tg-label mr-1">起价</span>
+          <span className="tg-num text-[18px] font-bold text-(--accent)">
+            {formatYuan(product.price)}
+          </span>
+          <span className="tg-label ml-0.5">/人</span>
+        </span>
+      </div>
+    </>
+  );
+}
+
+/** A 团期: the date, the seats, the deadline, and this party's total. */
+function DepartureCard({ product }: { product: Product }) {
+  const attrs = product.attributes ?? {};
+  const quote = partyQuote(product);
+  const adultPrice = Number(attrs.adult_price);
+  const childPrice = Number(attrs.child_price);
+  // A 团期 the ERP has not priced for both heads gets no per-head line, the way it gets no quote.
+  const perHead =
+    Number.isFinite(adultPrice) && Number.isFinite(childPrice)
+      ? `成人 ${formatYuan(adultPrice)} · 儿童 ${formatYuan(childPrice)}`
+      : null;
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <h4 className="text-[15.5px] font-semibold leading-snug text-(--ink)">{product.title}</h4>
+        <StatusPill status={attrs.group_status} />
+        <SeatsPill product={product} />
+      </div>
+      <SpecGrid specs={departureSpecs(product)} />
+      <div className="mt-auto flex flex-wrap items-end justify-between gap-x-3 gap-y-1 pt-1">
+        {perHead ? (
+          <span className="tg-num text-[12.5px] text-(--ink-soft)">{perHead}</span>
+        ) : null}
+        {quote ? (
+          <span className="tg-num text-right text-[15px] font-bold text-(--accent)">{quote}</span>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+function Card({
+  product,
+  reason,
+  className = "",
+}: {
+  product: Product;
+  reason?: string | null;
+  className?: string;
+}) {
+  return (
+    <div className={`tg-card tg-lift ac-reveal flex flex-col gap-2 p-3.5 ${className}`}>
+      {isDeparture(product) ? (
+        <DepartureCard product={product} />
+      ) : (
+        <RouteCard product={product} />
+      )}
+      {reason ? (
+        <p className="border-t border-dashed border-(--line) pt-2 text-[13px] leading-relaxed text-(--ink-2)">
+          {reason}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+export default function RouteCarousel({
+  payload,
+  partial,
+}: {
+  payload: ProductsPayload;
+  partial?: boolean;
+}) {
+  const layout = payload.layout ?? "carousel";
+  const items = payload.items ?? [];
+
+  // A right-edge fade shows whenever more cards sit off-screen.
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [moreRight, setMoreRight] = useState(false);
+  const updateFade = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    setMoreRight(el.scrollWidth - el.clientWidth - el.scrollLeft > 12);
+  }, []);
+  useEffect(() => {
+    // Re-measure whenever the row's content changes (streaming adds cards).
+    void items.length;
+    void partial;
+    updateFade();
+    window.addEventListener("resize", updateFade);
+    return () => window.removeEventListener("resize", updateFade);
+  }, [items.length, partial, updateFade]);
+
+  return (
+    <section className="tg-card ac-reveal p-5">
+      {payload.title ? (
+        <h3 className="mb-3 text-[17px] font-semibold tracking-[-0.01em] text-(--ink)">
+          {payload.title}
+        </h3>
+      ) : null}
+      <div className="relative">
+        <div
+          ref={scrollerRef}
+          onScroll={updateFade}
+          className={
+            layout === "grid"
+              ? "grid gap-3 sm:grid-cols-2"
+              : layout === "list"
+                ? "flex flex-col gap-3"
+                : "flex gap-3 overflow-x-auto pb-1"
+          }
+        >
+          {items.map(({ product, reason }) => (
+            <Card
+              key={product.product_id}
+              product={product}
+              reason={reason}
+              className={layout === "carousel" ? "w-64 shrink-0" : ""}
+            />
+          ))}
+          {partial ? <SkeletonCard horizontal={layout !== "carousel"} /> : null}
+        </div>
+        {layout === "carousel" && moreRight ? (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 flex w-14 items-center justify-end pb-1 text-[22px] text-(--ink-faint)"
+            style={{ background: "linear-gradient(90deg, transparent, var(--card) 80%)" }}
+          >
+            ›
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}

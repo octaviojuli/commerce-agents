@@ -125,6 +125,28 @@ VERTICAL_TURNS: dict[str, list[dict[str, Any]]] = {
             "expect_events": {"cart_update", "turn_complete"},
         },
     ],
+    "tour": [
+        {
+            "message": (
+                "10月中旬有四位客人计划去新疆伊犁，8–10天，两个大人两个小孩，孩子5岁和9岁，"
+                "不要购物店。"
+            ),
+            "expect_tools": {"search_products"},
+            "expect_events": {"ui", "turn_complete"},
+            "forbid_tools": {"add_to_cart"},
+        },
+        {
+            "message": "那条 10 天的喀拉峻深度线路，10 月 15 号前后有什么团？",
+            "expect_tools": {"get_product_details"},
+            "expect_events": {"ui", "turn_complete"},
+            "forbid_tools": {"add_to_cart"},
+        },
+        {
+            "message": "就 10/14 那个团，帮我把 4 个位置锁上。",
+            "expect_tools": {"add_to_cart"},
+            "expect_events": {"cart_update", "turn_complete"},
+        },
+    ],
 }
 
 VERTICAL_APPS = {
@@ -132,6 +154,7 @@ VERTICAL_APPS = {
     "travel": "travel.api.main",
     "telecom": "telecom.api.main",
     "entertainment": "entertainment.api.main",
+    "tour": "tour.api.main",
 }
 
 # Merchant arcs, one or more per vertical. A ``portal_approve_kind`` step approves the
@@ -514,8 +537,28 @@ async def entertainment_checks(
     return failures
 
 
+async def tour_checks(
+    client: httpx.AsyncClient, mine: Headers, app_module: Any | None
+) -> list[str]:
+    """After the advisor arc: the cart carries the one 占位 the last turn took, counting down.
+    The arc names a 团期 that seats the party, so exactly one live hold is the only pass."""
+    del app_module
+    cart = (await client.get("/api/cart", headers=mine)).json()
+    holds = cart.get("holds", [])
+    if len(holds) != 1:
+        return [f"the conversation left {len(holds)} holds, expected exactly one"]
+    hold = holds[0]
+    print(f"    hold {hold['hold_id']}: {hold['product_id']}, {hold['seconds_remaining']}s left")
+    if hold["seconds_remaining"] <= 0:
+        return [f"the hold is already past its TTL: {hold['seconds_remaining']}s"]
+    return []
+
+
 # Deterministic checks a vertical runs after its storefront conversation.
-POST_CHECKS: dict[str, PostCheck] = {"entertainment": entertainment_checks}
+POST_CHECKS: dict[str, PostCheck] = {
+    "entertainment": entertainment_checks,
+    "tour": tour_checks,
+}
 
 
 async def run_turn(

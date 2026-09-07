@@ -1,7 +1,9 @@
 # examples
 
-Four vertical demos, each running both agents over one catalog: `retail/` (ACME),
-`travel/` (ACME Travel), `telecom/` (ACME Mobile), and `entertainment/` (ACME Tickets).
+Five vertical demos, four running both agents over one catalog and `tour/` the shopping
+agent alone: `retail/` (ACME),
+`travel/` (ACME Travel), `telecom/` (ACME Mobile), `entertainment/` (ACME Tickets), and
+`tour/` (ACME 旅行社, a storefront only).
 `python scripts/run_demo.py <vertical>` starts one; each vertical's README lists its ports,
 prompts to try on both surfaces, and what it adds to the libraries.
 
@@ -9,21 +11,25 @@ prompts to try on both surfaces, and what it adds to the libraries.
 
 | Path | Contents |
 |---|---|
-| `demo_common/` | Host code the four APIs share: app and middleware (`host.py`), session store (`sessions.py`), storefront routes (`storefront.py`), merchant router (`merchant.py`), memory routes and fixture seeder (`memory.py`), mock-backend helpers (`*_fixtures.py`) |
-| `web-shared/` | The npm package the eight web apps import: the API client, the session and turn hooks, the event types (`protocol.ts` mirrors `commerce_common/streaming.py`), the transcript and inspector components, shared primitives and icons, and the two app frames (`storefront/`, `portal/`) |
+| `demo_common/` | Host code the five APIs share: app and middleware (`host.py`), session store (`sessions.py`), storefront routes (`storefront.py`), merchant router (`merchant.py`), memory routes and fixture seeder (`memory.py`), mock-backend helpers (`*_fixtures.py`) |
+| `web-shared/` | The npm package the nine web apps import: the API client, the session and turn hooks, the event types (`protocol.ts` mirrors `commerce_common/streaming.py`), the transcript and inspector components, the storefront chrome's strings (`copy.ts`), shared primitives and icons, and the two app frames (`storefront/`, `portal/`) |
 | `package.json` | The npm workspace: `web-shared` plus every `*/storefront-web` and `*/merchant-web` (`npm ci` installs all of them) |
-| `<vertical>/api/` | One FastAPI process: the two mock backends, the two agent configs (`agent_config.py`), the vertical's own routes and presentation extensions, and the merchant router mounted under `/api/merchant` |
+| `<vertical>/api/` | One FastAPI process: the two mock backends, the two agent configs (`agent_config.py`), the vertical's own routes and presentation extensions, and the merchant router mounted under `/api/merchant` (tour ships no portal) |
 | `<vertical>/data/` | The fixtures both backends load, listed in the vertical's README |
 | `<vertical>/storefront-web/`, `<vertical>/merchant-web/` | The Next.js apps: this vertical's cards, views, and tokens over `web-shared` |
 
 Sessions, carts, and staged changes live in one process's memory in `demo_common`, so the
 examples run one worker.
 
-`web-shared` holds the session, streaming, and rendering plumbing once. Each app holds its
-own components: `components/generative/` has one entry per presentation tool, typed by the
-app's `lib/types.ts`, so the four frontends are four builds of the same payload schemas
-(`shopping_agent/tools/presentation.py`, `merchant_agent/tools/presentation.py`); a
-deployment's frontend is a fifth.
+`web-shared` holds the session, streaming, and rendering plumbing once. The strings its
+storefront chrome renders — the shell, the transcript, the inspector — are `copy.ts`'s
+`DEFAULT_COPY`; a storefront in another language passes a `Partial<Copy>` to `StoreShell`,
+the one place that takes it, and a storefront that passes nothing renders the English. The
+merchant portal's chrome and the orders view are English only and keep their own labels.
+Each app holds its own components: `components/generative/` has one entry per presentation
+tool, typed by the app's `lib/types.ts`, so the four frontends are four builds of the same
+payload schemas (`shopping_agent/tools/presentation.py`,
+`merchant_agent/tools/presentation.py`); a deployment's frontend is a fifth.
 
 ## Showcase pages
 
@@ -48,6 +54,9 @@ only the session id, in `X-Session-Id`, and the routes read the principal from i
 | `MERCHANT_REQUIRE_HOST_APPROVAL` | `0` lets an approval typed in chat apply a change; `1` requires the preview card's button | `demo_common/host.py` | `1` |
 | `MERCHANT_ANALYSIS_CODE_EXECUTION` | `1` mounts the hosted code execution tool in the retail analysis delegate | `retail/api/agent_config.py` | `0` |
 | `MERCHANT_ANALYSIS_MODEL` | The retail analysis delegate's model | `retail/api/agent_config.py` | unset (main model) |
+| `TOUR_MODEL`, `TOUR_MEMORY_MODEL` | The tour agent's turn and memory-extraction model ids in the provider's own names; with `ANTHROPIC_BASE_URL` they run the vertical on an Anthropic-compatible endpoint (DeepSeek, Kimi) | `tour/api/agent_config.py` | repo defaults |
+| `TOUR_ERP_BASE_URL`, `TOUR_ERP_TOKEN` | A real 旅行社 ERP for the tour vertical; set, `main.py` builds `HttpErpClient` with the bearer, unset it uses `MockErpClient` over `tour/data/` | `tour/api/main.py` | unset (mock) |
+| `TOUR_SHARE_BASE_URL` | The origin a `present_shortlist` share link points at | `tour/api/tour_backend.py` | `http://localhost:3004` |
 | `NEXT_PUBLIC_API_URL` | Where a web app sends its requests; `run_demo.py` sets it to the port the API came up on | `<app>/lib/api.ts` | `http://localhost:<API_PORT>` |
 
 The API reads its variables at startup; a web app takes the `NEXT_PUBLIC_` values when it

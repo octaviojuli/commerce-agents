@@ -3,7 +3,7 @@
 Two commerce agents built on Claude: a **shopping agent** a business embeds in its app for
 customers, and a **merchant agent** its staff use to run the back office. Each is defined
 once (prompt, skills, tool contracts, gates) and runs on the Messages API, the Claude Agent
-SDK, and Managed Agents; four runnable verticals show both over the same libraries.
+SDK, and Managed Agents; five runnable verticals show both over the same libraries.
 
 > [!NOTE]
 > Every company, brand, product, and person here is fictional; the only company is ACME.
@@ -26,7 +26,8 @@ python scripts/run_demo.py retail     # API :8000 + storefront :3000
 
 `--merchant` starts the portal instead of the storefront and `--all` starts both. The
 verticals are `retail` (:3000, portal :3100), `travel` (:3001, :3101), `telecom` (:3002,
-:3102), and `entertainment` (:3003, :3103); each README lists prompts to try on both surfaces.
+:3102), `entertainment` (:3003, :3103), and `tour` (:3004, storefront only); each README lists
+prompts to try on both surfaces.
 
 ## Quick start: build your own
 
@@ -72,7 +73,7 @@ its analytics, catalog, inventory, pricing, and campaign systems.
 | [`merchant-agent/runtime-messages-api/`](merchant-agent/runtime-messages-api/) | `MerchantAgent` and the analysis delegate on the Messages API | `merchant-agent-runtime`, `merchant_agent_runtime` |
 | [`merchant-agent/runtime-agent-sdk/`](merchant-agent/runtime-agent-sdk/) | The merchant agent on the Agent SDK, with an approving console | `merchant-agent-sdk`, `merchant_agent_sdk` |
 | [`merchant-agent/managed-agents/`](merchant-agent/managed-agents/) | Manifest, merchant MCP server, scheduled digest for Managed Agents | — |
-| [`examples/`](examples/) | Four verticals, shared host code (`demo_common/`), shared web code (`web-shared/`) | — |
+| [`examples/`](examples/) | Five verticals, shared host code (`demo_common/`), shared web code (`web-shared/`) | — |
 | [`plugins/commerce-builder/`](plugins/commerce-builder/) | The Claude Code plugin | — |
 | [`docs/`](docs/) | `safety.md` (enforced rules), `backends.md` (mapping your systems), `deployment.md` (other platforms) | — |
 | [`tests/`](tests/) | Cross-package suites; each package also has its own `tests/` | — |
@@ -127,6 +128,7 @@ the MCP servers bind to loopback.
 | [`examples/travel/`](examples/travel/) ACME Travel | Date-bound inventory and a `present_itinerary` extension | Occupancy calendar and date-window rate moves |
 | [`examples/telecom/`](examples/telecom/) ACME Mobile | Account context, plan matrix, server-authored fee disclosures | Plan mix, price moves that state the lines affected, protected regulated fees |
 | [`examples/entertainment/`](examples/entertainment/) ACME Tickets | Timed holds, waitlists, transfers, venue map, all-in fee disclosures | Event pacing, hold releases that add real capacity, fee-preserving price moves |
+| [`examples/tour/`](examples/tour/) ACME 旅行社 | Advisor-side group-tour sales in Chinese: routes as families, dated departures as variants, ERP seat holds with a countdown, a `present_shortlist` share link, an `ErpClient` seam with mock and HTTP clients | — |
 
 Each example's README has a `Try` section: the turns `scripts/smoke_chat.py` runs, and single
 prompts with what a good answer does.

@@ -102,9 +102,15 @@ export interface AssistantChatItem {
   tools: string[];
   /**
    * Status line for the call in flight; cleared when prose or a card lands, or when the
-   * tool a progress line names returns.
+   * tool a progress line names returns. `turn.ts` writes the English `DEFAULT_COPY` line here,
+   * for a vertical that renders the line itself.
    */
   activity?: string;
+  /**
+   * The call `activity` stands for, when the line is stock copy and not the model's own words.
+   * `ActivityLine` says it again in the chrome's copy, which a vertical may have localized.
+   */
+  activityCall?: { tool: string; input: Record<string, unknown> };
 }
 
 export type ChatItem = UserChatItem | AssistantChatItem;
