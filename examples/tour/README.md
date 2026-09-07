@@ -51,6 +51,16 @@ window that still seats four, and the reply carries the hold counting down from
 thirty minutes. A 团期 that can no longer seat the party is refused instead, and the
 refusal names the sibling departures that can take it.
 
+Single prompts worth trying after those turns:
+
+- 把 10/14 和 10/21 两个团做成清单发给客人 — `present_shortlist`: a card with both 团期,
+  their 2大2小 totals, and a 客人链接 the advisor copies; the link's token never reaches
+  the model.
+- 这个团的退改政策怎么说 — `search_policies` over `data/policies.json`, rendered as a
+  policy card the advisor reads out rather than paraphrases.
+- 帮我把占位改成 3 个人 — `update_cart_item`: the hold is released and re-taken for the
+  smaller party; a party that no longer fits leaves the original hold standing.
+
 ## What is specific to this example
 
 - `api/erp_client.py`: the `ErpClient` Protocol — six calls: `search_routes`,
@@ -112,6 +122,24 @@ refusal names the sibling departures that can take it.
   left of each TTL, and the ERP's expiry notices are drained before a turn and handed to the
   agent as app events on it.
 
+`storefront-web/` is the advisor's workbench, derived from travel's storefront and Chinese
+throughout:
+
+- `components/generative/RouteCarousel.tsx` renders routes with the trade-offs an advisor
+  reads out (天数, 住宿标准, 车型, 购物店, 起价, 余位) and a relaxed route's `mismatch` note;
+  the same component renders 团期 cards with 出发日期, 余位/总位, 成团状态, 报名截止, and the
+  party's total.
+- `components/HoldBar.tsx` counts down every 占位 the cart payload carries and flips to
+  已过期 at zero; `components/HoldPanel.tsx` is the bag, with a party stepper in place of
+  the shared quantity controls.
+- `components/generative/ShortlistCard.tsx`, `PolicyCard.tsx`, and `QuoteSheet.tsx` render
+  `present_shortlist`, `present_guide`, and `checkout`; `ComparisonSpread`, `PlanChecklist`,
+  and `BookingStatusCard` are travel's, re-labelled.
+- `lib/copy.ts` is the Chinese chrome laid over `web-shared`'s `DEFAULT_COPY`, passed to
+  `StoreShell`. `app/showcase` renders every card from `lib/showcase-fixtures.ts`, a
+  snapshot of one advisor search that `api/tests/test_showcase.py` holds to the live
+  records.
+
 The filter keys the model writes into `filters.attributes` on every search:
 
 | Key | Value |
@@ -163,3 +191,10 @@ the same rules.
 
 Sessions and identity are the shared host code in [`../demo_common/`](../demo_common/): a
 session id stands for one advisor.
+
+## Diagrams
+
+[`docs/architecture.html`](docs/architecture.html) is a single page with the system
+architecture, the two-layer route-then-departure sequence, the hold / sold-out /
+share-back sequence, the ERP-record to `Product` mapping, the hold state machine, and the
+`ErpClient`-to-HTTP contract table. Open it in a browser; it has no build step.
