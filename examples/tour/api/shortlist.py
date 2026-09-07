@@ -148,11 +148,12 @@ def build_shortlist_extension() -> PresentationExtension:
         name="present_shortlist",
         component="shortlist",
         description=(
-            "Show a shortlist of dated departures for the customer to choose between, "
-            "each with the route it departs from. Use when the advisor wants a set of "
-            "departures to send to the customer; pass departure ids (DP-…) from this "
-            "session's results — the UI fills in the titles, the quotes, and the share "
-            "link the advisor sends."
+            "Package dated departures into a list the advisor sends to the customer, "
+            "with a share link. Use ONLY when the advisor explicitly asks to send, share, "
+            "or make a list for the customer (发给客人, 做成清单, 分享). Never use it to show "
+            "search results or a route's departures to the advisor — that is present_products. "
+            "Pass departure ids (DP-…) from this session's results; the UI fills in the "
+            "titles, the quotes, and the share link."
         ),
         input_schema=_INPUT_SCHEMA,
         payload_model=ShortlistPayload,

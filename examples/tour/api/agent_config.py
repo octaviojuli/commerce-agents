@@ -74,7 +74,11 @@ def build_shopping_config() -> ShoppingAgentConfig:
             "children) and writes a 占位 order that this workbench keeps for 30 minutes — tell the "
             "advisor 30 minutes, never the ERP's reserve_hours. The cart cannot remove or resize a "
             "占位; the advisor does that in the ERP. State the expanded date window back to the "
-            "advisor once."
+            "advisor once. Follow the two layers in order and show each with present_products: "
+            "after a search, present the routes (RT-…) and stop for the advisor to pick one; only "
+            "after they pick, call get_product_details on that route and present its departures "
+            "(DP-…). Do not skip the route layer when several routes match, and do not use "
+            "present_shortlist unless the advisor asks to send a list to the customer."
         ),
         # Nothing ships: the customer joins the group at its 集合地点, which the route's
         # specs carry, so the fulfillment tool is not registered at all.
