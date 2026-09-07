@@ -7,9 +7,10 @@
  * the window 2026-10-11 到 2026-10-20, 8 到 10 天, 2 大 2 小 (儿童 5 岁与 9 岁), 不含购物店; the
  * three 团期 are variants `get_product_details("RT-1022")` returned in that same session. The
  * keys are the ERP's own (`docs/erp-contract.md`): a 线路 carries its 线路编号, 天数, 出发城市 and
- * the tags and features its editors wrote, and a 团期 carries its 团号, 余位, 成团人数 and the
- * price this party was quoted at. A route's 起价 is the cheapest in that window and a 团期's
- * 报价 is made for that party, so both are a snapshot of that one read.
+ * the tags and features its editors wrote, and a 团期 carries its 团号, 余位, 成团人数, the 同业价
+ * this party was quoted at (`adult_price`, `party_quote_total`) and the 市场价 beside it
+ * (`market_adult_price`), which is the customer's own price. A route's 起价 is the cheapest 同业价
+ * in that window and a 团期's 报价 is made for that party, so both are a snapshot of that one read.
  * `api/tests/test_showcase.py` replays it and holds these literals to it, on a backend pinned to
  * `data/routes.json`'s `dates_anchored_to` (2026-09-06): `data/departures.json` shifts its dates
  * by whole weeks from that day, while `periodId`, and so the `DP-` id, stays put.
@@ -118,9 +119,11 @@ const DEPARTURE_1007: Product = {
     child_price: "4980",
     elder_price: "7880",
     single_room_diff: "1900",
+    market_adult_price: "7880",
+    market_child_price: "4980",
     party_quote_total: "25720",
     quote_party: "2大2小",
-    quote_source: "list"
+    quote_source: "customer"
   },
   in_stock: true,
   short_description: "余位 4/6，已成团，2大2小合计 25720 元",
@@ -150,9 +153,11 @@ const DEPARTURE_1014: Product = {
     child_price: "4980",
     elder_price: "7880",
     single_room_diff: "1900",
+    market_adult_price: "7880",
+    market_child_price: "4980",
     party_quote_total: "25720",
     quote_party: "2大2小",
-    quote_source: "list"
+    quote_source: "customer"
   },
   in_stock: true,
   short_description: "余位 5/6，待成团，2大2小合计 25720 元",
@@ -182,9 +187,11 @@ const DEPARTURE_1021: Product = {
     child_price: "4980",
     elder_price: "7580",
     single_room_diff: "1900",
+    market_adult_price: "7580",
+    market_child_price: "4980",
     party_quote_total: "25120",
     quote_party: "2大2小",
-    quote_source: "list"
+    quote_source: "customer"
   },
   in_stock: true,
   short_description: "余位 5/6，待成团，2大2小合计 25120 元",

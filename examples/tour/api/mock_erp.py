@@ -7,8 +7,9 @@ written for, and an in-memory order book. Departure dates move forward by whole 
 ``dates_anchored_to`` and each ``periodCode`` is rebuilt from the shifted date, so a demo
 booted any week still has departures ahead of today while ``periodId`` never moves. The rules
 here are the ERP's own and no more: a party over the seats left becomes a 候补 rather than a
-refusal, an order is the only write, and nothing expires — the 30-minute countdown the advisor
-sees belongs to the backend above this one."""
+refusal, a quote and an order are refused unless they name the 团期's own department, an order
+is the only write, and nothing expires — the 30-minute countdown the advisor sees belongs to
+the backend above this one."""
 
 from __future__ import annotations
 
@@ -119,6 +120,7 @@ def _departure_record(row: dict[str, Any], *, detail: bool) -> erp.DepartureReco
         available_seats=row["availableSeats"],
         reserve_hours=row["reserveHours"],
         depart_city=row["departCityName"],
+        company_id=row["companyId"],
         reserve_count=row["reserveCount"] if detail else None,
         placeholder_count=0 if detail else None,
         waitlist_count=row["waitlistCount"] if detail else None,
@@ -202,10 +204,13 @@ class MockErpClient:
             for r in hit
         ]
 
-    async def quote(self, period_id: int, customer_id: int) -> erp.Quote:
-        """One price for every 同行 customer here: the list price the departure carries."""
+    async def quote(self, period_id: int, customer_id: int, company_id: int) -> erp.Quote:
+        """The 同业价 for this customer, which is the 市场价 the departure carries here: the
+        fixtures hold one price per 团期. The department is checked as the real ERP checks it,
+        because a quote is a write-side call and answers only inside the 团期's own."""
         row = self._require_departure(period_id)
         self._require_customer(customer_id)
+        self._require_company(row, company_id)
         return erp.Quote(price=_price(row["priceInfo"]), price_type=PRICE_TYPE, is_external=False)
 
     async def create_order(self, req: erp.OrderRequest) -> erp.OrderResult:
@@ -213,6 +218,7 @@ class MockErpClient:
         as a 候补 order and takes no seats; anything else is a 预留 that takes them."""
         row = self._require_departure(req.period_id)
         customer = self._require_customer(req.customer_id)
+        self._require_company(row, req.company_id)
         party = req.adults + req.children + req.elders
         if party < 1:
             raise erp.ErpRefused("下单人数至少 1 人，请填写成人、儿童或老人人数。")
@@ -298,3 +304,9 @@ class MockErpClient:
         if row is None:
             raise erp.ErpNotFound(f"找不到该客户：{customer_id}")
         return row
+
+    def _require_company(self, row: dict[str, Any], company_id: int) -> None:
+        """A write made in the wrong department. The real ERP answers a bare 404 to it; the
+        refusal here names what is wrong, since nothing else in the fixtures can."""
+        if company_id != row["companyId"]:
+            raise erp.ErpRefused(f"部门不匹配：该团期属于部门 {row['companyId']}。")

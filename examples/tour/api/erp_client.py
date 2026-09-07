@@ -8,10 +8,12 @@ are frozen dataclasses of plain types, so a real ERP maps onto them without impo
 anything from this example. Every error message is advisor-facing Chinese, because the
 executor relays it into the conversation unchanged.
 
-Two shapes of the ERP show through the seam and cannot be hidden. Departures are listed by
+Three shapes of the ERP show through the seam and cannot be hidden. Departures are listed by
 route *name*, because the ERP's period list has no ``routeId`` filter, and the caller keeps
-the rows whose ``route_id`` matches. And an order is the only write there is: the ERP has
-no cancel, release, or amend call, so nothing here can take an order back."""
+the rows whose ``route_id`` matches. An order is the only write there is: the ERP has no
+cancel, release, or amend call, so nothing here can take an order back. And a department
+(``company_id``) rides on every departure, because the account reads across all the
+departments it is authorised for while a quote and an order are written in one of them."""
 
 from __future__ import annotations
 
@@ -95,9 +97,10 @@ class RouteRecord:
 class DepartureRecord:
     """One dated departure. ``confirm_count`` against ``min_group_size`` is what makes a
     团期 成团 or 待成团, and ``available_seats`` is what a party has to fit into.
-    ``reserve_hours`` is the ERP's own hold window on a new 预留 order. The last four
-    fields come only from the departure detail call: the list call does not carry them, so
-    ``price`` is ``None`` on a listed row and the list price on a fetched one."""
+    ``reserve_hours`` is the ERP's own hold window on a new 预留 order. ``company_id`` is the
+    department the 团期 belongs to, and both writes on it are made in that department. The
+    last four fields come only from the departure detail call: the list call does not carry
+    them, so ``price`` is ``None`` on a listed row and the 市场价 on a fetched one."""
 
     period_id: int
     period_code: str
@@ -112,6 +115,7 @@ class DepartureRecord:
     available_seats: int
     reserve_hours: int
     depart_city: str
+    company_id: int
     reserve_count: int | None = None
     placeholder_count: int | None = None
     waitlist_count: int | None = None
@@ -131,8 +135,10 @@ class CustomerRecord:
 
 @dataclass(frozen=True)
 class Quote:
-    """What one customer pays for one departure. ``price_type`` is the ERP's own label
-    (同行价, 直客价); ``is_external`` marks an order placed outside the agency's own book."""
+    """What one customer pays for one departure: the 同业价, which is the advisor's
+    settlement price and what an order is booked at, not the 市场价 the departure lists.
+    ``price_type`` is the ERP's own label (同行价, 直客价); ``is_external`` marks an order
+    placed outside the agency's own book."""
 
     price: PriceInfo
     price_type: str
@@ -141,12 +147,15 @@ class Quote:
 
 @dataclass(frozen=True)
 class OrderRequest:
-    """The order to write. ``store_name`` is the shop the 同行 customer books through, which
-    the ERP requires for a 同行 order; ``contact_name`` and ``contact_mobile`` are the
-    advisor's own, because the advisor is the ERP salesperson."""
+    """The order to write. ``company_id`` is the departure's own department: the write is
+    made in it, and a client that holds one token per department switches to it first.
+    ``store_name`` is the shop the 同行 customer books through, which the ERP requires for a
+    同行 order; ``contact_name`` and ``contact_mobile`` are the advisor's own, because the
+    advisor is the ERP salesperson."""
 
     period_id: int
     customer_id: int
+    company_id: int
     adults: int
     children: int
     elders: int
@@ -201,9 +210,10 @@ class OrderRecord:
 
 
 class ErpClient(Protocol):
-    """What the tour backend needs from a 旅行社 ERP. Reads run as the logged-in
-    salesperson and see what that salesperson's department sees; no call takes an advisor
-    id, because the credentials already name one."""
+    """What the tour backend needs from a 旅行社 ERP. Reads run as the logged-in salesperson
+    and span every department that account is authorised for; the two writes are made in one
+    department, the departure's own ``company_id``, and a client bound to another department
+    is refused. No call takes an advisor id, because the credentials already name one."""
 
     async def search_routes(self, q: RouteQuery) -> list[RouteRecord]:
         """Route families matching the query's fuzzy name and date window."""
@@ -222,28 +232,34 @@ class ErpClient(Protocol):
         ...
 
     async def get_departure(self, period_id: int) -> DepartureRecord | None:
-        """One departure with its seat counts and list price, or ``None`` when there is no
-        such id, or none this salesperson can see."""
+        """One departure with its seat counts, its department, and its 市场价 — the price the
+        customer-facing share page shows — or ``None`` when there is no such id, or none this
+        salesperson can see."""
         ...
 
     async def search_customers(self, keyword: str) -> list[CustomerRecord]:
         """Customers whose name or code matches, best match first."""
         ...
 
-    async def quote(self, period_id: int, customer_id: int) -> Quote:
-        """What this customer pays for this departure, which need not be the list price."""
+    async def quote(self, period_id: int, customer_id: int, company_id: int) -> Quote:
+        """The 同业价 this customer pays for this departure: the advisor's settlement price,
+        and what an order is booked at, where the departure's own ``price`` is the 市场价.
+        ``company_id`` is the departure's department, which this write-side call is made in:
+        a client bound to another department is refused."""
         ...
 
     async def create_order(self, req: OrderRequest) -> OrderResult:
-        """Write the order. This is the only write the ERP offers: there is no cancel,
-        release, or amend call, so an order that lands stands until the advisor changes it
-        inside the ERP. There is no idempotency key either, so a caller that times out
-        lists orders before deciding anything, and never retries blindly."""
+        """Write the order, in the department ``req.company_id`` names. This is the only
+        write the ERP offers: there is no cancel, release, or amend call, so an order that
+        lands stands until the advisor changes it inside the ERP. There is no idempotency key
+        either, so a caller that times out lists orders before deciding anything, and never
+        retries blindly."""
         ...
 
     async def list_orders(self, statuses: tuple[int, ...] = ()) -> list[OrderRecord]:
-        """The salesperson's orders, newest first, filtered to ``ORDER_STATUS`` keys when
-        any are named."""
+        """The salesperson's orders in the department they are logged in to, newest first,
+        filtered to ``ORDER_STATUS`` keys when any are named. An order written in another
+        department is not listed."""
         ...
 
     async def get_order(self, order_id: int) -> OrderRecord | None:

@@ -41,15 +41,13 @@ load_demo_env(DATA_DIR.parent)
 
 def build_erp() -> ErpClient:
     """A real 旅行社 ERP when TOUR_ERP_BASE_URL names one, the fixtures in ``data/``
-    otherwise. The login is the advisor's own ERP account: mobile, password and the
-    department (companyId) it belongs to. None of the three ever reaches the model."""
+    otherwise. The login is the advisor's own ERP account, the mobile and the password alone:
+    the ERP picks the department and the client switches into a 团期's own for a write.
+    Neither credential ever reaches the model."""
     base_url = os.environ.get("TOUR_ERP_BASE_URL", "").strip()
     if base_url:
         return HttpErpClient(
-            base_url,
-            os.environ["TOUR_ERP_MOBILE"],
-            os.environ["TOUR_ERP_PASSWORD"],
-            int(os.environ["TOUR_ERP_COMPANY_ID"]),
+            base_url, os.environ["TOUR_ERP_MOBILE"], os.environ["TOUR_ERP_PASSWORD"]
         )
     return MockErpClient()
 

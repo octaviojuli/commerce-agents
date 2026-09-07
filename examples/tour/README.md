@@ -5,7 +5,10 @@ sells 散拼团 to the customer sitting in front of them: the advisor states the
 Chinese, the agent searches 线路 (routes), opens a 线路's dated 团期 (departures) priced for
 that party, and writes a 预留 order in the agency's ERP while the customer decides. The
 advisor is the user, not the traveler, and the advisor is also the ERP's salesperson: the
-deployment logs in with their account, so every read sees what that salesperson sees.
+deployment logs in with their account, so the reads span every department that account is
+authorised for and a quote or an order is written in the 团期's own. A 团期 has two prices —
+the 市场价 it lists, which the customer's share page shows, and the 同业价 the ERP quotes this
+customer — and what the advisor is quoted, and what an order is booked at, is the 同业价.
 There is no merchant portal, and nothing is paid for. An order is the only write the ERP
 has: it offers no cancel, release, or amend call, so a written order stands until the
 advisor changes it in the ERP's own backstage.
@@ -42,7 +45,6 @@ The same file carries the ERP block, which decides what is behind the seam:
 | `TOUR_ERP_BASE_URL` | the ERP's `/aicli` root, HTTPS in production |
 | `TOUR_ERP_MOBILE` | the advisor's ERP login, a mainland mobile number; also the contact written on every order |
 | `TOUR_ERP_PASSWORD` | its password; ten failed logins lock the account for fifteen minutes |
-| `TOUR_ERP_COMPANY_ID` | the department (`companyId`) to log in to; required in practice |
 | `TOUR_ERP_CUSTOMER_ID` | the 同行 customer every quote and order is made for |
 | `TOUR_ERP_ALLOW_PAST` | `1` lists departures that already left, for a beta with no future ones |
 
@@ -95,37 +97,48 @@ Single prompts worth trying after those turns:
   审批中, 候补. Every `ErpError` message is advisor-facing Chinese, because the executor
   relays it into the conversation unchanged.
 - `api/http_erp.py`: `HttpErpClient`, the same Protocol over the agency's own HTTP API
-  (`docs/erp-contract.md`). It logs in once per department — the mobile, the password and
-  the `companyId`, which the ERP needs in practice — caches the bearer for its eight hours,
-  and buys exactly one fresh login on a 401 before giving up. Field mapping and error
-  mapping and nothing else: no seat arithmetic, no ranking, no status derivation. The ERP's
-  status is the exception (`400 → ErpRefused`, `401/403 → ErpAuth`, `404 → ErpNotFound`,
-  `429 → ErpThrottled`, `5xx`, a transport failure or an unreadable body `→ ErpUnavailable`)
-  and its Chinese `message` is kept as written. A 404 with no JSON body at all is still a
-  missing record: the beta answers a bare nginx page for a departure the catalog has no
-  price row for, and that reads as not-found rather than as an outage.
+  (`docs/erp-contract.md`). It logs in with the mobile and the password alone — the ERP takes
+  no department and puts the account in its first authorised one — and caches that bearer for
+  its eight hours. The reads run on it and span every department; `quote` and `create_order`
+  are department-bound, so the client buys a `switch-company` token for the 团期's department
+  once and keeps it, and a 401 on either buys exactly one fresh login or switch before giving
+  up. `list_orders` and `get_order` run on the login token, so an order written in another
+  department is not listed — a known gap. Field mapping and error mapping and nothing else:
+  no seat arithmetic, no ranking, no status derivation. The ERP's status is the exception
+  (`400 → ErpRefused`, `401/403 → ErpAuth`, `404 → ErpNotFound`, `429 → ErpThrottled`, `5xx`,
+  a transport failure or an unreadable body `→ ErpUnavailable`) and its Chinese `message` is
+  kept as written. A 404 with no JSON body at all is still a missing record: the beta answers
+  a bare nginx page for a departure the catalog has no price row for, and for a write made in
+  the wrong department, and that reads as not-found rather than as an outage.
 - `api/mock_erp.py`: `MockErpClient`, that Protocol over `data/`. 线路 are ranked by how
   much of the query's Chinese text (character 2-grams, plus a small synonym set) the name,
   the tags and the features hold, then by price. The orders it writes live in memory: the
   ERP's own checks first (at least one head, a 2–50 character Chinese contact name, an
   eleven-digit mobile), then the seats — a party larger than what is left becomes a 候补
-  order that takes no seats, anything else a 预留 that takes them. Nothing expires here,
-  because the ERP's own 预留 runs on the departure's `reserveHours`.
+  order that takes no seats, anything else a 预留 that takes them. A quote or an order that
+  names any department but the 团期's own is refused with 部门不匹配, which is the guard the
+  real ERP enforces with a bare 404. Nothing expires here, because the ERP's own 预留 runs on
+  the departure's `reserveHours`.
 - `api/tour_backend.py`: `TourBackend`, the `StorefrontBackend`. A 线路 is a family and its
   团期 are that family's variants, so search stays a shortlist of lines and the seats and
   quotes come from one details call. The advisor's destination is matched against 线路 names
   and tags, because the ERP catalog has no destination field, and the day count, 纯玩 and
-  the hotel standard are filtered on this side for the same reason. A family's price is the
-  cheapest list price among the departures in the searched window, and the ERP prices one
-  departure per call, so a listing takes at most six of them, nearest the middle of the
-  window first, and falls back to the 线路's own 起价. A variant's `group_status` is derived
-  from the ERP's two counts — `confirm_count` against `min_group_size` — and reads 候补 once
-  the seats are gone and someone is already waiting; `quote_source` says whether the price on
-  it is this customer's (`customer`), the list price (`list`), or unknown (`none`). The
+  the hotel standard are filtered on this side for the same reason. A quoted departure costs
+  two ERP calls — its detail for the 市场价 and the seat counts, `order/price` in its own
+  department for the 同业价 — so a listing prices at most six of them and a route's details at
+  most twelve, nearest the middle of the window first and four at a time. A variant is priced
+  and totalled at the 同业价 and carries the 市场价 beside it as `market_adult_price` and
+  `market_child_price`, for the customer's share page; a family's price is the cheapest 同业价
+  among the departures the window priced, the cheapest 市场价 when none was quoted, and the
+  线路's own 起价 when neither is known. A variant's `group_status` is derived from the ERP's
+  two counts — `confirm_count` against `min_group_size` — and reads 候补 once the seats are
+  gone and someone is already waiting; `quote_source` says whether the numbers on it are the
+  同业价 (`customer`), the 市场价 while the 同业价 is unknown (`list`), or neither (`none`). The
   window and party the advisor last searched are kept per session: details price every
   departure for that party and state it back as `quote_party`, and `add_to_cart` splits the
-  quantity into 成人 and 儿童 the same way. `add_to_cart` refuses a 线路 id, because a price
-  and a seat only exist on a date.
+  quantity into 成人 and 儿童 the same way and writes the order in the departure's own
+  department, reading the departure first when this process has not seen it. `add_to_cart`
+  refuses a 线路 id, because a price and a seat only exist on a date.
 - A cart line is a 预留 order this conversation wrote, and its thirty-minute countdown is
   the backend's own clock, not the ERP's. `update_cart_item` and `remove_from_cart` raise
   `NotOffered` with the Chinese reason: the ERP has no cancel or amend call, so the advisor
@@ -146,7 +159,8 @@ Single prompts worth trying after those turns:
   shapes this catalog has, `RT-\d+` and `DP-\d+`; the cart capped at three lines of up to
   twenty people, because every line is a real order in the ERP; 旅行社 terms added to the
   policy and order lexicons; and `domain_search_notes` stating how a Chinese date phrase
-  becomes a window and that a booking takes a 团期 id.
+  becomes a window, that a booking takes a 团期 id, and that the advisor is quoted the 同业价
+  while the 市场价 belongs to the customer's share page.
 - `api/shortlist.py`: `present_shortlist`, the one presentation extension. The model names
   one to five 团期 it has seen and writes the title; the server joins each to its 线路, names
   in Chinese the ids it dropped for want of provenance, refuses the call when nothing is
@@ -185,13 +199,15 @@ The filter keys the model writes into `filters.attributes` on every search:
 ## Data
 
 - `data/routes.json`: eight 线路 over four destinations, in the ERP's own row shape — integer
-  `routeId`, `routeCode`, `routeName`, `days`, `departCityName`, `fromPrice`, and the `tags`
-  and `features` free text that is all the catalog carries. There is no destination, hotel,
+  `routeId`, `routeCode`, `routeName`, `days`, `departCityName`, `companyId` (2 for the 新疆
+  routes and 5 for the 青海 one, as the real account's departments run), `fromPrice`, and the
+  `tags` and `features` free text that is all the catalog carries. There is no destination, hotel,
   vehicle, shopping or child-age field, because the ERP has none.
 - `data/departures.json`: sixty-six 团期, six to twelve per 线路, in the ERP's period row
   shape — `periodId`, `periodCode`, `planGuests`, `availableSeats`, `minGroupSize`,
-  `confirmCount`, `reserveHours`, and the `priceInfo` block (`adultPrice`, `childPrice`,
-  `elderPrice`, `singleRoomDiff`) the ERP carries only on a departure's detail.
+  `confirmCount`, `reserveHours`, the route's own `companyId`, and the `priceInfo` block
+  (`adultPrice`, `childPrice`, `elderPrice`, `singleRoomDiff`) the ERP carries only on a
+  departure's detail, which is the 市场价.
 - `data/customers.json`: three 同行 customers in the ERP's customer row shape;
   `TOUR_ERP_CUSTOMER_ID` names the one this deployment books for.
 - `data/policies.json`: 退改政策, 儿童价规则, 成团规则, 定金规则 — what `search_policies`

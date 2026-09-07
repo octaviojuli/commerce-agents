@@ -18,6 +18,8 @@ WINDOW = (TODAY, date(2026, 11, 30))
 CUSTOMER = 4101
 CONTACT = ("柯海水", "13800138000")
 ROUTE = 1021  # 伊犁北疆环线 8 日纯玩小团, 8 seats a group
+COMPANY = 2  # the 新疆部 department every 新疆 route and its 团期 belong to
+OTHER_COMPANY = 5  # 青海部, where RT-1051 lives
 
 
 class FakeClock:
@@ -49,6 +51,7 @@ async def order(erp: MockErpClient, period_id: int, adults: int = 2, **overrides
     fields = {
         "period_id": period_id,
         "customer_id": CUSTOMER,
+        "company_id": COMPANY,
         "adults": adults,
         "children": 0,
         "elders": 0,
@@ -124,11 +127,26 @@ async def test_search_customers_finds_the_trade_customer_by_name(erp: MockErpCli
 
 async def test_quote_is_the_list_price_under_the_trade_label(erp: MockErpClient):
     row = await first_departure(erp)
-    quote = await erp.quote(row.period_id, CUSTOMER)
+    quote = await erp.quote(row.period_id, CUSTOMER, row.company_id)
     fetched = await erp.get_departure(row.period_id)
     assert quote.price_type == "同行价"
     assert quote.is_external is False
     assert fetched is not None and quote.price == fetched.price
+
+
+async def test_a_departure_carries_the_department_both_writes_are_made_in(erp: MockErpClient):
+    """Reads span the departments; a quote and an order are refused outside the 团期's own,
+    where the real ERP answers a bare 404."""
+    row = await first_departure(erp)
+    other = await first_departure(erp, route_id=1051)
+    assert (row.company_id, other.company_id) == (COMPANY, OTHER_COMPANY)
+    with pytest.raises(ErpRefused, match="部门不匹配"):
+        await erp.quote(row.period_id, CUSTOMER, OTHER_COMPANY)
+    with pytest.raises(ErpRefused, match="部门不匹配"):
+        await erp.create_order(await order(erp, row.period_id, company_id=OTHER_COMPANY))
+    # Nothing was written, and the seats it would have taken are still there.
+    assert await erp.list_orders() == []
+    assert (await erp.get_departure(row.period_id)).available_seats == row.available_seats
 
 
 async def test_an_order_takes_the_seats_and_reserves_them_for_the_erps_own_window(

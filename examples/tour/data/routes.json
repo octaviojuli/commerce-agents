@@ -1,5 +1,5 @@
 {
-  "_comment": "线路 (routes) of the ACME 旅行社 advisor demo, in the B2B ERP's own row shape (GET /route/list): ids are integers, search is over routeName, tags and features, and the ERP carries no destination, hotel, vehicle or shopping field, so those words live inside routeName and tags. departures.json carries the 团期 rows; its dates are shifted forward by whole weeks at load time relative to dates_anchored_to, so author every date as if dates_anchored_to were today.",
+  "_comment": "线路 (routes) of the ACME 旅行社 advisor demo, in the B2B ERP's own row shape (GET /route/list): ids are integers, search is over routeName, tags and features, and the ERP carries no destination, hotel, vehicle or shopping field, so those words live inside routeName and tags. companyId is the department the 线路 and its 团期 belong to. departures.json carries the 团期 rows; its dates are shifted forward by whole weeks at load time relative to dates_anchored_to, so author every date as if dates_anchored_to were today.",
   "dates_anchored_to": "2026-09-06",
   "store_name": "ACME 旅行社",
   "routes": [
@@ -9,6 +9,7 @@
       "routeName": "伊犁北疆环线 8 日纯玩小团",
       "days": 8,
       "departCityName": "乌鲁木齐",
+      "companyId": 2,
       "companyName": "ACME 旅行社 新疆部",
       "fromPrice": 5580.0,
       "tags": [
@@ -38,6 +39,7 @@
       "routeName": "伊犁·喀拉峻草原深度 10 日",
       "days": 10,
       "departCityName": "乌鲁木齐",
+      "companyId": 2,
       "companyName": "ACME 旅行社 新疆部",
       "fromPrice": 7580.0,
       "tags": [
@@ -67,6 +69,7 @@
       "routeName": "伊犁经典环线 9 日中巴团",
       "days": 9,
       "departCityName": "乌鲁木齐",
+      "companyId": 2,
       "companyName": "ACME 旅行社 新疆部",
       "fromPrice": 6580.0,
       "tags": [
@@ -92,6 +95,7 @@
       "routeName": "伊犁五钻轻奢 8 日私享小团",
       "days": 8,
       "departCityName": "乌鲁木齐",
+      "companyId": 2,
       "companyName": "ACME 旅行社 新疆部",
       "fromPrice": 9480.0,
       "tags": [
@@ -120,6 +124,7 @@
       "routeName": "喀纳斯·禾木秋色 7 日纯玩",
       "days": 7,
       "departCityName": "乌鲁木齐",
+      "companyId": 2,
       "companyName": "ACME 旅行社 新疆部",
       "fromPrice": 4880.0,
       "tags": [
@@ -148,6 +153,7 @@
       "routeName": "喀纳斯经典 6 日中巴团",
       "days": 6,
       "departCityName": "乌鲁木齐",
+      "companyId": 2,
       "companyName": "ACME 旅行社 新疆部",
       "fromPrice": 3480.0,
       "tags": [
@@ -172,6 +178,7 @@
       "routeName": "南疆环线 11 日深度纯玩",
       "days": 11,
       "departCityName": "喀什",
+      "companyId": 2,
       "companyName": "ACME 旅行社 新疆部",
       "fromPrice": 8980.0,
       "tags": [
@@ -200,6 +207,7 @@
       "routeName": "青海湖·茶卡 5 日亲子小团",
       "days": 5,
       "departCityName": "西宁",
+      "companyId": 5,
       "companyName": "ACME 旅行社 青海部",
       "fromPrice": 2980.0,
       "tags": [

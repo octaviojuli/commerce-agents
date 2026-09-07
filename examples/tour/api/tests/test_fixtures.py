@@ -23,6 +23,7 @@ ROUTE_KEYS = {
     "routeName",
     "days",
     "departCityName",
+    "companyId",
     "companyName",
     "fromPrice",
     "tags",
@@ -51,6 +52,8 @@ TAGS = {
     "8座商务车",
     "20座中巴",
 }
+# The departments the fixtures span, as beta's account does: 新疆部 and 青海部.
+DEPARTMENTS = {2, 5}
 WINDOW_DAYS = 60
 DEPARTURES_PER_ROUTE = range(6, 13)
 
@@ -98,6 +101,16 @@ def test_every_route_row_is_the_erps_own_shape(routes):
 def test_route_ids_and_codes_are_unique(routes):
     assert len({route["routeId"] for route in routes}) == len(routes)
     assert len({route["routeCode"] for route in routes}) == len(routes)
+
+
+def test_every_row_names_the_department_its_writes_are_made_in(routes, departures):
+    """A 团期's ``companyId`` is its route's own: reads span the departments, and a quote and
+    an order are made in the one the 团期 belongs to."""
+    departments = {route["routeId"]: route["companyId"] for route in routes}
+    assert set(departments.values()) == DEPARTMENTS
+    assert all(isinstance(company_id, int) for company_id in departments.values())
+    for row in departures:
+        assert row["companyId"] == departments[row["routeId"]], row["periodId"]
 
 
 def test_period_ids_are_unique_integers_and_name_a_route_the_catalog_has(routes, departures):

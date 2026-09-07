@@ -9,11 +9,14 @@ record's attributes. When the stated window or filters leave the advisor with no
 quote, the search relaxes them a step at a time and each relaxed record says in Chinese what
 it does not meet, since the advisor reads that back to the customer.
 
-Two shapes of the ERP show through here. Its catalog carries no destination, hotel, vehicle
+Three shapes of the ERP show through here. Its catalog carries no destination, hotel, vehicle
 or shopping field, so a destination is matched against 线路 names and tags and the rest is
-filtered on this side. And an order is the only write it offers: nothing in the cart can
-cancel or resize one, so both are refused with the reason, and the advisor does it in the
-ERP's own backstage."""
+filtered on this side. An order is the only write it offers: nothing in the cart can cancel or
+resize one, so both are refused with the reason, and the advisor does it in the ERP's own
+backstage. And a 团期 has two prices — the 市场价 the departure lists, which is what the
+customer's share page shows, and the 同业价 the ERP quotes this customer, which is what the
+advisor settles at and what an order is booked at — so every record here is quoted at the
+同业价 and carries the 市场价 beside it."""
 
 from __future__ import annotations
 
@@ -90,8 +93,9 @@ PAST_WINDOW_DAYS = 365
 # One fenced details result holds every variant, so a long-running route is trimmed to the
 # departures nearest the window the advisor is working in (docs/backends.md, step 4).
 MAX_VARIANTS = 24
-# A list price costs one ``get_departure`` call each, so both reads cap how many they make
-# and price the departures nearest the middle of the window first.
+# A quoted departure costs two ERP calls — its detail for the 市场价 and its counts, and
+# ``order/price`` for the 同业价 — so both reads cap how many they price and take the
+# departures nearest the middle of the window first.
 MAX_LISTING_PRICES = 6
 MAX_DETAIL_PRICES = 12
 PRICE_CONCURRENCY = 4
@@ -279,8 +283,16 @@ def _variant_title(row: DepartureRecord, record: RouteRecord | None) -> str:
 
 
 def _variant_attributes(
-    row: DepartureRecord, price: PriceInfo | None, source: str, adults: int, children: int
+    row: DepartureRecord,
+    price: PriceInfo | None,
+    market: PriceInfo | None,
+    source: str,
+    adults: int,
+    children: int,
 ) -> dict[str, str]:
+    """``price`` is what the advisor quotes and books at — the 同业价, or the 市场价 while only
+    that is known — and ``market`` is the departure's own 市场价, which the customer's share
+    page shows. ``quote_source`` says which of the two the priced keys hold."""
     total = _party_total(price, adults, children)
     return {
         "period_code": row.period_code,
@@ -296,6 +308,8 @@ def _variant_attributes(
         "child_price": _number(price.child if price else 0),
         "elder_price": _number(price.elder if price else 0),
         "single_room_diff": _number(price.single_room_diff if price else 0),
+        "market_adult_price": _number(market.adult if market else 0),
+        "market_child_price": _number(market.child if market else 0),
         "party_quote_total": _number(total or 0),
         "quote_party": _party_label(adults, children),
         "quote_source": source,
@@ -303,12 +317,17 @@ def _variant_attributes(
 
 
 def _variant_summary(
-    row: DepartureRecord, price: PriceInfo | None, adults: int, children: int
+    row: DepartureRecord, price: PriceInfo | None, source: str, adults: int, children: int
 ) -> str:
+    """The 团期 in one line. A total the 同业价 made is the advisor's own; one the 市场价 made
+    says so, because that is the customer's price and not what the order would be booked at."""
     status = _STATUS_TEXT.get(_group_status(row), _group_status(row))
     party = _party_label(adults, children)
     total = _party_total(price, adults, children)
-    quote = f"{party}合计 {_number(total)} 元" if total is not None else f"{party}报价待查"
+    if total is None:
+        return f"余位 {row.available_seats}/{row.plan_guests}，{status}，{party}报价待查"
+    said = "（市场价，同业价待查）" if source == "list" else ""
+    quote = f"{party}合计 {_number(total)} 元{said}"
     return f"余位 {row.available_seats}/{row.plan_guests}，{status}，{quote}"
 
 
@@ -524,9 +543,12 @@ class TourBackend(StorefrontBackend):
         self._policies = load_policies(data_dir)
         self._contexts: dict[str, SearchContext] = {}
         # What the ERP has already returned this process: a route is looked up by id long
-        # after the search that found it, and a cart line names a departure by id alone.
+        # after the search that found it, and a cart line names a departure by id alone. A
+        # departure's 同业价 is cached beside it, ``None`` where the ERP has no price row for
+        # it, so a second read of the same 团期 costs no further call.
         self._routes: dict[int, RouteRecord] = {}
         self._departures: dict[int, DepartureRecord] = {}
+        self._quotes: dict[int, Quote | None] = {}
         # The listing snapshot the host's catalog routes read; `load_listings` fills both.
         self.products: dict[str, ProductDetails] = {}
         self._variants: dict[str, ProductDetails] = {}
@@ -612,23 +634,42 @@ class TourBackend(StorefrontBackend):
         return self._routes.get(route_id)
 
     def _priced(self, row: DepartureRecord) -> PriceInfo | None:
+        """The departure's own 市场价, which only its detail call carries."""
         cached = self._departures.get(row.period_id)
         return cached.price if cached is not None else row.price
 
+    def _department(self, row: DepartureRecord) -> int:
+        """The department a write on this 团期 is made in. The ERP carries it on every period
+        row, and a fetched detail is the freshest one this process has."""
+        cached = self._departures.get(row.period_id)
+        return (cached.company_id if cached is not None else 0) or row.company_id
+
+    async def _quote(self, row: DepartureRecord) -> Quote | None:
+        """This customer's 同业价 for one departure, asked in the departure's own department. A
+        团期 the catalog has no price row for answers not-found, which is a gap in the catalog
+        and not a failed call."""
+        try:
+            return await self.erp.quote(row.period_id, self.customer_id, self._department(row))
+        except ErpNotFound:
+            return None
+
     async def _price_one(self, row: DepartureRecord, gate: asyncio.Semaphore) -> None:
-        """One departure's list price, kept in the cache the records read through. A row the
-        ERP cannot detail keeps no price; the record then says its quote is unknown."""
-        if self._priced(row) is not None:
-            return
+        """One departure's two prices, kept in the caches the records read through: the 市场价
+        and the seat counts from its detail, then the 同业价 the order would be booked at. A row
+        the ERP cannot detail keeps no 市场价, and one it has no price row for keeps no 同业价;
+        the record then says which of the two its numbers are."""
         async with gate:
-            detailed = await self.erp.get_departure(row.period_id)
-        if detailed is not None:
-            self._departures[detailed.period_id] = detailed
+            if self._priced(row) is None:
+                detailed = await self.erp.get_departure(row.period_id)
+                if detailed is not None:
+                    self._departures[detailed.period_id] = detailed
+            if row.period_id not in self._quotes:
+                self._quotes[row.period_id] = await self._quote(row)
 
     async def _prices(self, rows: list[DepartureRecord], middle: date, limit: int) -> None:
-        """List prices for at most ``limit`` of the departures, nearest the middle of the
-        window first, since that is where the advisor is working. The ERP prices one
-        departure per call, so the calls run a few at a time rather than one after another."""
+        """Both prices for at most ``limit`` of the departures, nearest the middle of the
+        window first, since that is where the advisor is working. The ERP prices one departure
+        per call, so the calls run a few at a time rather than one after another."""
         by_distance = sorted(rows, key=lambda row: abs((row.depart_date - middle).days))
         nearest = by_distance[: max(0, limit)]
         gate = asyncio.Semaphore(PRICE_CONCURRENCY)
@@ -644,12 +685,18 @@ class TourBackend(StorefrontBackend):
         match: str,
         mismatch: str | None,
     ) -> Product:
-        """One route as a family: the cheapest adult price among the departures in the
-        searched window that were priced, its 起价 when none was, and the dates that window
-        holds as the one option a variant chooses."""
+        """One route as a family: its 起价 is the cheapest 同业价 among the departures in the
+        searched window that were quoted, the cheapest 市场价 when none of them was, and the
+        route's own 起价 when neither price is known. The dates that window holds are the one
+        option a variant chooses."""
         party = context.adults + context.children
-        prices = [price.adult for row in rows if (price := self._priced(row)) and price.adult > 0]
-        cheapest = min(prices, default=0.0) or max(record.from_price, 0.0)
+        quoted = [q.price.adult for row in rows if (q := self._quotes.get(row.period_id))]
+        listed = [price.adult for row in rows if (price := self._priced(row))]
+        cheapest = (
+            min((adult for adult in quoted if adult > 0), default=0.0)
+            or min((adult for adult in listed if adult > 0), default=0.0)
+            or max(record.from_price, 0.0)
+        )
         return Product(
             product_id=route_id_of(record),
             title=record.route_name,
@@ -668,20 +715,16 @@ class TourBackend(StorefrontBackend):
         )
 
     def _variant(
-        self,
-        row: DepartureRecord,
-        record: RouteRecord | None,
-        context: SearchContext,
-        *,
-        price: PriceInfo | None = None,
-        source: str = "",
+        self, row: DepartureRecord, record: RouteRecord | None, context: SearchContext
     ) -> Product:
-        """One departure as a variant, quoted for the party in ``context``. ``price`` is the
-        customer's own when a quote was read for it; otherwise the list price this process
-        has, and ``quote_source`` says which of the three it is."""
-        if not source:
-            price = self._priced(row)
-            source = "list" if price is not None else "none"
+        """One departure as a variant, quoted for the party in ``context``. What the advisor
+        reads is the 同业价 the order would be booked at; while only the departure's 市场价 is
+        known the record is quoted at that instead and says so, and ``quote_source`` —
+        ``customer``, ``list``, ``none`` — is which of the two, or neither, the numbers are."""
+        market = self._priced(row)
+        quote = self._quotes.get(row.period_id)
+        price = quote.price if quote is not None else market
+        source = "customer" if quote is not None else ("list" if market is not None else "none")
         party = context.adults + context.children
         return Product(
             product_id=departure_id_of(row),
@@ -691,9 +734,13 @@ class TourBackend(StorefrontBackend):
             currency=CURRENCY,
             image_url=record.image_url if record else None,
             category=CATEGORY,
-            attributes=_variant_attributes(row, price, source, context.adults, context.children),
+            attributes=_variant_attributes(
+                row, price, market, source, context.adults, context.children
+            ),
             in_stock=row.available_seats >= party,
-            short_description=_variant_summary(row, price, context.adults, context.children),
+            short_description=_variant_summary(
+                row, price, source, context.adults, context.children
+            ),
             option_values={"depart_date": row.depart_date.isoformat()},
             variant_of=route_id_of(row.route_id),
         )
@@ -791,21 +838,16 @@ class TourBackend(StorefrontBackend):
     async def _departure_details(
         self, period_id: int, context: SearchContext
     ) -> ProductDetails | None:
-        """The one departure, priced for the customer this deployment books for. A departure
-        the ERP has no price row for keeps the list price it carries."""
+        """The one departure, in the same two calls a route's variants take: its detail for the
+        市场价 and the seat counts, and its 同业价 for the customer this deployment books for. A
+        departure the ERP has no price row for keeps the 市场价 it carries."""
         row = await self.erp.get_departure(period_id)
         if row is None:
             return None
         self._departures[row.period_id] = row
-        quote: Quote | None = None
-        try:
-            quote = await self.erp.quote(period_id, self.customer_id)
-        except ErpNotFound:
-            quote = None
-        price = quote.price if quote is not None else row.price
-        source = "customer" if quote is not None else ("list" if row.price is not None else "none")
+        self._quotes[row.period_id] = await self._quote(row)
         record = await self._route(row.route_id)
-        variant = self._variant(row, record, context, price=price, source=source)
+        variant = self._variant(row, record, context)
         return ProductDetails(
             **variant.model_dump(),
             long_description=("\n".join(record.features)[:1200] or None) if record else None,
@@ -890,15 +932,21 @@ class TourBackend(StorefrontBackend):
     async def add_to_cart(
         self, session: ShoppingSessionContext, product_id: str, quantity: int
     ) -> Cart:
-        """Write the 预留 order for this 团期. The quantity the model asked for is heads; the
-        split into 成人 and 儿童 comes from the searched party, because the ERP prices and
-        seats them differently, and at least one head is an adult. A party larger than the
-        seats left comes back as a 候补 order rather than a refusal, and its line says so."""
+        """Write the 预留 order for this 团期, in the 团期's own department: the ERP refuses a
+        write made in any other, so the departure is read first when this process has not seen
+        it. The quantity the model asked for is heads; the split into 成人 and 儿童 comes from
+        the searched party, because the ERP prices and seats them differently, and at least one
+        head is an adult. A party larger than the seats left comes back as a 候补 order rather
+        than a refusal, and its line says so."""
         period_id = _erp_id(product_id, DEPARTURE_PREFIX)
         if period_id is None:
             # The executor's gate already holds an add of a family; this is the second layer,
             # and it also catches an id that is neither a route nor a departure.
             raise Unavailable(product_id)
+        row = self._departures.get(period_id) or await self.erp.get_departure(period_id)
+        if row is None:
+            raise ErpNotFound(f"找不到该团期：{period_id}")
+        self._departures[period_id] = row
         context = self._context(session)
         heads = max(1, quantity)
         children = min(context.children, heads - 1)
@@ -906,6 +954,7 @@ class TourBackend(StorefrontBackend):
             OrderRequest(
                 period_id=period_id,
                 customer_id=self.customer_id,
+                company_id=self._department(row),
                 adults=heads - children,
                 children=children,
                 elders=0,
@@ -944,9 +993,16 @@ class TourBackend(StorefrontBackend):
         return self._advisor(session)
 
     async def get_account_context(self, session: ShoppingSessionContext) -> dict[str, Any] | None:
+        """``department`` is the one the ERP logged this account into and ``departments`` how
+        many it reads across; a client that logs nobody in — the fixtures — is one department,
+        the store's own."""
+        user_info = getattr(self.erp, "user_info", None) or {}
+        companies = getattr(self.erp, "companies", None) or ()
         return {
             "advisor": session.user_id,
             "store": self._store_name(session),
+            "department": str(user_info.get("companyName") or "") or self.store_name,
+            "departments": len(companies) or 1,
             "customer_id": self.customer_id,
             "active_holds": len(self._live_holds(session.session_id)),
         }

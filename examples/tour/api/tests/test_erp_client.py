@@ -38,6 +38,7 @@ DEPARTURE = {
     "available_seats": 4,
     "reserve_hours": 24,
     "depart_city": "乌鲁木齐",
+    "company_id": 2,
 }
 
 
@@ -54,6 +55,8 @@ def test_every_erp_failure_is_one_error_family_the_executor_can_catch():
 def test_a_listed_departure_carries_no_price_and_a_fetched_one_does():
     listed = DepartureRecord(**DEPARTURE)
     assert (listed.price, listed.reserve_count, listed.waitlist_count) == (None, None, None)
+    # Both period calls carry the department, because both writes on the 团期 are made in it.
+    assert listed.company_id == 2
     fetched = DepartureRecord(**DEPARTURE, price=PriceInfo(6180.0, 3880.0, 6180.0, 1400.0))
     assert fetched.price is not None
     assert fetched.price.currency == "CNY"
@@ -96,5 +99,5 @@ def test_the_records_are_frozen_so_a_backend_cannot_edit_the_erps_answer():
 
 
 def test_an_order_request_defaults_the_two_optional_body_fields():
-    req = OrderRequest(3001, 4101, 2, 1, 0, 2, 0, "柯海水", "13800138000")
-    assert (req.store_name, req.remark) == ("", "")
+    req = OrderRequest(3001, 4101, 2, 2, 1, 0, 2, 0, "柯海水", "13800138000")
+    assert (req.company_id, req.store_name, req.remark) == (2, "", "")

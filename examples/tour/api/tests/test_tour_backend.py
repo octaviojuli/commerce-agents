@@ -32,7 +32,7 @@ from tour.api.erp_client import (
     Quote,
 )
 from tour.api.mock_erp import MockErpClient
-from tour.api.tour_backend import TourBackend, TourToolExecutor
+from tour.api.tour_backend import TourBackend, TourToolExecutor, _number
 
 TODAY = date(2026, 9, 6)
 ADVISOR = "demo-user"
@@ -41,6 +41,12 @@ MOBILE = "13900000001"
 ROUTE = "RT-1021"
 FULL = "DP-3007"  # 伊犁北疆环线, 10/13, no seats left
 OPEN = "DP-3008"  # 伊犁北疆环线, 10/17, four seats left
+XINJIANG = 2  # the department every 新疆 线路 and its 团期 belong to
+QINGHAI = 5  # 青海部, which RT-1051 and DP-3063 belong to
+ELSEWHERE = "DP-3063"  # 青海湖·茶卡, 10/16, five seats left, another department
+
+# What a 同业价 below the 团期's 市场价 costs, for the ERP that quotes one.
+TRADE_CUT = 300.0
 
 # The advisor's stated request: 伊犁, 10/11-10/20, 8-10 天, 2 大 2 小, 纯玩.
 YILI = {
@@ -167,7 +173,10 @@ async def test_route_details_quote_the_searched_party_over_the_padded_window(bac
         departs = date.fromisoformat(variant.attributes["depart_date"])
         assert date(2026, 10, 4) <= departs <= date(2026, 10, 27)
         assert variant.attributes["quote_party"] == "2大2小"
-        assert variant.attributes["quote_source"] == "list"
+        # Every variant was quoted for this customer, and the fixtures price the 同业价 at the
+        # 市场价, so both prices are on the record and equal.
+        assert variant.attributes["quote_source"] == "customer"
+        assert variant.attributes["market_adult_price"] == variant.attributes["adult_price"]
         quote = 2 * float(variant.attributes["adult_price"]) + 2 * float(
             variant.attributes["child_price"]
         )
@@ -208,8 +217,54 @@ class Unpriced(MockErpClient):
     """An ERP with no price row for this customer on this departure, as beta answers for a
     departure the catalog never priced."""
 
-    async def quote(self, period_id: int, customer_id: int) -> Quote:
+    async def quote(self, period_id: int, customer_id: int, company_id: int) -> Quote:
         raise ErpNotFound("找不到该团期的报价")
+
+
+class TradePriced(MockErpClient):
+    """An ERP whose 同业价 is below the 市场价 the 团期 lists, as a real one's is."""
+
+    async def quote(self, period_id: int, customer_id: int, company_id: int) -> Quote:
+        listed = (await super().quote(period_id, customer_id, company_id)).price
+        trade = PriceInfo(
+            listed.adult - TRADE_CUT,
+            listed.child - TRADE_CUT,
+            listed.elder - TRADE_CUT,
+            listed.single_room_diff,
+        )
+        return Quote(price=trade, price_type="同行价", is_external=False)
+
+
+class Unquotable(Unpriced):
+    """No price of either kind: the detail call the 市场价 comes from finds nothing either."""
+
+    async def get_departure(self, period_id: int):
+        return None
+
+
+async def test_a_variant_is_quoted_at_the_trade_price_and_carries_the_market_one(session):
+    """The advisor settles at the 同业价, so that is what a variant is priced and totalled at;
+    the 市场价 rides along for the customer's share page and nothing else."""
+    backend = build(TradePriced(today=TODAY, now=FakeClock()))
+    await search_yili(backend, session)
+    details = await backend.get_product_details(session, ROUTE)
+    variant = next(v for v in details.variants if v.product_id == OPEN)
+    assert variant.attributes["quote_source"] == "customer"
+    assert variant.price == 5780.0 - TRADE_CUT
+    assert variant.attributes["adult_price"] == _number(5780.0 - TRADE_CUT)
+    assert variant.attributes["child_price"] == _number(3880.0 - TRADE_CUT)
+    assert (variant.attributes["market_adult_price"], variant.attributes["market_child_price"]) == (
+        "5780",
+        "3880",
+    )
+    total = 2 * (5780.0 - TRADE_CUT) + 2 * (3880.0 - TRADE_CUT)
+    assert float(variant.attributes["party_quote_total"]) == total
+    # The family's 起价 is the cheapest 同业价 among the departures the padded window priced,
+    # which is 10/24's, not this one's.
+    assert details.price == 5580.0 - TRADE_CUT
+    # And one departure read on its own is quoted the same way.
+    alone = await backend.get_product_details(session, OPEN)
+    assert (alone.price, alone.attributes["market_adult_price"]) == (5780.0 - TRADE_CUT, "5780")
 
 
 async def test_a_departure_without_a_customer_price_falls_back_to_the_list_price(session):
@@ -217,6 +272,19 @@ async def test_a_departure_without_a_customer_price_falls_back_to_the_list_price
     details = await backend.get_product_details(session, OPEN)
     assert details.attributes["quote_source"] == "list"
     assert details.price == 5780.0
+    assert details.attributes["market_adult_price"] == "5780"
+    assert "市场价" in details.short_description
+
+
+async def test_a_departure_with_neither_price_says_it_has_no_quote(session):
+    backend = build(Unquotable(today=TODAY, now=FakeClock()))
+    details = await backend.get_product_details(session, ROUTE)
+    variant = next(v for v in details.variants if v.product_id == OPEN)
+    assert variant.attributes["quote_source"] == "none"
+    assert (variant.price, variant.attributes["party_quote_total"]) == (0.0, "0")
+    assert "报价待查" in variant.short_description
+    # Nothing was quoted, so the family falls back to the 线路's own 起价.
+    assert details.price == 5580.0
 
 
 async def test_a_pasted_route_id_is_quoted_for_a_default_party_it_states(backend, other_session):
@@ -277,6 +345,7 @@ def _daily(depart: date) -> DepartureRecord:
         available_seats=16,
         reserve_hours=24,
         depart_city="乌鲁木齐",
+        company_id=XINJIANG,
         price=PriceInfo(6980.0, 4980.0, 6980.0, 1200.0),
     )
 
@@ -382,6 +451,30 @@ async def test_an_add_writes_the_order_and_becomes_one_cart_line(backend, erp, s
     (order_no, product_id, expires_at) = backend.holds_snapshot(session.session_id)[0]
     assert (order_no, product_id) == (order.order_no, OPEN)
     assert timedelta(minutes=29) < expires_at - datetime.now(UTC) <= timedelta(minutes=30)
+
+
+async def test_an_add_writes_the_order_in_the_departures_own_department(backend, erp, session):
+    """The ERP refuses a write made in any other department, so the order names the 团期's own
+    — even for a 团期 in a department the conversation never searched, which is read first."""
+    written: list[int] = []
+    original = erp.create_order
+
+    async def counted(request):
+        written.append(request.company_id)
+        return await original(request)
+
+    erp.create_order = counted
+    await search_yili(backend, session)
+    await backend.add_to_cart(session, OPEN, 4)
+    await backend.add_to_cart(session, ELSEWHERE, 2)
+    assert written == [XINJIANG, QINGHAI]
+    assert {item.product_id for item in (await backend.get_cart(session)).items} == {
+        OPEN,
+        ELSEWHERE,
+    }
+    # A 团期 the ERP does not have is the ERP's own rule, in its own words.
+    with pytest.raises(ErpNotFound, match="找不到该团期"):
+        await backend.add_to_cart(session, "DP-999999", 2)
 
 
 async def test_a_party_over_the_seats_left_is_a_waitlist_line_that_says_so(backend, session):
@@ -501,6 +594,9 @@ async def test_the_account_context_names_the_advisor_the_store_and_the_customer(
     assert await backend.get_account_context(session) == {
         "advisor": ADVISOR,
         "store": "上海徐汇门店",
+        # The fixtures log nobody in, so the one department is the store's own.
+        "department": "ACME 旅行社",
+        "departments": 1,
         "customer_id": CUSTOMER_ID,
         "active_holds": 0,
     }

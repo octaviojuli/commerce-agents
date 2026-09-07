@@ -32,6 +32,12 @@ SECRET = "fixture-only-secret"
 COMPANY_ID = 2
 TOKEN = "erp-token-abc"
 
+OTHER_COMPANY_ID = 5
+SWITCHED = "erp-token-qinghai"
+COMPANIES = [
+    {"companyId": COMPANY_ID, "companyName": "ACME 旅行社 新疆部"},
+    {"companyId": OTHER_COMPANY_ID, "companyName": "ACME 旅行社 青海部"},
+]
 USER_INFO = {"userId": 6, "userName": "柯海水", "companyId": 2, "companyName": "ACME 旅行社 新疆部"}
 LOGIN = {
     "code": 200,
@@ -42,7 +48,18 @@ LOGIN = {
         "expiresIn": 28800,
         "expiresAt": int(time.time()) + 28800,
         "userInfo": USER_INFO,
-        "companies": [{"companyId": 2, "companyName": "ACME 旅行社 新疆部"}],
+        "companies": COMPANIES,
+    },
+}
+SWITCH = {
+    "code": 200,
+    "message": "切换成功",
+    "data": {
+        "token": SWITCHED,
+        "tokenType": "Bearer",
+        "expiresIn": 28800,
+        "expiresAt": int(time.time()) + 28800,
+        "companies": COMPANIES,
     },
 }
 ROUTE = {
@@ -78,6 +95,7 @@ PERIOD = {
     "confirmCount": 4,
     "availableSeats": 4,
     "reserveHours": 24,
+    "companyId": COMPANY_ID,
     "companyName": "ACME 旅行社 新疆部",
     "departCityName": "乌鲁木齐",
     "groupId": 1,
@@ -192,7 +210,7 @@ def erp(replies: dict) -> tuple[HttpErpClient, list[httpx.Request]]:
         return httpx.Response(status, json=body)
 
     transport = httpx.MockTransport(handler)
-    client = HttpErpClient(BASE_URL, MOBILE, SECRET, COMPANY_ID, transport=transport)
+    client = HttpErpClient(BASE_URL, MOBILE, SECRET, transport=transport)
     return client, seen
 
 
@@ -204,9 +222,10 @@ async def test_the_first_call_logs_in_and_carries_the_bearer_it_got():
     client, seen = erp({"/login": LOGIN, "/route/list": page([ROUTE])})
     await client.search_routes(RouteQuery(route_name="伊犁"))
     assert [str(r.url.path) for r in seen] == ["/aicli/login", "/aicli/route/list"]
-    assert body_of(seen[0]) == {"mobile": MOBILE, "password": SECRET, "companyId": COMPANY_ID}
+    # The ERP takes no department on the login: it picks one and names every one the account has.
+    assert body_of(seen[0]) == {"mobile": MOBILE, "password": SECRET}
     assert seen[1].headers["Authorization"] == f"Bearer {TOKEN}"
-    assert client.user_info == USER_INFO
+    assert (client.user_info, client.companies) == (USER_INFO, COMPANIES)
 
 
 async def test_a_live_token_is_reused_rather_than_logged_in_again():
@@ -273,6 +292,7 @@ async def test_list_departures_filters_by_name_and_keeps_only_the_matching_route
     assert dict(seen[1].url.params)["routeName"] == "伊犁北疆环线 8 日纯玩小团"
     assert [row.period_id for row in rows] == [3001]
     assert rows[0].depart_date == date(2026, 10, 12)
+    assert rows[0].company_id == COMPANY_ID
     assert rows[0].price is None
 
 
@@ -293,11 +313,26 @@ async def test_order_rows_read_unix_stamps_and_the_lists_own_amount_key():
     """``createTime`` and ``reserveExpireAt`` are Unix seconds, and the list row calls the
     total ``orderAmount`` where the detail calls it ``totalAmount``."""
     row = {
-        "orderId": 204, "orderNo": "ORD202609070001", "periodId": 12, "periodCode": "-MOMJ-20260505-001",
-        "routeName": "北疆 10 天", "customerId": 4101, "customerName": "北京同行社", "orderAmount": 8000,
-        "receivedAmount": 0, "unreceivedAmount": 8000, "orderStatus": 0, "orderStatusText": "预留",
-        "createTime": 1788770417, "reserveExpireAt": 1788856817, "adultCount": 2, "childCount": 0,
-        "elderCount": 0, "contactName": "顾问", "contactMobile": "13900000001", "departDate": "2026-05-05",
+        "orderId": 204,
+        "orderNo": "ORD202609070001",
+        "periodId": 12,
+        "periodCode": "-MOMJ-20260505-001",
+        "routeName": "北疆 10 天",
+        "customerId": 4101,
+        "customerName": "北京同行社",
+        "orderAmount": 8000,
+        "receivedAmount": 0,
+        "unreceivedAmount": 8000,
+        "orderStatus": 0,
+        "orderStatusText": "预留",
+        "createTime": 1788770417,
+        "reserveExpireAt": 1788856817,
+        "adultCount": 2,
+        "childCount": 0,
+        "elderCount": 0,
+        "contactName": "顾问",
+        "contactMobile": "13900000001",
+        "departDate": "2026-05-05",
     }
     client, _ = erp({"/login": LOGIN, "/order/list": page([row])})
     (order,) = await client.list_orders()
@@ -311,6 +346,7 @@ async def test_get_departure_carries_the_list_price_and_the_hold_counts():
     row = await client.get_departure(3001)
     assert row is not None and row.price is not None
     assert (row.price.adult, row.price.single_room_diff) == (6180.0, 1400.0)
+    assert row.company_id == COMPANY_ID
     assert (row.reserve_count, row.placeholder_count, row.waitlist_count) == (2, 0, 1)
 
 
@@ -329,10 +365,49 @@ async def test_search_customers_maps_the_trade_customer_row():
 
 async def test_quote_is_the_customers_own_price_and_its_label():
     client, seen = erp({"/login": LOGIN, "/order/price": PRICE})
-    quote = await client.quote(3001, 4101)
+    quote = await client.quote(3001, 4101, COMPANY_ID)
+    # The login department needs no switch: its token is the login one.
+    assert [r.url.path.removeprefix(PREFIX) for r in seen] == ["/login", "/order/price"]
     assert dict(seen[1].url.params) == {"periodId": "3001", "customerId": "4101"}
     assert (quote.price_type, quote.is_external) == ("同行价", False)
     assert (quote.price.adult, quote.price.child, quote.price.currency) == (5980.0, 3680.0, "CNY")
+
+
+async def test_a_quote_in_another_department_switches_once_and_reuses_that_token():
+    """Reads span every department, but ``order/price`` answers only under the 团期's own, so
+    the client buys that department's token once and every later call rides on it."""
+    client, seen = erp({"/login": LOGIN, "/switch-company": SWITCH, "/order/price": [PRICE, PRICE]})
+    await client.quote(3060, 4101, OTHER_COMPANY_ID)
+    await client.quote(3061, 4101, OTHER_COMPANY_ID)
+    assert [r.url.path.removeprefix(PREFIX) for r in seen] == [
+        "/login",
+        "/switch-company",
+        "/order/price",
+        "/order/price",
+    ]
+    assert body_of(seen[1]) == {"companyId": OTHER_COMPANY_ID}
+    assert seen[1].headers["Authorization"] == f"Bearer {TOKEN}"
+    assert [r.headers["Authorization"] for r in seen[2:]] == [f"Bearer {SWITCHED}"] * 2
+
+
+async def test_a_401_on_a_switched_token_switches_again_rather_than_logging_in_again():
+    unauthorized = (401, {"code": 401, "message": "登录状态已失效", "data": None})
+    client, seen = erp(
+        {
+            "/login": LOGIN,
+            "/switch-company": [SWITCH, SWITCH],
+            "/order/price": [unauthorized, PRICE],
+        }
+    )
+    quote = await client.quote(3060, 4101, OTHER_COMPANY_ID)
+    assert [r.url.path.removeprefix(PREFIX) for r in seen] == [
+        "/login",
+        "/switch-company",
+        "/order/price",
+        "/switch-company",
+        "/order/price",
+    ]
+    assert quote.price.adult == 5980.0
 
 
 async def test_list_orders_maps_the_list_row_and_leaves_the_detail_fields_empty():
@@ -352,6 +427,36 @@ async def test_get_order_adds_the_party_the_contact_and_the_reserve_expiry():
     assert order.reserve_expires_at == datetime(2026, 9, 8, 10, 30)
 
 
+async def test_an_order_in_another_department_is_written_on_that_departments_token():
+    """A write is department-bound the same way, and the token bought for a quote serves it."""
+    created = ok(
+        {
+            "orderId": 70003,
+            "needsApproval": False,
+            "approvalId": 0,
+            "orderStatus": 0,
+            "isWaitlist": False,
+        }
+    )
+    client, seen = erp(
+        {
+            "/login": LOGIN,
+            "/switch-company": SWITCH,
+            "/order/price": PRICE,
+            "/order/create": created,
+        }
+    )
+    await client.quote(3060, 4101, OTHER_COMPANY_ID)
+    result = await client.create_order(
+        OrderRequest(3060, 4101, OTHER_COMPANY_ID, 2, 0, 0, 1, 0, "柯海水", "13800138000")
+    )
+    assert [r.url.path.removeprefix(PREFIX) for r in seen].count("/switch-company") == 1
+    assert seen[-1].headers["Authorization"] == f"Bearer {SWITCHED}"
+    # The department is the token's, not the body's.
+    assert "companyId" not in body_of(seen[-1])
+    assert result.order_id == 70003
+
+
 async def test_create_order_sends_the_documented_body_and_maps_the_answer():
     created = ok(
         {
@@ -364,7 +469,9 @@ async def test_create_order_sends_the_documented_body_and_maps_the_answer():
     )
     client, seen = erp({"/login": LOGIN, "/order/create": created})
     result = await client.create_order(
-        OrderRequest(3001, 4101, 2, 1, 0, 2, 0, "柯海水", "13800138000", store_name="ACME 旅行社")
+        OrderRequest(
+            3001, 4101, COMPANY_ID, 2, 1, 0, 2, 0, "柯海水", "13800138000", store_name="ACME 旅行社"
+        )
     )
     assert body_of(seen[1]) == {
         "periodId": 3001,
@@ -396,7 +503,7 @@ async def test_an_order_over_the_seats_left_comes_back_as_a_waitlist_not_a_refus
     )
     client, _ = erp({"/login": LOGIN, "/order/create": created})
     result = await client.create_order(
-        OrderRequest(3001, 4101, 9, 0, 0, 5, 0, "柯海水", "13800138000")
+        OrderRequest(3001, 4101, COMPANY_ID, 9, 0, 0, 5, 0, "柯海水", "13800138000")
     )
     assert (result.status, result.is_waitlist) == (5, True)
 
@@ -405,14 +512,18 @@ async def test_a_business_refusal_keeps_the_erps_own_chinese_message():
     refused = (400, {"code": 400, "message": "同行客户下单必须填写门店。", "data": None})
     client, _ = erp({"/login": LOGIN, "/order/create": refused})
     with pytest.raises(ErpRefused, match="同行客户下单必须填写门店。"):
-        await client.create_order(OrderRequest(3001, 4101, 2, 0, 0, 1, 0, "柯海水", "13800138000"))
+        await client.create_order(
+            OrderRequest(3001, 4101, COMPANY_ID, 2, 0, 0, 1, 0, "柯海水", "13800138000")
+        )
 
 
 async def test_an_order_against_an_unknown_departure_is_not_found():
     missing = (404, {"code": 404, "message": "团期不存在", "data": None})
     client, _ = erp({"/login": LOGIN, "/order/create": missing})
     with pytest.raises(ErpNotFound, match="团期不存在"):
-        await client.create_order(OrderRequest(999, 4101, 2, 0, 0, 1, 0, "柯海水", "13800138000"))
+        await client.create_order(
+            OrderRequest(999, 4101, COMPANY_ID, 2, 0, 0, 1, 0, "柯海水", "13800138000")
+        )
 
 
 async def test_a_404_with_no_json_body_is_a_missing_record_not_an_outage():
@@ -420,7 +531,7 @@ async def test_a_404_with_no_json_body_is_a_missing_record_not_an_outage():
     status is the ERP's answer even when the body is not the ERP's envelope."""
     client, _ = erp({"/login": LOGIN, "/order/price": (404, "<html>404 Not Found</html>")})
     with pytest.raises(ErpNotFound):
-        await client.quote(3001, 4101)
+        await client.quote(3001, 4101, COMPANY_ID)
 
 
 @pytest.mark.parametrize(
@@ -439,5 +550,5 @@ async def test_an_outage_is_never_relayed_as_the_erps_own_words(reply):
 
 
 def test_the_http_client_is_an_erp_client():
-    client: ErpClient = HttpErpClient(BASE_URL, MOBILE, SECRET, COMPANY_ID)
+    client: ErpClient = HttpErpClient(BASE_URL, MOBILE, SECRET)
     assert isinstance(client, HttpErpClient)

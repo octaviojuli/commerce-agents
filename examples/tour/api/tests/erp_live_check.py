@@ -6,10 +6,13 @@
     python examples/tour/api/tests/erp_live_check.py
 
 It reads ``examples/tour/.env`` itself, logs in, and calls every read once — routes, their
-departures, one departure's detail, a price for ``TOUR_ERP_CUSTOMER_ID``, and the
-salesperson's orders. It never calls ``POST /order/create``, and it prints counts and one
-trimmed sample per call: no credential, no token, and no customer's name reaches the output.
-Not a test: pytest does not collect this file, because nothing here runs without an ERP."""
+departures, one departure's detail with its 市场价, a 同业价 for ``TOUR_ERP_CUSTOMER_ID``, and
+the salesperson's orders. Because the reads span every department the account is authorised
+for while a quote is department-bound, it reports the department the login landed in, how many
+the account has, and whether the quote it obtained needed a switch into another one. It never
+calls ``POST /order/create``, and it prints counts and one trimmed sample per call: no
+credential, no token, and no customer's name reaches the output. Not a test: pytest does not
+collect this file, because nothing here runs without an ERP."""
 
 from __future__ import annotations
 
@@ -48,22 +51,38 @@ def trim(text: str, keep: int = 10) -> str:
 
 
 async def quoted(client: HttpErpClient, rows: list[DepartureRecord], customer_id: int) -> bool:
-    """Price the first departure the ERP has a price for, reporting what the others said: a
-    departure with no price row of its own is a gap in the catalog, not a broken call."""
+    """The 同业价 of the first departure the ERP has one for, its 市场价 beside it, reporting
+    what the others said: a departure with no price row of its own is a gap in the catalog, not
+    a broken call. Departures outside the login department come first, because a quote there is
+    what proves the switch: the same call under the login token answers a bare nginx 404."""
+    login_company = int(client.user_info.get("companyId") or 0)
+    ordered = sorted(rows[:MAX_QUOTES], key=lambda row: row.company_id == login_company)
     skipped: list[str] = []
-    for row in rows[:MAX_QUOTES]:
+    for row in ordered:
         try:
-            quote = await client.quote(row.period_id, customer_id)
+            quote = await client.quote(row.period_id, customer_id, row.company_id)
         except ErpError as exc:
             skipped.append(f"{row.period_id}:{type(exc).__name__}")
             continue
+        detail = await client.get_departure(row.period_id)
+        market = detail.price if detail and detail.price else None
+        switched = "yes" if row.company_id != login_company else "no"
         print(
-            f"quote: period={row.period_id} skipped={len(skipped)} type={quote.price_type} "
-            f"external={quote.is_external} adult={quote.price.adult} "
-            f"child={quote.price.child} single_room_diff={quote.price.single_room_diff}"
+            f"quote: period={row.period_id} company={row.company_id} switched={switched} "
+            f"skipped={len(skipped)} type={quote.price_type} external={quote.is_external}"
+        )
+        print(
+            f"  同业价 adult={quote.price.adult} child={quote.price.child} "
+            f"single_room_diff={quote.price.single_room_diff}"
+        )
+        print(
+            f"  市场价 adult={market.adult if market else '-'} "
+            f"child={market.child if market else '-'}"
         )
         if skipped:
             print(f"  no price on: {' '.join(skipped)}")
+        if switched == "no":
+            print("  every priced departure is in the login department; no switch was exercised")
         return True
     print(
         f"quote: no departure priced for this customer; tried {len(skipped)}: {' '.join(skipped)}"
@@ -78,18 +97,19 @@ async def main() -> int:
     start = today - timedelta(days=PAST_WINDOW) if allow_past else today
     window = (start, today + timedelta(days=FUTURE_WINDOW))
     client = HttpErpClient(
-        env["TOUR_ERP_BASE_URL"],
-        env["TOUR_ERP_MOBILE"],
-        env["TOUR_ERP_PASSWORD"],
-        int(env["TOUR_ERP_COMPANY_ID"]),
+        env["TOUR_ERP_BASE_URL"], env["TOUR_ERP_MOBILE"], env["TOUR_ERP_PASSWORD"]
     )
     customer_id = int(env["TOUR_ERP_CUSTOMER_ID"])
-    print(f"base_url={env['TOUR_ERP_BASE_URL']} company={env['TOUR_ERP_COMPANY_ID']}")
+    print(f"base_url={env['TOUR_ERP_BASE_URL']}")
     print(f"window={window[0]}..{window[1]} allow_past={allow_past}")
 
     routes = await client.search_routes(RouteQuery(depart_from=window[0], depart_to=window[1]))
     user = client.user_info
-    print(f"login: userId={user.get('userId')} company={user.get('companyName')} token=<redacted>")
+    print(
+        f"login: userId={user.get('userId')} department={user.get('companyId')} "
+        f"{user.get('companyName')} token=<redacted>"
+    )
+    print(f"departments: {len(client.companies)} authorised for this account")
     print(f"search_routes: {len(routes)} routes")
     if not routes:
         print("no routes visible to this department; nothing further to check")
@@ -103,7 +123,9 @@ async def main() -> int:
     rows: list[DepartureRecord] = []
     for one in routes[:MAX_ROUTES]:
         rows.extend(await client.list_departures(one.route_id, one.route_name, *window))
+    departments = sorted({row.company_id for row in rows})
     print(f"list_departures: {len(rows)} departures across {min(len(routes), MAX_ROUTES)} routes")
+    print(f"  departments on those departures: {departments}")
     if not rows:
         print("no departures in the window; skipping detail and price")
         return 1
@@ -122,7 +144,7 @@ async def main() -> int:
         f"reserve={detail.reserve_count if detail else '-'} "
         f"waitlist={detail.waitlist_count if detail else '-'}"
     )
-    priced = await quoted(client, rows, customer_id)
+    switched = await quoted(client, rows, customer_id)
 
     orders = await client.list_orders()
     print(f"list_orders: {len(orders)} orders")
@@ -132,7 +154,7 @@ async def main() -> int:
             f"  order: id={order.order_id} status={order.status}/{order.status_text} "
             f"total={order.total_amount} period={order.period_id}"
         )
-    return 0 if priced else 1
+    return 0 if switched else 1
 
 
 if __name__ == "__main__":

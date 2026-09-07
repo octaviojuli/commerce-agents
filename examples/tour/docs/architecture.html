@@ -58,7 +58,7 @@
     <div class="section">
       <p class="section-eyebrow">01 · 系统架构</p>
       <h2>组件与连接</h2>
-      <p class="subtitle">顾问在工作台里对话，宿主把对话交给 Agent 循环，工具调用落到 TourBackend，再经 ErpClient 协议进入 Mock 或真实 ERP。真实 ERP 用顾问自己的账号按部门登录，读到的就是这位销售员能看到的数据。模型服务通过 Anthropic 兼容接口接入，可换 DeepSeek 或 Kimi。</p>
+      <p class="subtitle">顾问在工作台里对话，宿主把对话交给 Agent 循环，工具调用落到 TourBackend，再经 ErpClient 协议进入 Mock 或真实 ERP。真实 ERP 用顾问自己的账号登录（只有手机号与密码），读跨该账号被授权的所有部门，写则切到团期所属部门。模型服务通过 Anthropic 兼容接口接入，可换 DeepSeek 或 Kimi。</p>
       <div class="diagram-container">
       <svg viewBox="0 0 1000 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="arch-title arch-desc">
         <title id="arch-title">ACME 旅行社选团助手系统架构</title>
@@ -163,7 +163,7 @@
         <rect x="696" y="374" width="34" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
         <text x="713" y="383" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HTTP</text>
         <text x="744" y="402" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">HttpErpClient</text>
-        <text x="744" y="418" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">login · Bearer · 部门</text>
+        <text x="744" y="418" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">login · Bearer · switch-company</text>
         <!-- real erp (external) -->
         <rect x="856" y="368" width="112" height="64" rx="6" fill="#f5f5f5"/>
         <rect x="856" y="368" width="112" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
@@ -204,11 +204,11 @@
     <div class="section">
       <p class="section-eyebrow">02 · 业务流 · 两层选团</p>
       <h2>先选线路，再对团期</h2>
-      <p class="subtitle">顾问用一句话描述客人需求。第一层搜索返回线路（商品族），第二层在一条线路上展开团期（变体），报价按本次人数结构计算。ERP 的团期列表不带价格，列表价要逐条 period/detail 取，所以一次列表最多取六条。模型只看到 TourBackend 返回的数据，ERP 凭证由宿主持有。</p>
+      <p class="subtitle">顾问用一句话描述客人需求。第一层搜索返回线路（商品族），第二层在一条线路上展开团期（变体），报价按本次人数结构计算。ERP 的团期列表不带价格：市场价要逐条 period/detail 取，顾问结算用的同业价还要在团期所属部门再调一次 order/price，所以一次列表最多取六条团期、线路详情最多十二条。顾问看到的报价是同业价，市场价只留给客人分享页。模型只看到 TourBackend 返回的数据，ERP 凭证由宿主持有。</p>
       <div class="diagram-container">
       <svg viewBox="0 0 1000 480" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="seqa-title seqa-desc">
         <title id="seqa-title">两层选团时序：选线路再对团期</title>
-        <desc id="seqa-desc">时序图：顾问提出需求，选团助手调用 search_products，TourBackend 用 route/list 与 period/list 查线路和团期并返回线路卡；顾问指定一条线路后，助手调用 get_product_details，后端再用 period/list 与 period/detail 取团期与列表价，按本次人数算总价并返回团期卡。</desc>
+        <desc id="seqa-desc">时序图：顾问提出需求，选团助手调用 search_products，TourBackend 用 route/list 与 period/list 查线路和团期并返回线路卡；顾问指定一条线路后，助手调用 get_product_details，后端再用 period/list 与 period/detail 取团期与市场价、用 order/price 取该客户的同业价，按本次人数算总价并返回团期卡。</desc>
         <defs>
           <marker id="sa-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
           <marker id="sa-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
@@ -272,7 +272,7 @@
 
         <line x1="876" y1="352" x2="644" y2="352" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sa-arrow)"/>
         <rect x="676" y="332" width="168" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="760" y="341" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">list price · seats</text>
+        <text x="760" y="341" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">市场价 · 同业价 · seats</text>
 
         <line x1="636" y1="376" x2="404" y2="376" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sa-arrow)"/>
         <rect x="436" y="356" width="168" height="12" rx="2" fill="#f5f5f5"/>
@@ -701,11 +701,11 @@
         <tbody>
           <tr><td><code>search_routes(RouteQuery)</code></td><td><code>GET /route/list</code></td><td>routeName~ · routeCode~ · departDateStart/End · pageSize ≤ 50，最多 3 页 → routeId · days · fromPrice · tags[] · features[]</td><td><span class="err">400</span> → <code>ErpRefused</code>（中文原因原样转述）</td></tr>
           <tr><td><code>list_departures(route_id, route_name, …)</code></td><td><code>GET /period/list</code></td><td>没有 routeId 过滤：按 routeName 取回，再按 routeId 留下 → availableSeats · planGuests · minGroupSize · confirmCount · reserveHours（不带价格）</td><td>—</td></tr>
-          <tr><td><code>get_departure(period_id)</code></td><td><code>GET /period/detail?periodId=</code></td><td>上一行再加 reserveCount · waitlistCount · priceInfo（列表价）</td><td><span class="err">404</span> → <code>ErpNotFound</code> → <code>None</code></td></tr>
+          <tr><td><code>get_departure(period_id)</code></td><td><code>GET /period/detail?periodId=</code></td><td>上一行再加 reserveCount · waitlistCount · priceInfo（市场价）；每行都带 companyId</td><td><span class="err">404</span> → <code>ErpNotFound</code> → <code>None</code></td></tr>
           <tr><td><code>search_customers(keyword)</code></td><td><code>GET /customer/list</code></td><td>customerId · companyName · csCode · companyType（1 = 同行）</td><td>—</td></tr>
-          <tr><td><code>quote(period_id, customer_id)</code></td><td><code>GET /order/price</code></td><td>priceType（同行价 / 直客价）· isExternalOrder · 该客户自己的 priceInfo</td><td><span class="err">404</span>（含 beta 返回的 nginx 裸 404）→ <code>ErpNotFound</code> → 回退列表价</td></tr>
-          <tr><td><code>create_order(OrderRequest)</code></td><td><code>POST /order/create</code></td><td>periodId · customerId · 成人/儿童/老人 · contactName · contactMobile · storeName → orderId · orderStatus · isWaitlist；无幂等键，超时先查订单再决定</td><td><span class="err">400</span> → <code>ErpRefused</code> → “Nothing changed: …”</td></tr>
-          <tr><td><code>list_orders(statuses)</code></td><td><code>GET /order/list</code></td><td>本销售员自己的订单：orderNo · orderStatus · routeName · totalAmount · createTime</td><td><span class="err">401 / 403</span> → <code>ErpAuth</code>（先重登一次）</td></tr>
+          <tr><td><code>quote(period_id, customer_id, company_id)</code></td><td><code>GET /order/price</code></td><td>该客户的同业价：priceType · isExternalOrder · priceInfo；必须用切到该团期部门的 token</td><td><span class="err">404</span>（含 beta 返回的 nginx 裸 404，部门不对时也是它）→ <code>ErpNotFound</code> → 回退市场价</td></tr>
+          <tr><td><code>create_order(OrderRequest)</code></td><td><code>POST /order/create</code></td><td>periodId · customerId · 成人/儿童/老人 · contactName · contactMobile · storeName → orderId · orderStatus · isWaitlist；部门由 token 决定（body 不带），无幂等键，超时先查订单再决定</td><td><span class="err">400</span> → <code>ErpRefused</code> → “Nothing changed: …”</td></tr>
+          <tr><td><code>list_orders(statuses)</code></td><td><code>GET /order/list</code></td><td>本销售员在登录部门的订单：orderNo · orderStatus · routeName · totalAmount · createTime（其他部门的订单不在列表里）</td><td><span class="err">401 / 403</span> → <code>ErpAuth</code>（先重登一次）</td></tr>
           <tr><td><code>get_order(order_id)</code></td><td><code>GET /order/detail?orderId=</code></td><td>上一行再加人数、联系人、departDate 与 reserveExpireAt</td><td><span class="err">404</span> → <code>ErpNotFound</code> → <code>None</code></td></tr>
         </tbody>
       </table>
