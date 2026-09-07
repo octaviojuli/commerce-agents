@@ -6,11 +6,15 @@
 /** Renders from fixtures; no API needed. */
 
 import type { ReactNode } from "react";
-import type { UISlotStatus } from "web-shared";
+import { CopyProvider, mergeCopy, type UISlotStatus } from "web-shared";
 import GenerativeBlock from "@/components/generative";
 import HoldBar from "@/components/HoldBar";
 import HoldPanel from "@/components/HoldPanel";
+import { TOUR_COPY } from "@/lib/copy";
 import { SHOWCASE, SHOWCASE_PRODUCT_INDEX } from "@/lib/showcase-fixtures";
+
+// The page mounts the panels without a StoreShell, so it carries the copy itself.
+const COPY = mergeCopy(TOUR_COPY);
 
 /** `id` sets the data-component when a component repeats. */
 const SECTIONS: { component: string; id?: string; payload: unknown; status?: UISlotStatus }[] = [
@@ -22,6 +26,15 @@ const SECTIONS: { component: string; id?: string; payload: unknown; status?: UIS
     component: "products",
     id: "products-streaming",
     payload: { ...SHOWCASE.products, items: SHOWCASE.products.items.slice(0, 2) },
+    status: "partial",
+  },
+  // The 团期 the advisor sends the customer, with the link they answer on.
+  { component: "shortlist", payload: SHOWCASE.shortlist },
+  // The same call still streaming: one 团期 in, and no share link until it finishes.
+  {
+    component: "shortlist",
+    id: "shortlist-streaming",
+    payload: SHOWCASE.shortlist_streaming,
     status: "partial",
   },
   { component: "comparison", payload: SHOWCASE.comparison },
@@ -42,23 +55,25 @@ function Section({ name, children }: { name: string; children: ReactNode }) {
 
 export default function ShowcasePage() {
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
-      <p className="tg-label">ACME 旅行社 组件预览（固定数据）</p>
-      <Section name="hold-bar">
-        <div className="overflow-hidden rounded-(--radius) border border-(--line)">
-          <HoldBar cart={SHOWCASE.cart} />
-        </div>
-      </Section>
-      {SECTIONS.map(({ component, id = component, payload, status = "final" }) => (
-        <Section key={id} name={id}>
-          <GenerativeBlock block={{ component, payload }} status={status} />
+    <CopyProvider value={COPY}>
+      <main className="mx-auto max-w-3xl px-6 py-12">
+        <p className="tg-label">ACME 旅行社 组件预览（固定数据）</p>
+        <Section name="hold-bar">
+          <div className="overflow-hidden rounded-(--radius) border border-(--line)">
+            <HoldBar cart={SHOWCASE.cart} />
+          </div>
         </Section>
-      ))}
-      <Section name="holds">
-        <div className="flex h-[460px] max-w-[380px] flex-col overflow-hidden rounded-(--radius-lg) border border-(--line) bg-(--card) shadow-(--shadow)">
-          <HoldPanel cart={SHOWCASE.cart} productIndex={SHOWCASE_PRODUCT_INDEX} />
-        </div>
-      </Section>
-    </main>
+        {SECTIONS.map(({ component, id = component, payload, status = "final" }) => (
+          <Section key={id} name={id}>
+            <GenerativeBlock block={{ component, payload }} status={status} />
+          </Section>
+        ))}
+        <Section name="holds">
+          <div className="flex h-[460px] max-w-[380px] flex-col overflow-hidden rounded-(--radius-lg) border border-(--line) bg-(--card) shadow-(--shadow)">
+            <HoldPanel cart={SHOWCASE.cart} productIndex={SHOWCASE_PRODUCT_INDEX} />
+          </div>
+        </Section>
+      </main>
+    </CopyProvider>
   );
 }

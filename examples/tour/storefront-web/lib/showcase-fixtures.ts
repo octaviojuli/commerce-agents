@@ -13,7 +13,7 @@
  * that day, which moves the departure ids with it.
  */
 
-import type { CartPayload, CheckoutPayload, ComparisonPayload, GuidePayload, OrderStatusPayload, PlanPayload, Product, ProductsPayload } from "./types";
+import type { CartPayload, CheckoutPayload, ComparisonPayload, GuidePayload, OrderStatusPayload, PlanPayload, Product, ProductsPayload, ShortlistPayload } from "./types";
 
 // --- Routes (线路), as search returns them ---
 
@@ -232,6 +232,23 @@ const departures: ProductsPayload = {
   ],
 };
 
+const shortlist: ShortlistPayload = {
+  title: "10 月两个可选团期",
+  note: "两个团都还能坐下 2 大 2 小，10/21 那班成人价便宜 300 元。",
+  items: [
+    { departure: DEPARTURE_1014, route: KALAJUN_10 },
+    { departure: DEPARTURE_1021, route: KALAJUN_10 },
+  ],
+  share_url: "http://localhost:3004/s/AlE5jmzx86rcTTM2",
+};
+
+// The same call mid-stream: one 团期 has landed and the link is not minted until it finishes.
+const shortlist_streaming: ShortlistPayload = {
+  title: shortlist.title,
+  note: shortlist.note,
+  items: shortlist.items.slice(0, 1),
+};
+
 const comparison: ComparisonPayload = {
   title: "三条伊犁线的差别在哪儿",
   entries: [
@@ -368,6 +385,8 @@ const order_status: OrderStatusPayload = {
 export const SHOWCASE = {
   products,
   departures,
+  shortlist,
+  shortlist_streaming,
   comparison,
   plan,
   guide,

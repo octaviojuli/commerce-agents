@@ -11,6 +11,7 @@ import type {
   OrderStatusPayload,
   PlanPayload,
   ProductsPayload,
+  ShortlistPayload,
 } from "@/lib/types";
 import BookingStatusCard from "./BookingStatusCard";
 import ComparisonSpread from "./ComparisonSpread";
@@ -18,6 +19,7 @@ import PlanChecklist from "./PlanChecklist";
 import PolicyCard from "./PolicyCard";
 import QuoteSheet from "./QuoteSheet";
 import RouteCarousel from "./RouteCarousel";
+import ShortlistCard from "./ShortlistCard";
 
 export default function GenerativeBlock({ block, status }: GenerativeBlockProps) {
   const partial = status !== "final";
@@ -25,6 +27,8 @@ export default function GenerativeBlock({ block, status }: GenerativeBlockProps)
   switch (block.component) {
     case "products":
       return <RouteCarousel payload={payload as ProductsPayload} partial={partial} />;
+    case "shortlist":
+      return <ShortlistCard payload={payload as ShortlistPayload} partial={partial} />;
     case "comparison":
       return <ComparisonSpread payload={payload as ComparisonPayload} partial={partial} />;
     case "plan":

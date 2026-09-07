@@ -118,3 +118,14 @@ export interface CheckoutPayload {
   note?: string;
   cart: CartPayload;
 }
+
+/**
+ * `present_shortlist`: the 团期 the advisor sends the customer, each with the 线路 it departs
+ * from. `share_url` is minted when the call finishes, so a streaming partial has none yet.
+ */
+export interface ShortlistPayload {
+  title: string;
+  note?: string;
+  items: { departure: Product; route: Product }[];
+  share_url?: string;
+}
