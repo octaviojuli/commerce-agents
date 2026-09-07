@@ -14,7 +14,7 @@ export interface Product {
   image_url?: string | null;
   category?: string | null;
   labels?: string[];
-  /** Every tour attribute is a string; a list is "|"-joined (highlights, fit_tags). */
+  /** Every tour attribute is a string; a list is "|"-joined (tags, features). */
   attributes?: Record<string, string>;
   in_stock?: boolean;
   short_description?: string | null;
@@ -39,6 +39,7 @@ export interface CartItem {
 
 /** One live 占位, as api/main.py `holds_payload` stamps it onto every cart read. */
 export interface Hold {
+  /** The 订单号 of the 预留 order the ERP wrote. */
   hold_id: string;
   /** The departure id the seats are held on. */
   product_id: string;

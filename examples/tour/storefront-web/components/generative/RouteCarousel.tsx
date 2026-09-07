@@ -7,27 +7,31 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  attrList,
   departureSpecs,
+  featureSentence,
   formatYuan,
+  groupProgress,
   isDeparture,
   partyQuote,
+  perHeadPrices,
+  quoteSourceText,
   routeSpecs,
+  routeTags,
 } from "@/lib/format";
 import type { Product, ProductsPayload } from "@/lib/types";
 import { MismatchNote, SeatsPill, SkeletonCard, SpecGrid, StatusPill, Tag } from "./shared";
 
-const MAX_TAGS = 4;
-
-/** A route: the trade-offs that separate it from the line beside it, then its 起价. */
+/** A route: what the ERP's catalog says about it, its tags, and its 起价. */
 function RouteCard({ product }: { product: Product }) {
   const attrs = product.attributes ?? {};
-  const tags = (product.labels ?? attrList(attrs.fit_tags)).slice(0, MAX_TAGS);
+  const tags = routeTags(product);
+  const sentence = featureSentence(product);
+  const soldOut = product.in_stock === false;
   return (
     <>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <h4 className="text-[15.5px] font-semibold leading-snug text-(--ink)">{product.title}</h4>
-        {attrs.destination ? <span className="tg-label">{attrs.destination}</span> : null}
+        {attrs.route_code ? <span className="tg-num tg-label">{attrs.route_code}</span> : null}
       </div>
       {tags.length ? (
         <div className="flex flex-wrap gap-1.5">
@@ -36,55 +40,57 @@ function RouteCard({ product }: { product: Product }) {
           ))}
         </div>
       ) : null}
-      <SpecGrid specs={routeSpecs(product)} />
+      {/* One spec a row: a card in the carousel is too narrow for two, and an ERP city name
+          is long enough to be cut in half there. */}
+      <SpecGrid specs={routeSpecs(product)} cols={1} />
       <MismatchNote product={product} />
-      {product.short_description ? (
-        <p className="line-clamp-2 text-[13px] leading-relaxed text-(--ink-soft)">
-          {product.short_description}
-        </p>
+      {sentence ? (
+        <p className="line-clamp-2 text-[13px] leading-relaxed text-(--ink-soft)">{sentence}</p>
       ) : null}
-      <div className="mt-auto flex items-end justify-between gap-2 pt-1">
-        <span className="text-[12px] text-(--ink-soft)">
-          {product.in_stock === false ? "窗口内无余位" : `${attrs.departure_city ?? ""} 出发`}
-        </span>
-        <span className="whitespace-nowrap text-right">
-          <span className="tg-label mr-1">起价</span>
-          <span className="tg-num text-[18px] font-bold text-(--accent)">
-            {formatYuan(product.price)}
-          </span>
-          <span className="tg-label ml-0.5">/人</span>
-        </span>
-      </div>
+      {soldOut || product.price > 0 ? (
+        <div className="mt-auto flex items-end justify-between gap-2 pt-1">
+          <span className="text-[12px] text-(--ink-soft)">{soldOut ? "窗口内无余位" : ""}</span>
+          {/* A route the window never priced carries no 起价, and says nothing rather than 0. */}
+          {product.price > 0 ? (
+            <span className="whitespace-nowrap text-right">
+              <span className="tg-label mr-1">起价</span>
+              <span className="tg-num text-[18px] font-bold text-(--accent)">
+                {formatYuan(product.price)}
+              </span>
+              <span className="tg-label ml-0.5">/人</span>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </>
   );
 }
 
-/** A 团期: the date, the seats, the deadline, and this party's total. */
+/** A 团期: the dates, the 团号, what is left of it, and what this party pays. */
 function DepartureCard({ product }: { product: Product }) {
   const attrs = product.attributes ?? {};
   const quote = partyQuote(product);
-  const adultPrice = Number(attrs.adult_price);
-  const childPrice = Number(attrs.child_price);
-  // A 团期 the ERP has not priced for both heads gets no per-head line, the way it gets no quote.
-  const perHead =
-    Number.isFinite(adultPrice) && Number.isFinite(childPrice)
-      ? `成人 ${formatYuan(adultPrice)} · 儿童 ${formatYuan(childPrice)}`
-      : null;
+  const perHead = perHeadPrices(product);
+  const source = quoteSourceText(attrs.quote_source);
   return (
     <>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <h4 className="text-[15.5px] font-semibold leading-snug text-(--ink)">{product.title}</h4>
-        <StatusPill status={attrs.group_status} />
+        <StatusPill status={attrs.group_status} detail={groupProgress(product)} />
         <SeatsPill product={product} />
       </div>
-      <SpecGrid specs={departureSpecs(product)} />
+      <SpecGrid specs={departureSpecs(product)} cols={1} />
       <div className="mt-auto flex flex-wrap items-end justify-between gap-x-3 gap-y-1 pt-1">
         {perHead ? (
           <span className="tg-num text-[12.5px] text-(--ink-soft)">{perHead}</span>
         ) : null}
-        {quote ? (
-          <span className="tg-num text-right text-[15px] font-bold text-(--accent)">{quote}</span>
-        ) : null}
+        {/* Which of the ERP's prices this is: the customer's own, the list, or none yet. */}
+        <span className="ml-auto text-right">
+          {quote ? (
+            <span className="tg-num text-[15px] font-bold text-(--accent)">{quote}</span>
+          ) : null}
+          {source ? <span className="tg-label ml-1.5">{source}</span> : null}
+        </span>
       </div>
     </>
   );

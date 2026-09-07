@@ -51,14 +51,14 @@
     <div class="header">
       <p class="header-eyebrow">examples/tour · 2026-09-07</p>
       <h1>ACME 旅行社选团助手</h1>
-      <p class="subtitle">门店顾问侧的散拼团销售助手：线路是商品族，团期是变体，ERP 占位是唯一的写操作。五张图分别说明系统架构、两层选团流程、锁位与分享回写、数据模型与映射、占位生命周期，最后是交给 ERP 团队的接口契约。</p>
+      <p class="subtitle">门店顾问侧的散拼团销售助手：线路是商品族，团期是变体，往 ERP 写一张预留订单是唯一的写操作。五张图分别说明系统架构、两层选团流程、写单与分享回写、数据模型与映射、预留订单生命周期，最后是 ErpClient 八个调用与 ERP 端点的对照表。</p>
     </div>
 
     <!-- ══════════════════════ 1. ARCHITECTURE ══════════════════════ -->
     <div class="section">
       <p class="section-eyebrow">01 · 系统架构</p>
       <h2>组件与连接</h2>
-      <p class="subtitle">顾问在工作台里对话，宿主把对话交给 Agent 循环，工具调用落到 TourBackend，再经 ErpClient 协议进入 Mock 或真实 ERP。模型服务通过 Anthropic 兼容接口接入，可换 DeepSeek 或 Kimi。</p>
+      <p class="subtitle">顾问在工作台里对话，宿主把对话交给 Agent 循环，工具调用落到 TourBackend，再经 ErpClient 协议进入 Mock 或真实 ERP。真实 ERP 用顾问自己的账号按部门登录，读到的就是这位销售员能看到的数据。模型服务通过 Anthropic 兼容接口接入，可换 DeepSeek 或 Kimi。</p>
       <div class="diagram-container">
       <svg viewBox="0 0 1000 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="arch-title arch-desc">
         <title id="arch-title">ACME 旅行社选团助手系统架构</title>
@@ -80,7 +80,7 @@
         <text x="312" y="181" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">API 宿主 · UVICORN :8004</text>
         <rect x="664" y="240" width="320" height="200" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
         <rect x="676" y="244" width="136" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="744" y="253" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">ERPCLIENT PROTOCOL · 6 CALLS</text>
+        <text x="744" y="253" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">ERPCLIENT PROTOCOL · 8 CALLS</text>
 
         <!-- arrows (before boxes) -->
         <!-- workbench -> host -->
@@ -156,21 +156,21 @@
         <rect x="696" y="278" width="34" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
         <text x="713" y="287" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MOCK</text>
         <text x="744" y="306" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">MockErpClient</text>
-        <text x="744" y="322" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">data/*.json · TTL 占位</text>
+        <text x="744" y="322" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">data/*.json · 订单簿</text>
         <!-- http erp (backend) -->
         <rect x="688" y="368" width="112" height="64" rx="6" fill="#f5f5f5"/>
         <rect x="688" y="368" width="112" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
         <rect x="696" y="374" width="34" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
         <text x="713" y="383" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HTTP</text>
         <text x="744" y="402" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">HttpErpClient</text>
-        <text x="744" y="418" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">TOUR_ERP_BASE_URL</text>
+        <text x="744" y="418" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">login · Bearer · 部门</text>
         <!-- real erp (external) -->
         <rect x="856" y="368" width="112" height="64" rx="6" fill="#f5f5f5"/>
         <rect x="856" y="368" width="112" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
         <rect x="864" y="374" width="26" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
         <text x="877" y="383" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
         <text x="912" y="402" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">旅行社 ERP</text>
-        <text x="912" y="418" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Bearer · JSON</text>
+        <text x="912" y="418" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">b2b-AI-cli · /aicli</text>
         <!-- model service (external) -->
         <rect x="856" y="104" width="112" height="64" rx="6" fill="#f5f5f5"/>
         <rect x="856" y="104" width="112" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
@@ -204,11 +204,11 @@
     <div class="section">
       <p class="section-eyebrow">02 · 业务流 · 两层选团</p>
       <h2>先选线路，再对团期</h2>
-      <p class="subtitle">顾问用一句话描述客人需求。第一层搜索返回线路（商品族），第二层在一条线路上展开团期（变体），报价按本次人数结构计算。模型只看到 TourBackend 返回的数据，ERP 凭证由宿主持有。</p>
+      <p class="subtitle">顾问用一句话描述客人需求。第一层搜索返回线路（商品族），第二层在一条线路上展开团期（变体），报价按本次人数结构计算。ERP 的团期列表不带价格，列表价要逐条 period/detail 取，所以一次列表最多取六条。模型只看到 TourBackend 返回的数据，ERP 凭证由宿主持有。</p>
       <div class="diagram-container">
       <svg viewBox="0 0 1000 480" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="seqa-title seqa-desc">
         <title id="seqa-title">两层选团时序：选线路再对团期</title>
-        <desc id="seqa-desc">时序图：顾问提出需求，选团助手调用 search_products，TourBackend 向 ERP 查线路和团期并返回线路卡；顾问指定一条线路后，助手调用 get_product_details，后端向 ERP 查该线路的团期与本次人数报价并返回团期卡。</desc>
+        <desc id="seqa-desc">时序图：顾问提出需求，选团助手调用 search_products，TourBackend 用 route/list 与 period/list 查线路和团期并返回线路卡；顾问指定一条线路后，助手调用 get_product_details，后端再用 period/list 与 period/detail 取团期与列表价，按本次人数算总价并返回团期卡。</desc>
         <defs>
           <marker id="sa-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
           <marker id="sa-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
@@ -244,7 +244,7 @@
 
         <line x1="644" y1="160" x2="876" y2="160" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#sa-arrow-link)"/>
         <rect x="672" y="140" width="176" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="760" y="149" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">search_routes · list_departures</text>
+        <text x="760" y="149" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">route/list · period/list</text>
 
         <line x1="876" y1="184" x2="644" y2="184" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sa-arrow)"/>
         <rect x="676" y="164" width="168" height="12" rx="2" fill="#f5f5f5"/>
@@ -268,11 +268,11 @@
 
         <line x1="644" y1="328" x2="876" y2="328" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#sa-arrow-link)"/>
         <rect x="668" y="308" width="184" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="760" y="317" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">list_departures(窗口±7天, 2大2小)</text>
+        <text x="760" y="317" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">period/list · period/detail</text>
 
         <line x1="876" y1="352" x2="644" y2="352" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sa-arrow)"/>
         <rect x="676" y="332" width="168" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="760" y="341" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">party_quote_total · seats_left</text>
+        <text x="760" y="341" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">list price · seats</text>
 
         <line x1="636" y1="376" x2="404" y2="376" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sa-arrow)"/>
         <rect x="436" y="356" width="168" height="12" rx="2" fill="#f5f5f5"/>
@@ -317,13 +317,13 @@
 
     <!-- ══════════════════════ 3. SEQUENCE B ══════════════════════ -->
     <div class="section">
-      <p class="section-eyebrow">03 · 业务流 · 锁位与分享</p>
-      <h2>占位、满团拒绝、清单回写</h2>
-      <p class="subtitle">锁位是唯一的写操作，购物车只收团期 ID。有位时 ERP 返回带过期时间的占位；满位或已截止时模型只拿到 ID 级别的拒绝，再向顾问报兄弟团期。清单的分享链接由服务端生成，客人在分享页的选择以待处理事件回到顾问的下一轮对话。</p>
+      <p class="section-eyebrow">03 · 业务流 · 写单与分享</p>
+      <h2>写预留单、候补、清单回写</h2>
+      <p class="subtitle">下单是唯一的写操作，购物车只收团期 ID。余位够时 ERP 写一张 预留 订单，购物车行按本地 30 分钟倒计时；余位不足时 ERP 不拒绝，而是写成 候补 订单，该行不占位也不倒计时。ERP 没有取消或改单接口，撤单在 ERP 后台。清单的分享链接由服务端生成，客人在分享页的选择以待处理事件回到顾问的下一轮对话。</p>
       <div class="diagram-container">
       <svg viewBox="0 0 1000 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="seqb-title seqb-desc">
-        <title id="seqb-title">锁位、满团拒绝与分享回写时序</title>
-        <desc id="seqb-desc">时序图：顾问要求锁位，助手调用 add_to_cart，后端向 ERP 发 POST /holds；有位时返回占位并把倒计时推给顾问，满位时返回 SOLD_OUT 与兄弟团期，助手只报 id；随后顾问让助手生成清单，后端生成分享链接，客人在分享页选择后经 choose 路由写回待处理事件。</desc>
+        <title id="seqb-title">写预留单、候补与分享回写时序</title>
+        <desc id="seqb-desc">时序图：顾问要求锁位，助手调用 add_to_cart，后端向 ERP 发 POST /order/create；余位够时返回预留订单，购物车按本地 30 分钟倒计时，余位不足时返回 候补 订单，购物车行标注候补且不占位；随后顾问让助手生成清单，后端生成分享链接，客人在分享页选择后经 choose 路由写回待处理事件。</desc>
         <defs>
           <marker id="sb-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
           <marker id="sb-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
@@ -343,9 +343,9 @@
         <rect x="88" y="184" width="640" height="184" rx="4" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
         <rect x="88" y="184" width="40" height="16" rx="2" fill="#f5f5f5" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
         <text x="108" y="196" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">ALT</text>
-        <text x="140" y="208" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">[seats_left ≥ 4 且未截止]</text>
+        <text x="140" y="208" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">[余位 ≥ 4]</text>
         <line x1="96" y1="280" x2="720" y2="280" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
-        <text x="140" y="300" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">[SOLD_OUT · DEADLINE_PASSED · HOLD_LIMIT]</text>
+        <text x="140" y="300" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">[余位不足]</text>
 
         <!-- activation bars -->
         <rect x="300" y="104" width="8" height="160" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
@@ -362,27 +362,27 @@
 
         <line x1="308" y1="136" x2="500" y2="136" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#sb-arrow)"/>
         <rect x="316" y="116" width="176" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="404" y="125" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">add_to_cart(DP-1022-20261014, 4)</text>
+        <text x="404" y="125" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">add_to_cart(DP-3017, 4)</text>
 
         <line x1="508" y1="160" x2="700" y2="160" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#sb-arrow-link)"/>
         <rect x="520" y="140" width="168" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="604" y="149" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">POST /holds · Idempotency-Key</text>
+        <text x="604" y="149" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">POST /order/create</text>
 
         <line x1="700" y1="232" x2="508" y2="232" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sb-arrow)"/>
         <rect x="516" y="212" width="176" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="604" y="221" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">201 HoldRecord · expires_at +30min</text>
+        <text x="604" y="221" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">201 orderId · 预留</text>
 
         <line x1="300" y1="256" x2="108" y2="256" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#sb-arrow-accent)"/>
         <rect x="124" y="236" width="160" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="204" y="245" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">cart_update · holds 倒计时</text>
+        <text x="204" y="245" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">cart_update · 30 分钟倒计时</text>
 
         <line x1="700" y1="324" x2="508" y2="324" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sb-arrow)"/>
         <rect x="512" y="304" width="184" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="604" y="313" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">409 + sibling_departure_ids</text>
+        <text x="604" y="313" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">orderStatus 5 候补</text>
 
         <line x1="300" y1="348" x2="108" y2="348" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#sb-arrow)"/>
         <rect x="116" y="328" width="176" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="204" y="337" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">Unavailable：只报兄弟团期 id</text>
+        <text x="204" y="337" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">候补行（不计入占位）</text>
 
         <line x1="108" y1="400" x2="300" y2="400" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#sb-arrow)"/>
         <rect x="116" y="380" width="176" height="12" rx="2" fill="#f5f5f5"/>
@@ -451,11 +451,11 @@
     <div class="section">
       <p class="section-eyebrow">04 · 数据模型</p>
       <h2>ERP 记录如何映射为 Agent 侧类型</h2>
-      <p class="subtitle">左列是 ErpClient 返回的记录，中列是 shopping_agent 核心包定义的类型，右列是 TourBackend 按会话保存的内存状态。核心包零改动：映射全部发生在 TourBackend 内。</p>
+      <p class="subtitle">左列是 ErpClient 返回的记录，字段名沿用 ERP 自己的驼峰写法；中列是 shopping_agent 核心包定义的类型，右列是 TourBackend 按会话保存的内存状态。核心包零改动：映射全部发生在 TourBackend 内。</p>
       <div class="diagram-container">
       <svg viewBox="0 0 1000 780" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="er-title er-desc">
-        <title id="er-title">线路、团期、占位与 Product 类型的映射</title>
-        <desc id="er-desc">ER 图：线路一对多团期，团期一对多占位；线路映射为商品族 Product，团期映射为变体 Product，占位映射为购物车行；SearchContext 按会话保存时段与人数并关联占位，ShareRecord 保存分享 token。</desc>
+        <title id="er-title">线路、团期、预留订单与 Product 类型的映射</title>
+        <desc id="er-desc">ER 图：线路一对多团期，团期一对多预留订单；线路映射为商品族 Product，团期映射为变体 Product，预留订单映射为购物车行；SearchContext 按会话保存时段、人数与下单客户，并关联本会话写下的订单，ShareRecord 保存分享 token。</desc>
         <defs>
           <marker id="er-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
         </defs>
@@ -473,8 +473,8 @@
         <line x1="140" y1="504" x2="140" y2="552" stroke="#4f5d75" stroke-width="1.2"/>
         <text x="148" y="518" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">1</text>
         <text x="148" y="546" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">N</text>
-        <line x1="828" y1="448" x2="828" y2="552" stroke="#4f5d75" stroke-width="1.2"/>
-        <text x="836" y="462" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">1</text>
+        <line x1="828" y1="464" x2="828" y2="552" stroke="#4f5d75" stroke-width="1.2"/>
+        <text x="836" y="478" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">1</text>
         <text x="836" y="546" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">N</text>
         <path d="M 712,400 H 608 Q 600,400 600,408 V 720 Q 600,728 592,728 H 148 Q 140,728 140,720 V 712" fill="none" stroke="#4f5d75" stroke-width="1.2"/>
         <text x="692" y="394" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">1</text>
@@ -499,14 +499,14 @@
         <text x="71" y="97" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ENTITY</text>
         <text x="48" y="118" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">线路 RouteRecord</text>
         <line x1="40" y1="124" x2="240" y2="124" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
-        <text x="48" y="140" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace"># route_id  RT-1021</text>
-        <text x="48" y="156" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">route_name · supplier_name</text>
-        <text x="48" y="172" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">days · nights · departure_city</text>
-        <text x="48" y="188" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">hotel_level · vehicle</text>
-        <text x="48" y="204" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">shopping_stops · child_min_age</text>
-        <text x="48" y="220" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">intensity · fit_tags[]</text>
-        <text x="48" y="236" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">highlights[] · summary</text>
-        <text x="48" y="252" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">itinerary_brief</text>
+        <text x="48" y="140" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace"># routeId  RT-1021</text>
+        <text x="48" y="156" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">routeCode · routeName</text>
+        <text x="48" y="172" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">days · departCityName</text>
+        <text x="48" y="188" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">fromPrice  ERP 起价</text>
+        <text x="48" y="204" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">tags[]  纯玩 · 四钻 · 小团</text>
+        <text x="48" y="220" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">features[]  亮点与简介</text>
+        <text x="48" y="236" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">ERP 无目的地 / 酒店 /</text>
+        <text x="48" y="252" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">购物 / 儿童年龄字段</text>
 
         <!-- Departure (focal) -->
         <rect x="40" y="304" width="200" height="200" rx="6" fill="#f5f5f5"/>
@@ -515,30 +515,30 @@
         <text x="71" y="321" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ENTITY</text>
         <text x="48" y="342" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">团期 DepartureRecord</text>
         <line x1="40" y1="348" x2="240" y2="348" stroke="rgba(235,108,54,0.30)" stroke-width="0.8"/>
-        <text x="48" y="364" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace"># departure_id  DP-1022-20261014</text>
-        <text x="48" y="380" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">→ route_id</text>
-        <text x="48" y="396" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">depart_date · return_date</text>
-        <text x="48" y="412" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">seats_total · seats_left</text>
-        <text x="48" y="428" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">group_status · booking_deadline</text>
-        <text x="48" y="444" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">confirmed · pending · closed</text>
-        <text x="48" y="460" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">adult_price · child_price</text>
-        <text x="48" y="476" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">single_supplement · hold_ttl</text>
-        <text x="48" y="492" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">party_quote_total  按人数计算</text>
+        <text x="48" y="364" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace"># periodId  DP-3017</text>
+        <text x="48" y="380" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">periodCode  XJ-YLKL-20261014-001</text>
+        <text x="48" y="396" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">→ routeId</text>
+        <text x="48" y="412" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">departDate · returnDate</text>
+        <text x="48" y="428" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">planGuests · availableSeats</text>
+        <text x="48" y="444" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">minGroupSize · confirmCount</text>
+        <text x="48" y="460" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">reserveHours  ERP 侧预留时长</text>
+        <text x="48" y="476" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">priceInfo{adult · child · elder</text>
+        <text x="48" y="492" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">· singleRoomDiff}  仅 detail 有</text>
 
         <!-- Hold -->
         <rect x="40" y="552" width="200" height="160" rx="6" fill="#f5f5f5"/>
         <rect x="40" y="552" width="200" height="160" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
         <rect x="48" y="560" width="46" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
         <text x="71" y="569" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ENTITY</text>
-        <text x="48" y="590" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">占位 HoldRecord</text>
+        <text x="48" y="590" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">预留订单 OrderRecord</text>
         <line x1="40" y1="596" x2="240" y2="596" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
-        <text x="48" y="612" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace"># hold_id  HOLD-…</text>
-        <text x="48" y="628" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">→ departure_id</text>
-        <text x="48" y="644" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">adults · children</text>
-        <text x="48" y="660" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">expires_at  TTL 30 min</text>
-        <text x="48" y="676" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">total_price</text>
-        <text x="48" y="692" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">advisor_id · session_key</text>
-        <text x="48" y="708" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">sweep → hold_expired 事件</text>
+        <text x="48" y="612" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace"># orderId  70001 · orderNo</text>
+        <text x="48" y="628" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">→ periodId</text>
+        <text x="48" y="644" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">adults · children · elders</text>
+        <text x="48" y="660" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">totalAmount</text>
+        <text x="48" y="676" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">status 0–5  预留 … 候补</text>
+        <text x="48" y="692" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">reserveExpireAt  ERP 侧</text>
+        <text x="48" y="708" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">contactName · contactMobile</text>
 
         <!-- Product family -->
         <rect x="352" y="80" width="200" height="144" rx="6" fill="#f5f5f5"/>
@@ -577,14 +577,14 @@
         <text x="360" y="590" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">CartItem · 购物车行</text>
         <line x1="352" y1="596" x2="552" y2="596" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
         <text x="360" y="612" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace"># product_id = departure_id</text>
-        <text x="360" y="628" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">quantity = adults + children</text>
-        <text x="360" y="644" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">price = total_price / quantity</text>
+        <text x="360" y="628" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">quantity = adults+children+elders</text>
+        <text x="360" y="644" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">price = totalAmount / quantity</text>
         <text x="360" y="660" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">line_total ≈ ERP 总价 (±1 元)</text>
-        <text x="360" y="676" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">holds[] 附在 /api/cart 响应</text>
+        <text x="360" y="676" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">本地 30 分钟计时 · 候补行不计时</text>
 
         <!-- SearchContext -->
-        <rect x="712" y="304" width="232" height="144" rx="6" fill="#f5f5f5"/>
-        <rect x="712" y="304" width="232" height="144" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="712" y="304" width="232" height="160" rx="6" fill="#f5f5f5"/>
+        <rect x="712" y="304" width="232" height="160" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
         <rect x="720" y="312" width="42" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
         <text x="741" y="321" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">STATE</text>
         <text x="720" y="342" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">SearchContext · 会话</text>
@@ -592,8 +592,9 @@
         <text x="720" y="364" fill="#2d3142" font-size="9" font-family="'Geist Mono', monospace"># session_id</text>
         <text x="720" y="380" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">depart_from · depart_to</text>
         <text x="720" y="396" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">adults · children · child_ages[]</text>
-        <text x="720" y="412" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">每次 search_products 覆盖写入</text>
-        <text x="720" y="428" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">无上下文 → 今起 60 天 · 2大0小</text>
+        <text x="720" y="412" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">customer_id（部署配置）</text>
+        <text x="720" y="428" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">每次 search_products 覆盖写入</text>
+        <text x="720" y="444" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">无上下文 → 今起 60 天 · 2大0小</text>
 
         <!-- ShareRecord -->
         <rect x="712" y="552" width="232" height="128" rx="6" fill="#f5f5f5"/>
@@ -627,13 +628,13 @@
 
     <!-- ══════════════════════ 5. HOLD STATE MACHINE + ERP CONTRACT ══════════════════════ -->
     <div class="section">
-      <p class="section-eyebrow">05 · 占位生命周期与 ERP 接口</p>
-      <h2>一个团期从报价到占位释放</h2>
-      <p class="subtitle">占位由 ERP 决定过期时间，宿主在每轮对话前把过期通知写入待处理事件。改量是先释放再占位，失败时恢复原占位。下表是交给 ERP 团队的 HTTP 契约与错误码映射。</p>
+      <p class="section-eyebrow">05 · 预留订单生命周期与 ERP 接口</p>
+      <h2>一个团期从报价到预留或候补</h2>
+      <p class="subtitle">下单是唯一的写操作。ERP 写下的是一张预留订单，它自己的预留时长由团期的 reserveHours 决定；顾问看到的 30 分钟倒计时是后端本地的。余位不足不是拒绝，而是一张候补订单。下表是 ErpClient 八个调用对应的端点、关键字段与错误码映射。</p>
       <div class="diagram-container">
       <svg viewBox="0 0 1000 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="hold-title hold-desc">
-        <title id="hold-title">占位生命周期状态机</title>
-        <desc id="hold-desc">状态机：团期报价后，余位足够时进入占位中；满位、截止或超限则停留在报价并返回拒绝；占位中可改量、被释放或因 TTL 到期而过期，释放与过期都回补余位并结束。</desc>
+        <title id="hold-title">预留订单生命周期状态机</title>
+        <desc id="hold-desc">状态机：团期报价后，参数或业务校验失败停留在报价并返回 ErpRefused；余位够时 ERP 写下一张预留订单，购物车行按本地 30 分钟计时，到期后行消失而订单仍在 ERP；余位不足时 ERP 写成候补订单，不占位。取消与改单只能在 ERP 后台完成。</desc>
         <defs>
           <marker id="st-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
           <marker id="st-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
@@ -647,27 +648,23 @@
         <text x="296" y="129" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">ADD [余位≥人数]</text>
         <!-- self loop: quoted -->
         <path d="M 144,112 V 96 Q 144,88 152,88 H 184 Q 192,88 192,96 V 112" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#st-arrow)"/>
-        <rect x="76" y="60" width="184" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="168" y="69" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">[满位/截止/超限] 拒绝 + 兄弟团期 ID</text>
-        <!-- self loop: active -->
-        <path d="M 400,112 V 96 Q 400,88 408,88 H 456 Q 464,88 464,96 V 112" fill="none" stroke="#4f5d75" stroke-width="1" marker-end="url(#st-arrow)"/>
-        <rect x="348" y="60" width="168" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="432" y="69" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">UPDATE 改量 · 失败恢复原占位</text>
-        <!-- active -> released -->
+        <rect x="64" y="60" width="208" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="168" y="69" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">[参数/业务校验失败] ErpRefused</text>
+        <!-- 预留中 -> 已过期 -->
         <path d="M 512,128 H 568 Q 576,128 576,120 V 84 Q 576,76 584,76 H 640" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#st-arrow)"/>
         <rect x="468" y="96" width="96" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="516" y="105" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">REMOVE_FROM_CART</text>
-        <!-- active -> expired -->
-        <path d="M 512,152 H 568 Q 576,152 576,160 V 196 Q 576,204 584,204 H 640" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#st-arrow)"/>
-        <rect x="468" y="172" width="96" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="516" y="181" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">TTL 到期 · SWEEP</text>
+        <text x="516" y="105" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">本地 30 分钟到期</text>
+        <!-- 报价 -> 候补 -->
+        <path d="M 168,168 V 196 Q 168,204 176,204 H 640" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#st-arrow)"/>
+        <rect x="248" y="196" width="176" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="336" y="205" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">[余位不足] ERP 写成候补</text>
         <!-- to end -->
         <line x1="784" y1="76" x2="872" y2="76" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#st-arrow)"/>
-        <rect x="796" y="56" width="64" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="828" y="65" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">余位回补</text>
+        <rect x="792" y="56" width="72" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="828" y="65" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">订单仍在 ERP</text>
         <line x1="784" y1="204" x2="872" y2="204" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#st-arrow)"/>
-        <rect x="788" y="184" width="80" height="12" rx="2" fill="#f5f5f5"/>
-        <text x="828" y="193" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">回补 + APP EVENT</text>
+        <rect x="792" y="184" width="72" height="12" rx="2" fill="#f5f5f5"/>
+        <text x="828" y="193" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">订单仍在 ERP</text>
 
         <!-- start / end -->
         <circle cx="48" cy="140" r="6" fill="#2d3142"/>
@@ -683,48 +680,52 @@
         <text x="168" y="152" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">quoted · 团期已列出</text>
         <rect x="352" y="112" width="160" height="56" rx="8" fill="#f5f5f5"/>
         <rect x="352" y="112" width="160" height="56" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
-        <text x="432" y="136" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">占位中</text>
-        <text x="432" y="152" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">HOLD-… · expires_at</text>
+        <text x="432" y="136" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">预留中</text>
+        <text x="432" y="152" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">订单 status 0 · 购物车行</text>
         <rect x="640" y="48" width="144" height="56" rx="8" fill="#f5f5f5"/>
-        <rect x="640" y="48" width="144" height="56" rx="8" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
-        <text x="712" y="72" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">已释放</text>
-        <text x="712" y="88" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">released</text>
+        <rect x="640" y="48" width="144" height="56" rx="8" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text x="712" y="72" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">已过期</text>
+        <text x="712" y="88" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">expired · 行已消失</text>
         <rect x="640" y="176" width="144" height="56" rx="8" fill="#f5f5f5"/>
         <rect x="640" y="176" width="144" height="56" rx="8" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
-        <text x="712" y="200" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">已过期</text>
-        <text x="712" y="216" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">expired · hold_expired</text>
+        <text x="712" y="200" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">候补</text>
+        <text x="712" y="216" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">订单 status 5 · 不占位</text>
       </svg>
       </div>
+      <p class="subtitle">ERP 没有取消、释放或改单接口。本地计时到期只是购物车行消失，订单仍留在 ERP；取消占位或改人数由顾问在 ERP 后台处理，对话里两者都以中文原因回绝。</p>
 
       <table>
         <thead>
-          <tr><th>ErpClient 调用</th><th>HTTP 契约</th><th>关键字段</th><th>错误码 → 异常 → 模型看到的</th></tr>
+          <tr><th>ErpClient 调用</th><th>ERP 端点</th><th>关键字段</th><th>错误码 → 异常 → 模型看到的</th></tr>
         </thead>
         <tbody>
-          <tr><td><code>search_routes(RouteQuery)</code></td><td><code>POST /routes/search</code></td><td>destination · depart_from/to · days_min/max · adults · children · child_ages · no_shopping · hotel_level · limit ≤ 20</td><td>缺必填字段的线路：丢弃并记日志，不进入结果</td></tr>
-          <tr><td><code>list_departures(route_id, …)</code></td><td><code>GET /routes/{route_id}/departures</code></td><td>窗口 · 人数结构 → seats_left 扣除未过期占位 · party_quote_total</td><td>—</td></tr>
-          <tr><td><code>get_departure(departure_id, …)</code></td><td><code>GET /departures/{departure_id}</code></td><td>单条同结构报价</td><td><span class="err">404 DEPARTURE_NOT_FOUND</span> → <code>None</code></td></tr>
-          <tr><td><code>create_hold(departure_id, adults, children, advisor_id, session_key)</code></td><td><code>POST /holds</code> + <code>Idempotency-Key</code></td><td>201 → hold_id · expires_at · total_price · seats_left_after</td><td><span class="err">409 SOLD_OUT</span> + sibling_departure_ids → <code>ErpSoldOut</code> → <code>Unavailable("id; in stock: ids")</code><br><span class="err">409 DEADLINE_PASSED</span> / <span class="err">409 HOLD_LIMIT</span> → <code>ErpDeadlinePassed</code> / <code>ErpHoldLimit</code> → "Nothing changed: …"<br><span class="err">404 DEPARTURE_NOT_FOUND</span> → <code>ErpHoldNotFound</code></td></tr>
-          <tr><td><code>release_hold(hold_id, advisor_id)</code></td><td><code>DELETE /holds/{hold_id}</code> + <code>X-Advisor-Id</code></td><td>释放后 seats_left 立即回补</td><td><span class="err">403 NOT_OWNER</span> / <span class="err">404 HOLD_NOT_FOUND</span> → <code>ErpHoldNotFound</code></td></tr>
-          <tr><td><code>list_holds(advisor_id, session_key)</code></td><td><code>GET /holds?advisor_id=&amp;session_key=</code></td><td>只返回未过期占位 → 购物车行 + holds 倒计时</td><td>网络超时 · 5xx · 非 JSON → <code>ErpUnavailable</code> → "工具暂时不可用"</td></tr>
+          <tr><td><code>search_routes(RouteQuery)</code></td><td><code>GET /route/list</code></td><td>routeName~ · routeCode~ · departDateStart/End · pageSize ≤ 50，最多 3 页 → routeId · days · fromPrice · tags[] · features[]</td><td><span class="err">400</span> → <code>ErpRefused</code>（中文原因原样转述）</td></tr>
+          <tr><td><code>list_departures(route_id, route_name, …)</code></td><td><code>GET /period/list</code></td><td>没有 routeId 过滤：按 routeName 取回，再按 routeId 留下 → availableSeats · planGuests · minGroupSize · confirmCount · reserveHours（不带价格）</td><td>—</td></tr>
+          <tr><td><code>get_departure(period_id)</code></td><td><code>GET /period/detail?periodId=</code></td><td>上一行再加 reserveCount · waitlistCount · priceInfo（列表价）</td><td><span class="err">404</span> → <code>ErpNotFound</code> → <code>None</code></td></tr>
+          <tr><td><code>search_customers(keyword)</code></td><td><code>GET /customer/list</code></td><td>customerId · companyName · csCode · companyType（1 = 同行）</td><td>—</td></tr>
+          <tr><td><code>quote(period_id, customer_id)</code></td><td><code>GET /order/price</code></td><td>priceType（同行价 / 直客价）· isExternalOrder · 该客户自己的 priceInfo</td><td><span class="err">404</span>（含 beta 返回的 nginx 裸 404）→ <code>ErpNotFound</code> → 回退列表价</td></tr>
+          <tr><td><code>create_order(OrderRequest)</code></td><td><code>POST /order/create</code></td><td>periodId · customerId · 成人/儿童/老人 · contactName · contactMobile · storeName → orderId · orderStatus · isWaitlist；无幂等键，超时先查订单再决定</td><td><span class="err">400</span> → <code>ErpRefused</code> → “Nothing changed: …”</td></tr>
+          <tr><td><code>list_orders(statuses)</code></td><td><code>GET /order/list</code></td><td>本销售员自己的订单：orderNo · orderStatus · routeName · totalAmount · createTime</td><td><span class="err">401 / 403</span> → <code>ErpAuth</code>（先重登一次）</td></tr>
+          <tr><td><code>get_order(order_id)</code></td><td><code>GET /order/detail?orderId=</code></td><td>上一行再加人数、联系人、departDate 与 reserveExpireAt</td><td><span class="err">404</span> → <code>ErpNotFound</code> → <code>None</code></td></tr>
         </tbody>
       </table>
+      <p class="subtitle">八个调用共用一套映射：400 → <code>ErpRefused</code>，401/403 → <code>ErpAuth</code>，404（含裸 nginx 404）→ <code>ErpNotFound</code>，429 → <code>ErpThrottled</code>，5xx、连接失败或读不动的响应体 → <code>ErpUnavailable</code>。前四类由 TourToolExecutor 原样转述 ERP 的中文原因，只有 ErpUnavailable 报成故障。</p>
     </div>
 
     <div class="cards">
       <div class="card">
         <div class="card-header"><span class="card-dot coral"></span><h3>顺序由后端强制</h3></div>
         <ul>
-          <li>购物车只接受团期 ID（DP-…），线路 ID 被 gate 与后端两层拦截</li>
-          <li>搜索结果不足 2 条时按 时段±7天 → 天数±2 → 放弃软条件 三档放宽，并标 match / mismatch</li>
-          <li>报价按本次人数结构计算，无上下文时如实标注 2大0小</li>
+          <li>购物车只收团期 ID（DP-…），线路 ID 被 gate 与后端两层拦截</li>
+          <li>占位就是 ERP 里的预留订单，30 分钟倒计时是后端本地的</li>
+          <li>取消与改单在 ERP 后台：对话里 remove 与 update 一律回绝并说明原因</li>
         </ul>
       </div>
       <div class="card">
         <div class="card-header"><span class="card-dot ink"></span><h3>模型只看到数据，不碰凭证</h3></div>
         <ul>
-          <li>ERP Bearer、分享 token、ANTHROPIC_API_KEY 都由宿主持有</li>
-          <li>Unavailable 消息只含 ID，不含中文描述</li>
+          <li>ERP 账号密码与 Bearer、分享 token、ANTHROPIC_API_KEY 都由宿主持有</li>
+          <li>ERP 的业务拒绝原样转述给顾问，只有 ErpUnavailable 报成故障</li>
           <li>模型 ID 与接口地址来自环境变量，可换 DeepSeek / Kimi</li>
         </ul>
       </div>
@@ -740,7 +741,7 @@
 
     <div class="footer">
       <span>examples/tour · ACME 旅行社 · 架构与业务流</span>
-      <span>branch tour-vertical · 2026-09-07</span>
+      <span>branch erp-phase4 · 2026-09-07</span>
     </div>
 
   </div>

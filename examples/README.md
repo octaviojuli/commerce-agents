@@ -55,7 +55,9 @@ only the session id, in `X-Session-Id`, and the routes read the principal from i
 | `MERCHANT_ANALYSIS_CODE_EXECUTION` | `1` mounts the hosted code execution tool in the retail analysis delegate | `retail/api/agent_config.py` | `0` |
 | `MERCHANT_ANALYSIS_MODEL` | The retail analysis delegate's model | `retail/api/agent_config.py` | unset (main model) |
 | `TOUR_MODEL`, `TOUR_MEMORY_MODEL` | The tour agent's turn and memory-extraction model ids in the provider's own names; with `ANTHROPIC_BASE_URL` they run the vertical on an Anthropic-compatible endpoint (DeepSeek, Kimi) | `tour/api/agent_config.py` | repo defaults |
-| `TOUR_ERP_BASE_URL`, `TOUR_ERP_TOKEN` | A real 旅行社 ERP for the tour vertical; set, `main.py` builds `HttpErpClient` with the bearer, unset it uses `MockErpClient` over `tour/data/` | `tour/api/main.py` | unset (mock) |
+| `TOUR_ERP_BASE_URL`, `TOUR_ERP_MOBILE`, `TOUR_ERP_PASSWORD`, `TOUR_ERP_COMPANY_ID` | The agency's own 旅行社 ERP for the tour vertical; the base URL set, `main.py` builds `HttpErpClient` and logs the advisor's account into that department, unset it uses `MockErpClient` over `tour/data/` | `tour/api/main.py` | unset (mock) |
+| `TOUR_ERP_CUSTOMER_ID` | The 同行 customer every quote and 预留 order is made for | `tour/api/main.py` | `4101` |
+| `TOUR_ERP_ALLOW_PAST` | `1` lets the search windows reach behind today, for a beta environment whose 团期 have all departed | `tour/api/main.py` | unset |
 | `TOUR_SHARE_BASE_URL` | The origin a `present_shortlist` share link points at | `tour/api/tour_backend.py` | `http://localhost:3004` |
 | `NEXT_PUBLIC_API_URL` | Where a web app sends its requests; `run_demo.py` sets it to the port the API came up on | `<app>/lib/api.ts` | `http://localhost:<API_PORT>` |
 

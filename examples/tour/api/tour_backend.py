@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import secrets
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
@@ -34,7 +35,6 @@ from demo_common.storefront_fixtures import (
     load_policies,
     load_users,
     preferences_of,
-    search_help,
 )
 from shopping_agent import (
     Cart,
@@ -100,6 +100,7 @@ MAX_BOOT_ROUTES = 8
 DEFAULT_ADULTS = 2
 DEFAULT_CHILDREN = 0
 MAX_LABELS = 4
+MAX_POLICIES = 3
 # Fewer than two quotable routes is not a shortlist, so the search relaxes and says so.
 MIN_RESULTS = 2
 RELAX_WINDOW_DAYS = 7
@@ -129,6 +130,12 @@ _ORDER_STATE = {
 _NO_SHOPPING_WORDS = ("纯玩", "零购物", "无购物")
 # 五钻, 5钻, 五星 and 5星 name one standard; the ERP's editors write whichever they like.
 _HOTEL_DIGITS = {"三": "3", "四": "4", "五": "5", "3": "三", "4": "四", "5": "五"}
+# What a policy entry is scored on: its 标题 and 分类 answer a question more directly than a
+# clause buried in the body does.
+_HELP_TITLE_WEIGHT = 3.0
+_HELP_CONTENT_WEIGHT = 1.0
+_HELP_CHAR_WEIGHT = 1.0
+_WHITESPACE = re.compile(r"\s+")
 
 
 def _utcnow() -> datetime:
@@ -303,6 +310,28 @@ def _variant_summary(
     total = _party_total(price, adults, children)
     quote = f"{party}合计 {_number(total)} 元" if total is not None else f"{party}报价待查"
     return f"余位 {row.available_seats}/{row.plan_guests}，{status}，{quote}"
+
+
+def _flat(text: str) -> str:
+    return _WHITESPACE.sub("", text.lower())
+
+
+def _policy_score(query: str, policy: Policy) -> float:
+    """How much of the advisor's question one policy entry answers. The shared ``search_help``
+    tokenizer splits on ASCII word boundaries and so finds no word at all in a Chinese
+    question; this scores the way ``mock_erp`` ranks 线路 instead: every character 2-gram of the
+    question scores the best field it appears in, and a bare character scores in a title only,
+    which is where a one-word question (退改, 儿童价) lands. A character the question repeats
+    counts each time, so 退团怎么退 reads as a question about 退改 and not about 成团."""
+    heading = _flat(f"{policy.title} {policy.category}")
+    body = _flat(policy.content)
+    question = _flat(query)
+    grams = (question[at : at + 2] for at in range(len(question) - 1))
+    score = sum(
+        _HELP_TITLE_WEIGHT if gram in heading else _HELP_CONTENT_WEIGHT if gram in body else 0.0
+        for gram in grams
+    )
+    return score + sum(_HELP_CHAR_WEIGHT for char in question if char in heading)
 
 
 # -- the advisor's stated request, and how it relaxes when nothing meets it ----------------
@@ -967,8 +996,17 @@ class TourBackend(StorefrontBackend):
         return self._order(listed[0]) if listed else None
 
     async def search_policies(self, session: ShoppingSessionContext, query: str) -> list[Policy]:
+        """The agency's own rules, best answer first. The advisor types the customer's question
+        in Chinese, so the entries are ranked by what its characters share with them; a question
+        this agency has no rule for gets nothing rather than the least bad entry."""
         del session
-        return search_help(self._policies, query)
+        scored = [
+            (score, policy)
+            for policy in self._policies
+            if (score := _policy_score(query, policy)) > 0
+        ]
+        scored.sort(key=lambda pair: -pair[0])
+        return [policy for _, policy in scored[:MAX_POLICIES]]
 
     async def get_fulfillment_options(
         self, session: ShoppingSessionContext, product_ids: list[str]

@@ -69,3 +69,9 @@ singleRoomDiffCount, storeId?, storeName?, contactName, contactMobile, remark?}`
   backend list departures that already left; it is off in production.
 - Ids: `RT-{routeId}` and `DP-{periodId}`. `hold_ttl_minutes` is 30 on our side whatever
   `reserveHours` says.
+
+## Beta observations
+
+- `GET /order/price` answers a bare nginx HTML 404, not the JSON envelope, for a departure
+  the catalog has no price row for. The client reads a 404 without a JSON body as a missing
+  record all the same, and the backend falls back to the departure's list price.

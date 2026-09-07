@@ -56,10 +56,13 @@ def build_erp() -> ErpClient:
 
 erp = build_erp()
 # One 同行 customer per deployment, and the advisor's own mobile as every order's contact;
+# the mock knows only its own customers.json, so TOUR_ERP_CUSTOMER_ID applies to the real ERP.
 # TOUR_ERP_ALLOW_PAST lists departures that already left, for a beta with no future ones.
 backend = TourBackend(
     erp,
-    customer_id=int(os.environ.get("TOUR_ERP_CUSTOMER_ID", "4101")),
+    customer_id=int(os.environ.get("TOUR_ERP_CUSTOMER_ID", "4101"))
+    if isinstance(erp, HttpErpClient)
+    else 4101,
     contact_mobile=os.environ.get("TOUR_ERP_MOBILE") or first_advisor_mobile(),
     allow_past=os.environ.get("TOUR_ERP_ALLOW_PAST") == "1",
 )

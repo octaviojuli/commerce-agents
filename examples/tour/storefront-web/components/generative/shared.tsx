@@ -11,17 +11,27 @@ import type { Product } from "@/lib/types";
 const STATUS_TONE: Record<string, string> = {
   confirmed: "bg-(--ok-soft) text-(--ok)",
   pending: "bg-(--warn-soft) text-(--warn)",
-  closed: "bg-(--danger-soft) text-(--danger)",
+  waitlist: "bg-(--danger-soft) text-(--danger)",
 };
 
+// An ERP tag is free text: most are two words, and some are a whole sentence. The chip keeps
+// the first few characters and hands the rest to the title.
+const MAX_TAG_CHARS = 12;
+
 export function Tag({ text }: { text: string }) {
+  const short = text.length > MAX_TAG_CHARS ? `${text.slice(0, MAX_TAG_CHARS)}…` : text;
   return (
-    <span className="rounded-full bg-(--well) px-2 py-0.5 text-[11.5px] text-(--ink-2)">{text}</span>
+    <span
+      title={text}
+      className="rounded-full bg-(--well) px-2 py-0.5 text-[11.5px] text-(--ink-2)"
+    >
+      {short}
+    </span>
   );
 }
 
-/** 已成团 / 待成团 / 已截止, tinted by which one it is. */
-export function StatusPill({ status }: { status?: string }) {
+/** 已成团 / 待成团 / 候补, tinted by which one it is; `detail` is the 待成团 count. */
+export function StatusPill({ status, detail }: { status?: string; detail?: string | null }) {
   const label = statusText(status);
   if (!label || !status) return null;
   return (
@@ -29,6 +39,7 @@ export function StatusPill({ status }: { status?: string }) {
       className={`rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${STATUS_TONE[status] ?? "bg-(--well) text-(--ink-2)"}`}
     >
       {label}
+      {detail ? <span className="tg-num ml-1 font-bold">{detail}</span> : null}
     </span>
   );
 }
@@ -56,11 +67,11 @@ export function SeatsPill({ product }: { product: Product }) {
   );
 }
 
-/** Two columns of 标签: 数值, the shape an advisor reads a route's trade-offs in. */
-export function SpecGrid({ specs }: { specs: Spec[] }) {
+/** 标签: 数值 rows, the shape an advisor reads a record's figures in; a long value gets its own. */
+export function SpecGrid({ specs, cols = 2 }: { specs: Spec[]; cols?: 1 | 2 }) {
   if (!specs.length) return null;
   return (
-    <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+    <dl className={`grid gap-x-4 gap-y-1.5 ${cols === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
       {specs.map((spec) => (
         <div key={spec.label} className="flex items-baseline justify-between gap-2">
           <dt className="tg-label shrink-0">{spec.label}</dt>

@@ -6,77 +6,62 @@
 /** `present_comparison`: two to four 线路 side by side, on the rows the advisor argues from. */
 
 import type { CSSProperties } from "react";
-import { dateLabel, formatYuan, formatYuanText, statusText } from "@/lib/format";
+import { attrList, dateLabel, formatYuan, formatYuanText, statusText } from "@/lib/format";
 import type { ComparisonPayload, Product } from "@/lib/types";
 import { MismatchNote, SeatsPill } from "./shared";
 
-// Catalog keys that are plumbing, or already on the column's header.
+// ERP keys that are plumbing, already on the column's header, or unreadable as one cell.
 const HIDDEN = new Set([
-  "destination",
-  "region",
-  "fit_tags",
-  "highlights",
+  "company",
+  "tags",
+  "features",
   "match",
   "mismatch",
   "quote_party",
   "party_quote_total",
+  "quote_source",
   "adult_price",
-  "child_price",
-  "child_bed_price",
+  "elder_price",
   "seats_left",
   "seats_total",
-  "hold_ttl_minutes",
+  "confirm_count",
+  "min_group_size",
+  "reserve_hours",
   "return_date",
 ]);
 
 const LABELS: Record<string, string> = {
   days: "天数",
-  nights: "住宿晚数",
-  hotel_level: "住宿标准",
-  vehicle: "车型",
-  group_size_max: "成团上限",
-  shopping_stops: "购物店",
-  optional_paid_items: "自费项目",
-  child_min_age: "儿童最小年龄",
-  child_policy: "儿童政策",
-  intensity: "强度",
-  max_drive_hours_per_day: "每日最长车程",
-  includes_transport: "含大交通",
-  departure_city: "出发城市",
+  depart_city: "出发城市",
+  route_code: "线路编号",
+  period_code: "团号",
   depart_date: "出发日期",
   group_status: "成团状态",
-  booking_deadline: "报名截止",
-  single_supplement: "单房差",
+  child_price: "儿童价",
+  single_room_diff: "单房差",
 };
 
 // The rows an advisor reads out first; anything else follows in catalog order.
 const ORDER = [
   "days",
-  "hotel_level",
-  "vehicle",
-  "shopping_stops",
-  "optional_paid_items",
-  "max_drive_hours_per_day",
-  "intensity",
-  "group_size_max",
-  "child_min_age",
+  "depart_city",
+  "route_code",
   "depart_date",
+  "period_code",
   "group_status",
-  "booking_deadline",
+  "child_price",
+  "single_room_diff",
 ];
 
 const MAX_ROWS = 7;
 
+// A 线路编号 or a 团号 tells the two apart; it is not what the dearer one buys.
+const IDENTIFIERS = new Set(["route_code", "period_code"]);
+
 const UNITS: Record<string, (raw: string) => string> = {
   days: (raw) => `${raw} 天`,
-  nights: (raw) => `${raw} 晚`,
-  shopping_stops: (raw) => `${raw} 个`,
-  optional_paid_items: (raw) => `${raw} 项`,
-  group_size_max: (raw) => `最多 ${raw} 人`,
-  child_min_age: (raw) => `${raw} 岁起`,
-  intensity: (raw) => `${raw} / 5`,
-  max_drive_hours_per_day: (raw) => `${raw} 小时`,
-  single_supplement: (raw) => formatYuan(Number(raw)),
+  child_price: (raw) => formatYuan(Number(raw)),
+  single_room_diff: (raw) => formatYuan(Number(raw)),
 };
 
 function label(key: string): string {
@@ -87,9 +72,9 @@ function cellText(product: Product, key: string): string {
   const raw = product.attributes?.[key];
   if (raw == null || raw === "") return "—";
   if (key === "group_status") return statusText(raw) ?? raw;
-  if (key === "depart_date" || key === "booking_deadline") return dateLabel(raw) ?? raw;
-  if (/^(yes|true)$/i.test(raw)) return "含";
-  if (/^(no|false)$/i.test(raw)) return "不含";
+  if (key === "depart_date") return dateLabel(raw) ?? raw;
+  // A price the ERP has not set is no row, not a ¥0 one.
+  if (UNITS[key] && Number(raw) === 0) return "—";
   return UNITS[key]?.(raw) ?? raw;
 }
 
@@ -108,15 +93,24 @@ function rowKeys(products: Product[]): string[] {
   return seen.slice(0, MAX_ROWS);
 }
 
-/** What the dearer line buys over the cheaper one, on the rows where they differ. */
+/**
+ * What the dearer line buys over the cheaper one: the rows where the two differ, or, when the
+ * ERP states nothing that separates them, the tags the dearer one claims and the cheaper one
+ * does not — which on this catalog is usually where the money went.
+ */
 function deltaBuys(high: Product, low: Product, keys: string[]): string[] {
   const buys: string[] = [];
   for (const key of keys) {
+    if (IDENTIFIERS.has(key)) continue;
     const highText = cellText(high, key);
     const lowText = cellText(low, key);
     if (highText !== "—" && highText !== lowText) buys.push(`${label(key)} ${highText}`);
   }
-  return buys.slice(0, 3);
+  if (buys.length) return buys.slice(0, 3);
+  const cheaper = new Set(attrList(low.attributes?.tags));
+  return attrList(high.attributes?.tags)
+    .filter((tag) => !cheaper.has(tag))
+    .slice(0, 3);
 }
 
 function SkeletonColumn({ first, rowSpan }: { first: boolean; rowSpan: number }) {

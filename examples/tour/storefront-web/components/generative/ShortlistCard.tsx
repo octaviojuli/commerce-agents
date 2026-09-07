@@ -10,19 +10,19 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { dateLabel, partyQuote, routeSpecs } from "@/lib/format";
+import { dateLabel, groupProgress, partyQuote, routeSpecs } from "@/lib/format";
 import type { Product, ShortlistPayload } from "@/lib/types";
 import { SeatsPill, StatusPill } from "./shared";
 
 const COPIED_MS = 2000;
 
 /**
- * The 线路's trade-offs on one line, in the order `routeSpecs` states them. 购物店 keeps its
- * label, because "0 个" says nothing on its own.
+ * The 线路 on one line, in the order `routeSpecs` states it: "8 天 · 乌鲁木齐出发". The city
+ * keeps 出发 after it, because a place name alone does not say what it is.
  */
 function tradeOffs(route: Product): string {
   return routeSpecs(route)
-    .map((spec) => (spec.label === "购物店" ? `${spec.label} ${spec.value}` : spec.value))
+    .map((spec) => (spec.label === "出发城市" ? `${spec.value}出发` : spec.value))
     .join(" · ");
 }
 
@@ -41,7 +41,7 @@ function Row({ departure, route }: { departure: Product; route: Product }) {
               {depart}
             </span>
           ) : null}
-          <StatusPill status={attrs.group_status} />
+          <StatusPill status={attrs.group_status} detail={groupProgress(departure)} />
           <SeatsPill product={departure} />
         </div>
         <div className="mt-1 truncate text-[14px] font-semibold text-(--ink-2)">{route.title}</div>

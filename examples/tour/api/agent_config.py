@@ -65,8 +65,10 @@ def build_shopping_config() -> ShoppingAgentConfig:
             "only from get_product_details on that route (RT-…); this customer's own price for one "
             "departure comes from get_product_details on that departure id (DP-…). Book with the "
             "departure id, never the route id. add_to_cart quantity is the whole party (adults + "
-            "children) and writes a 占位 order; the cart cannot remove or resize one — the advisor "
-            "does that in the ERP. State the expanded date window back to the advisor once."
+            "children) and writes a 占位 order that this workbench keeps for 30 minutes — tell the "
+            "advisor 30 minutes, never the ERP's reserve_hours. The cart cannot remove or resize a "
+            "占位; the advisor does that in the ERP. State the expanded date window back to the "
+            "advisor once."
         ),
         # Nothing ships: the customer joins the group at its 集合地点, which the route's
         # specs carry, so the fulfillment tool is not registered at all.

@@ -509,6 +509,16 @@ async def test_the_account_context_names_the_advisor_the_store_and_the_customer(
     assert (await backend.get_account_context(session))["active_holds"] == 1
 
 
+async def test_a_chinese_question_finds_the_rule_it_asks_about(backend, session):
+    """The advisor types the customer's own words, which carry no ASCII token to split on."""
+    found = await backend.search_policies(session, "退团怎么退")
+    assert [policy.title for policy in found][:1] == ["退改政策"]
+    assert len(found) <= 3
+    assert [p.title for p in await backend.search_policies(session, "不成团怎么办")] == ["成团规则"]
+    # Nothing this agency has a rule for, so nothing is quoted back as one.
+    assert await backend.search_policies(session, "今天天气怎么样") == []
+
+
 # -- the demo host's view ----------------------------------------------------------------
 
 

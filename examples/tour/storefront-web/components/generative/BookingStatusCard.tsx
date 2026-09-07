@@ -65,9 +65,12 @@ export default function BookingStatusCard({ payload }: { payload: OrderStatusPay
               {formatYuan(order.total)}
             </span>
           </div>
+          {/* The ERP's own status word and departure date, or a bare date from another backend. */}
           {order.estimated_delivery ? (
             <div className="tg-label mt-1.5">
-              出发 · {dateLabel(order.estimated_delivery) ?? order.estimated_delivery}
+              {dateLabel(order.estimated_delivery)
+                ? `出发 · ${dateLabel(order.estimated_delivery)}`
+                : order.estimated_delivery}
             </div>
           ) : null}
         </div>
