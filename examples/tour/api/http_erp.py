@@ -55,6 +55,8 @@ _KEYS = {
     "rooms": "roomCount",
     "status": "orderStatus",
     "status_text": "orderStatusText",
+    # The order list calls the total ``orderAmount``; the detail calls it ``totalAmount``.
+    "total_amount": ("totalAmount", "orderAmount"),
 }
 _ZEROS: dict[str, Any] = {
     "int": 0,
@@ -105,14 +107,20 @@ def _iso(day: date | None) -> str | None:
     return day.isoformat() if day else None
 
 
-def _key(name: str) -> str:
-    """The ERP's key for a record field: ``_KEYS`` where it renames one, camelCase otherwise."""
+def _keys(name: str) -> tuple[str, ...]:
+    """The ERP's keys for a record field, first match wins: ``_KEYS`` where it renames one
+    (one endpoint may name it differently from another), camelCase otherwise."""
     head, *rest = name.split("_")
-    return _KEYS.get(name) or head + "".join(word.title() for word in rest)
+    named = _KEYS.get(name) or head + "".join(word.title() for word in rest)
+    return named if isinstance(named, tuple) else (named,)
 
 
 def _stamp(text: Any) -> datetime | None:
-    """``2026-09-07 10:30:00`` and the ISO form alike; anything else reads as absent."""
+    """Unix seconds (the contract's ``createTime`` and ``reserveExpireAt``), ``2026-09-07
+    10:30:00``, and the ISO form alike; ``0`` and anything else read as absent."""
+    if isinstance(text, (int, float)) or str(text).isdigit():
+        seconds = int(text)
+        return datetime.fromtimestamp(seconds, tz=UTC) if seconds > 0 else None
     try:
         return datetime.fromisoformat(str(text))
     except ValueError:
@@ -150,7 +158,11 @@ def _value(kind: str, value: Any) -> Any:
 def _record(cls: type[R], row: dict[str, Any]) -> R:
     """The dataclass's own fields drive the mapping: each field names its ERP key and, in its
     annotation, how the value is read."""
-    return cls(**{f.name: _value(str(f.type), row.get(_key(f.name))) for f in fields(cls)})
+
+    def read(name: str) -> Any:
+        return next((row[key] for key in _keys(name) if key in row), None)
+
+    return cls(**{f.name: _value(str(f.type), read(f.name)) for f in fields(cls)})
 
 
 class HttpErpClient:
@@ -257,11 +269,17 @@ class HttpErpClient:
         self, route_id: int, route_name: str, depart_from: date | None, depart_to: date | None
     ) -> list[erp.DepartureRecord]:
         """The period list has no ``routeId`` filter, so the name fetches and the id keeps:
-        another route whose name shares a word comes back too, and only this one stays."""
+        another route whose name shares a word comes back too, and only this one stays. A
+        period carries the route name as it was when the period was made, so a renamed
+        route finds nothing by name; then the window alone is fetched and the id still keeps."""
         window = {"departDateStart": _iso(depart_from), "departDateEnd": _iso(depart_to)}
-        params = _clean({"routeName": route_name, **window})
-        rows = await self._pages("/period/list", params, PAGE_SIZE)
+        rows = await self._pages(
+            "/period/list", _clean({"routeName": route_name, **window}), PAGE_SIZE
+        )
         mine = [row for row in rows if int(row.get("routeId") or 0) == route_id]
+        if not mine and route_name:
+            rows = await self._pages("/period/list", _clean(window), PAGE_SIZE)
+            mine = [row for row in rows if int(row.get("routeId") or 0) == route_id]
         return [_record(erp.DepartureRecord, row) for row in mine]
 
     async def get_departure(self, period_id: int) -> erp.DepartureRecord | None:
@@ -284,7 +302,7 @@ class HttpErpClient:
         """The one write. There is no idempotency key on this endpoint, so a caller that times
         out lists orders before deciding anything and never retries blindly. ``storeName`` and
         ``remark`` go on the body only when the caller stated them."""
-        body = _clean({_key(f.name): getattr(req, f.name) for f in fields(req)})
+        body = _clean({_keys(f.name)[0]: getattr(req, f.name) for f in fields(req)})
         data = await self._request("POST", "/order/create", body, WRITE_TIMEOUT) or {}
         return _record(erp.OrderResult, data)
 

@@ -276,6 +276,36 @@ async def test_list_departures_filters_by_name_and_keeps_only_the_matching_route
     assert rows[0].price is None
 
 
+async def test_a_renamed_route_finds_its_departures_by_window_alone():
+    """Periods keep the route name they were made under, so the named fetch can come back
+    empty for a route that was renamed since; the client then fetches the window alone."""
+    client, seen = erp({"/login": LOGIN, "/period/list": [page([]), page([PERIOD, OTHER_PERIOD])]})
+    rows = await client.list_departures(
+        1021, "伊犁北疆环线 8 日纯玩小团（新版）", date(2026, 10, 1), date(2026, 10, 31)
+    )
+    assert "routeName" in dict(seen[1].url.params)
+    assert "routeName" not in dict(seen[2].url.params)
+    assert dict(seen[2].url.params)["departDateStart"] == "2026-10-01"
+    assert [row.period_id for row in rows] == [3001]
+
+
+async def test_order_rows_read_unix_stamps_and_the_lists_own_amount_key():
+    """``createTime`` and ``reserveExpireAt`` are Unix seconds, and the list row calls the
+    total ``orderAmount`` where the detail calls it ``totalAmount``."""
+    row = {
+        "orderId": 204, "orderNo": "ORD202609070001", "periodId": 12, "periodCode": "-MOMJ-20260505-001",
+        "routeName": "北疆 10 天", "customerId": 4101, "customerName": "北京同行社", "orderAmount": 8000,
+        "receivedAmount": 0, "unreceivedAmount": 8000, "orderStatus": 0, "orderStatusText": "预留",
+        "createTime": 1788770417, "reserveExpireAt": 1788856817, "adultCount": 2, "childCount": 0,
+        "elderCount": 0, "contactName": "顾问", "contactMobile": "13900000001", "departDate": "2026-05-05",
+    }
+    client, _ = erp({"/login": LOGIN, "/order/list": page([row])})
+    (order,) = await client.list_orders()
+    assert order.total_amount == 8000.0
+    assert order.created_at is not None and order.created_at.year == 2026
+    assert order.reserve_expires_at is not None and order.reserve_expires_at > order.created_at
+
+
 async def test_get_departure_carries_the_list_price_and_the_hold_counts():
     client, _ = erp({"/login": LOGIN, "/period/detail": ok(PERIOD_DETAIL)})
     row = await client.get_departure(3001)
