@@ -5,6 +5,7 @@
 
 import { type ButtonHTMLAttributes, type ReactNode, useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
+import { useCopy } from "./copy";
 import { formatChangePct } from "./format";
 import { Icon, type IconName } from "./icons";
 
@@ -388,15 +389,17 @@ export function Sheet({
   onClose,
   footer,
   children,
-  closeLabel = "Close",
+  closeLabel,
 }: {
   title: ReactNode;
   detail?: ReactNode;
   onClose: () => void;
   footer?: ReactNode;
   children: ReactNode;
+  /** Defaults to the chrome's own `close`. */
   closeLabel?: string;
 }) {
+  const copy = useCopy();
   const [host, setHost] = useState<HTMLElement | null>(null);
   const titleId = useId();
   useEffect(() => {
@@ -422,7 +425,7 @@ export function Sheet({
             {title}
             {detail ? <span className="ml-2 font-normal tabular-nums text-(--ink-soft)">{detail}</span> : null}
           </div>
-          <IconButton icon="x" label={closeLabel} onClick={onClose} />
+          <IconButton icon="x" label={closeLabel ?? copy.close} onClick={onClose} />
         </div>
         <div className="panel-scroll flex flex-1 flex-col gap-4 overflow-y-auto p-[18px]">{children}</div>
         {footer ? <div className="flex items-center gap-2 border-t border-(--line) px-[18px] py-3">{footer}</div> : null}

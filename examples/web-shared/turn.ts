@@ -23,7 +23,7 @@ import type {
   UIBlock,
   UISlotStatus,
 } from "./protocol";
-import { describeToolCall } from "./tool-copy";
+import { describeToolCall } from "./copy";
 
 /** Pace between structural items when a burst arrives at once. */
 const DRIP_MS = 180;
@@ -37,6 +37,8 @@ const STRUCTURAL_KEYS = ["items", "entries", "steps", "days", "sections", "metri
 const CHIPS_COMPONENT = "suggestions";
 /** Grace for the memory extractor before the store is re-read. */
 const MEMORY_REREAD_MS = 2500;
+/** Clears the line under a reply and the call it described. */
+const NO_ACTIVITY = { activity: undefined, activityCall: undefined } as const;
 
 function structuralCount(block: UIBlock): number {
   const payload = block.payload as Record<string, unknown>;
@@ -174,7 +176,9 @@ export function useAgentTurn(api: AgentApi, options: AgentTurnOptions): AgentTur
         const segment: AssistantSegment = { type: "ui", block, slotKey: slot.key, status };
         if (index >= 0) segments[index] = segment;
         else segments.push(segment);
-        return { ...item, segments, activity: status === "pending" ? item.activity : undefined };
+        return status === "pending"
+          ? { ...item, segments }
+          : { ...item, segments, ...NO_ACTIVITY };
       });
     },
     [updateTurn],
@@ -289,7 +293,7 @@ export function useAgentTurn(api: AgentApi, options: AgentTurnOptions): AgentTur
             } else {
               segments.push({ type: "text", text: delta });
             }
-            return { ...item, segments, activity: undefined };
+            return { ...item, segments, ...NO_ACTIVITY };
           });
           return;
         }
@@ -322,7 +326,7 @@ export function useAgentTurn(api: AgentApi, options: AgentTurnOptions): AgentTur
           const block = eventBlock(event);
           if (block.component === CHIPS_COMPONENT) {
             const suggestions = (block.payload as { suggestions?: string[] }).suggestions ?? [];
-            updateTurn(turn, (item) => ({ ...item, activity: undefined, suggestions }));
+            updateTurn(turn, (item) => ({ ...item, ...NO_ACTIVITY, suggestions }));
             return;
           }
           const streamId = event.data.stream_id ? String(event.data.stream_id) : undefined;
@@ -360,6 +364,7 @@ export function useAgentTurn(api: AgentApi, options: AgentTurnOptions): AgentTur
             ...item,
             tools: [...item.tools, tool],
             activity: label || describeToolCall(tool, input),
+            activityCall: label ? undefined : { tool, input },
           }));
           const component = callbacks.current.pendingComponent?.(tool);
           if (component && !findSlot(component)) {
@@ -374,7 +379,7 @@ export function useAgentTurn(api: AgentApi, options: AgentTurnOptions): AgentTur
           const resultTool = String(event.data.tool ?? "tool");
           if (progressToolRef.current === resultTool) {
             progressToolRef.current = null;
-            updateTurn(turn, (item) => ({ ...item, activity: undefined }));
+            updateTurn(turn, (item) => ({ ...item, ...NO_ACTIVITY }));
           }
           if (event.data.is_error) {
             // Streamed frames stay, dimmed, for the retry to adopt.
@@ -413,11 +418,12 @@ export function useAgentTurn(api: AgentApi, options: AgentTurnOptions): AgentTur
           const message = String(event.data.message ?? "").trim();
           if (!message) return;
           progressToolRef.current = event.data.tool ? String(event.data.tool) : null;
-          updateTurn(turn, (item) => ({ ...item, activity: message }));
+          updateTurn(turn, (item) => ({ ...item, activity: message, activityCall: undefined }));
           return;
         }
         case "error": {
-          const text = String(event.data.message ?? "Something went wrong.");
+          // Empty when the server names no message: the transcript fills in its own `turnError`.
+          const text = String(event.data.message ?? "");
           updateTurn(turn, (item) => ({
             ...item,
             segments: [...item.segments, { type: "error", text }],
@@ -479,7 +485,7 @@ export function useAgentTurn(api: AgentApi, options: AgentTurnOptions): AgentTur
         updateTurn(turn, (item) => ({
           ...item,
           pending: false,
-          activity: undefined,
+          ...NO_ACTIVITY,
           segments: item.segments
             .filter((s) => s.type !== "ui" || (s.status !== "pending" && s.status !== "retrying"))
             .map((s) =>

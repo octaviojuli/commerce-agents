@@ -10,6 +10,7 @@ import HoldBar from "@/components/HoldBar";
 import HoldPanel from "@/components/HoldPanel";
 import HomeView from "@/components/views/HomeView";
 import { api, UNREACHABLE } from "@/lib/api";
+import { TOUR_COPY } from "@/lib/copy";
 import { formatYuan } from "@/lib/format";
 import type { CartPayload } from "@/lib/types";
 
@@ -81,6 +82,7 @@ export default function StorefrontPage() {
       onPanelOpenChange={setPanelOpen}
       banner={<HoldBar cart={cart} />}
       placeholder="把客人的原话打进来：去哪儿、几天、几大几小、什么时候走…"
+      copy={TOUR_COPY}
     >
       <Chat chat={chat} home={<HomeView advisorName={advisor.name} store={advisor.tier} />} />
     </StoreShell>

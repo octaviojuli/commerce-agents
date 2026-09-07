@@ -4,6 +4,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { describeToolCall, useCopy } from "./copy";
 import { AssistantText, ErrorBubble, UserBubble } from "./MessageBubble";
 import type { AssistantChatItem, ChatItem, UISegment } from "./protocol";
 import { Suggestions } from "./Suggestions";
@@ -23,17 +24,22 @@ export interface TranscriptProps {
 
 /** What shows under a reply while it is being made: the current step, or a shimmer before the first word. */
 export function ActivityLine({ item }: { item: AssistantChatItem }) {
-  if (item.activity) {
+  const copy = useCopy();
+  // A stock line is composed here, in this chrome's copy; the model's own words are shown as sent.
+  const line = item.activityCall
+    ? describeToolCall(item.activityCall.tool, item.activityCall.input, copy)
+    : item.activity;
+  if (line) {
     return (
       <div role="status" className="flex items-center gap-2 text-[13px] text-(--ink-soft)">
         <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-(--accent)" />
-        <span className="min-w-0 truncate">{item.activity}</span>
+        <span className="min-w-0 truncate">{line}</span>
       </div>
     );
   }
   if (item.segments.length) return null;
   return (
-    <div role="status" aria-label="Working" className="flex flex-col gap-2">
+    <div role="status" aria-label={copy.workingStatus} className="flex flex-col gap-2">
       <div className="ac-skeleton h-4 w-3/5 rounded" />
       <div className="ac-skeleton h-4 w-2/5 rounded" />
     </div>
@@ -50,6 +56,7 @@ export function Transcript({
   wide,
   gap = "gap-3",
 }: TranscriptProps) {
+  const copy = useCopy();
   return items.map((item, index) =>
     item.kind === "user" ? (
       <UserBubble key={index} text={item.text} />
@@ -60,7 +67,8 @@ export function Transcript({
             const last = item.pending && i === item.segments.length - 1;
             return <AssistantText key={i} text={segment.text} streaming={last} />;
           }
-          if (segment.type === "error") return <ErrorBubble key={i} text={segment.text} />;
+          // An error the server sent no message with is named here, in this chrome's copy.
+          if (segment.type === "error") return <ErrorBubble key={i} text={segment.text || copy.turnError} />;
           return (
             <div
               key={segment.slotKey}
@@ -87,6 +95,7 @@ export function Transcript({
 }
 
 export function LatestPill({ onClick }: { onClick: () => void }) {
+  const copy = useCopy();
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
       <button
@@ -94,7 +103,7 @@ export function LatestPill({ onClick }: { onClick: () => void }) {
         onClick={onClick}
         className="pointer-events-auto rounded-full border border-(--line) bg-(--card) px-3.5 py-1.5 text-[13px] font-semibold text-(--ink) shadow-md transition hover:border-(--accent)"
       >
-        ↓ Latest
+        {copy.latest}
       </button>
     </div>
   );

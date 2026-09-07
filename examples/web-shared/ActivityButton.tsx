@@ -3,6 +3,8 @@
 
 "use client";
 
+import { useCopy } from "./copy";
+
 /** Opens the Activity panel; pulses while a reply streams and counts facts saved this session. */
 export function ActivityButton({
   streaming,
@@ -13,6 +15,7 @@ export function ActivityButton({
   newMemoryCount: number;
   onClick: () => void;
 }) {
+  const copy = useCopy();
   return (
     <button
       type="button"
@@ -25,11 +28,11 @@ export function ActivityButton({
           <span className="relative inline-flex h-2 w-2 rounded-full bg-(--accent)" />
         </span>
       ) : null}
-      Activity
+      {copy.activity}
       {newMemoryCount > 0 ? (
         <span
           className="rounded-full bg-(--accent-soft) px-1.5 py-0.5 text-[11px] font-bold text-(--ink)"
-          title={`${newMemoryCount} fact${newMemoryCount === 1 ? "" : "s"} saved this session`}
+          title={copy.factsSaved(newMemoryCount)}
         >
           {newMemoryCount}
         </span>

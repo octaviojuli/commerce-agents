@@ -15,8 +15,9 @@ python scripts/run_demo.py tour --api-only      # the API alone
 ```
 
 The workbench is `storefront-web/`, a Next app in the `examples/` npm workspace; it calls
-the API cross-origin at `http://localhost:8004`. There is no merchant portal, so `--merchant`
-and `--all` have nothing to start.
+the API cross-origin at `http://localhost:8004`; its chrome reads `storefront-web/lib/copy.ts`,
+the Chinese laid over `web-shared`'s English `DEFAULT_COPY`. There is no merchant portal, so
+`--merchant` and `--all` have nothing to start.
 
 Or start the API yourself:
 

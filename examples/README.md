@@ -10,7 +10,7 @@ prompts to try on both surfaces, and what it adds to the libraries.
 | Path | Contents |
 |---|---|
 | `demo_common/` | Host code the four APIs share: app and middleware (`host.py`), session store (`sessions.py`), storefront routes (`storefront.py`), merchant router (`merchant.py`), memory routes and fixture seeder (`memory.py`), mock-backend helpers (`*_fixtures.py`) |
-| `web-shared/` | The npm package the eight web apps import: the API client, the session and turn hooks, the event types (`protocol.ts` mirrors `commerce_common/streaming.py`), the transcript and inspector components, shared primitives and icons, and the two app frames (`storefront/`, `portal/`) |
+| `web-shared/` | The npm package the eight web apps import: the API client, the session and turn hooks, the event types (`protocol.ts` mirrors `commerce_common/streaming.py`), the transcript and inspector components, the storefront chrome's strings (`copy.ts`), shared primitives and icons, and the two app frames (`storefront/`, `portal/`) |
 | `package.json` | The npm workspace: `web-shared` plus every `*/storefront-web` and `*/merchant-web` (`npm ci` installs all of them) |
 | `<vertical>/api/` | One FastAPI process: the two mock backends, the two agent configs (`agent_config.py`), the vertical's own routes and presentation extensions, and the merchant router mounted under `/api/merchant` |
 | `<vertical>/data/` | The fixtures both backends load, listed in the vertical's README |
@@ -19,11 +19,15 @@ prompts to try on both surfaces, and what it adds to the libraries.
 Sessions, carts, and staged changes live in one process's memory in `demo_common`, so the
 examples run one worker.
 
-`web-shared` holds the session, streaming, and rendering plumbing once. Each app holds its
-own components: `components/generative/` has one entry per presentation tool, typed by the
-app's `lib/types.ts`, so the four frontends are four builds of the same payload schemas
-(`shopping_agent/tools/presentation.py`, `merchant_agent/tools/presentation.py`); a
-deployment's frontend is a fifth.
+`web-shared` holds the session, streaming, and rendering plumbing once. The strings its
+storefront chrome renders — the shell, the transcript, the inspector — are `copy.ts`'s
+`DEFAULT_COPY`; a storefront in another language passes a `Partial<Copy>` to `StoreShell`,
+the one place that takes it, and a storefront that passes nothing renders the English. The
+merchant portal's chrome and the orders view are English only and keep their own labels.
+Each app holds its own components: `components/generative/` has one entry per presentation
+tool, typed by the app's `lib/types.ts`, so the four frontends are four builds of the same
+payload schemas (`shopping_agent/tools/presentation.py`,
+`merchant_agent/tools/presentation.py`); a deployment's frontend is a fifth.
 
 ## Showcase pages
 
