@@ -1,10 +1,11 @@
 # Copyright 2026 Anthropic PBC
 # SPDX-License-Identifier: Apache-2.0
 
-"""What ``data/routes.json`` and ``data/departures.json`` have to hold for the mock ERP to
-read them: ids the client rebuilds the same way, dates inside the demo's two-month window,
-and enumerated fields the backend and the web apps render. Read as raw JSON, before the
-client shifts the dates, so an authoring slip fails here rather than downstream."""
+"""What ``data/routes.json``, ``data/departures.json`` and ``data/customers.json`` have to
+hold for the mock ERP to answer like the real one: the ERP's own row keys, ids the client
+never rebuilds, codes it does rebuild from the shifted date, and seats that add up. Read as
+raw JSON, before the client shifts the dates, so an authoring slip fails here rather than
+downstream."""
 
 import re
 from collections import Counter
@@ -15,13 +16,44 @@ import pytest
 from demo_common.storefront_fixtures import load_json
 from tour.api.mock_erp import DATA_DIR
 
-ROUTE_ID = re.compile(r"RT-\d{4}")
-DEPARTURE_ID = re.compile(r"DP-\d{4}-\d{8}")
+PERIOD_CODE = re.compile(r"XJ-[A-Z]{4}-(\d{8})-\d{3}")
+ROUTE_KEYS = {
+    "routeId",
+    "routeCode",
+    "routeName",
+    "days",
+    "departCityName",
+    "companyId",
+    "companyName",
+    "fromPrice",
+    "tags",
+    "features",
+    "firstImageUrl",
+    "routeAttachmentName",
+    "routeAttachmentUrl",
+}
+PRICE_KEYS = {"adultPrice", "childPrice", "elderPrice", "singleRoomDiff", "currency"}
 DESTINATIONS = {"伊犁": 4, "喀纳斯": 2, "南疆": 1, "青海": 1}
-GROUP_STATUSES = {"confirmed", "pending", "closed"}
-FIT_TAGS = {"亲子", "老人友好", "摄影", "轻徒步", "深度游", "纯玩", "小团", "高端"}
-HOTEL_LEVELS = {"三钻", "四钻", "五钻", "特色民宿"}
-VEHICLES = {"6座商务车", "8座商务车", "20座中巴"}
+TAGS = {
+    "亲子",
+    "老人友好",
+    "摄影",
+    "轻徒步",
+    "深度游",
+    "纯玩",
+    "小团",
+    "高端",
+    "零购物",
+    "三钻",
+    "四钻",
+    "五钻",
+    "特色民宿",
+    "6座商务车",
+    "8座商务车",
+    "20座中巴",
+}
+# The departments the fixtures span, as beta's account does: 新疆部 and 青海部.
+DEPARTMENTS = {2, 5}
 WINDOW_DAYS = 60
 DEPARTURES_PER_ROUTE = range(6, 13)
 
@@ -46,67 +78,117 @@ def departures(departures_raw) -> list[dict]:
     return departures_raw["departures"]
 
 
+@pytest.fixture(scope="module")
+def customers() -> list[dict]:
+    return load_json(DATA_DIR, "customers.json")["customers"]
+
+
 def test_the_catalog_is_the_eight_routes_the_demo_scripts_expect(routes):
     assert len(routes) == 8
-    assert Counter(route["destination"] for route in routes) == DESTINATIONS
+    found = Counter(name for name in DESTINATIONS for route in routes if name in route["routeName"])
+    assert found == DESTINATIONS
 
 
-def test_route_ids_are_well_formed_and_unique(routes):
-    ids = [route["route_id"] for route in routes]
-    assert all(ROUTE_ID.fullmatch(route_id) for route_id in ids)
-    assert len(set(ids)) == len(ids)
-
-
-def test_every_route_states_an_enumerated_hotel_level_vehicle_and_fit_tags(routes):
+def test_every_route_row_is_the_erps_own_shape(routes):
     for route in routes:
-        assert route["hotel_level"] in HOTEL_LEVELS, route["route_id"]
-        assert route["vehicle"] in VEHICLES, route["route_id"]
-        assert set(route["fit_tags"]) <= FIT_TAGS, route["route_id"]
+        assert set(route) == ROUTE_KEYS, route["routeId"]
+        assert isinstance(route["routeId"], int)
+        assert re.fullmatch(r"[A-Z]{4}", route["routeCode"]), route["routeId"]
+        assert set(route["tags"]) <= TAGS, route["routeId"]
+        assert route["features"], route["routeId"]
 
 
-def test_departure_ids_are_well_formed_unique_and_rebuilt_from_their_date(routes, departures):
-    route_ids = {route["route_id"] for route in routes}
-    ids = [row["departure_id"] for row in departures]
+def test_route_ids_and_codes_are_unique(routes):
+    assert len({route["routeId"] for route in routes}) == len(routes)
+    assert len({route["routeCode"] for route in routes}) == len(routes)
+
+
+def test_every_row_names_the_department_its_writes_are_made_in(routes, departures):
+    """A 团期's ``companyId`` is its route's own: reads span the departments, and a quote and
+    an order are made in the one the 团期 belongs to."""
+    departments = {route["routeId"]: route["companyId"] for route in routes}
+    assert set(departments.values()) == DEPARTMENTS
+    assert all(isinstance(company_id, int) for company_id in departments.values())
+    for row in departures:
+        assert row["companyId"] == departments[row["routeId"]], row["periodId"]
+
+
+def test_period_ids_are_unique_integers_and_name_a_route_the_catalog_has(routes, departures):
+    route_ids = {route["routeId"] for route in routes}
+    ids = [row["periodId"] for row in departures]
+    assert all(isinstance(period_id, int) for period_id in ids)
     assert len(set(ids)) == len(ids)
     for row in departures:
-        departure_id = row["departure_id"]
-        assert DEPARTURE_ID.fullmatch(departure_id), departure_id
-        assert row["route_id"] in route_ids, departure_id
-        digits = row["route_id"].split("-")[-1]
-        compact = date.fromisoformat(row["depart_date"]).strftime("%Y%m%d")
-        assert departure_id == f"DP-{digits}-{compact}"
+        assert row["routeId"] in route_ids, row["periodId"]
+
+
+def test_every_period_code_carries_its_own_route_code_and_depart_date(routes, departures):
+    codes = {route["routeId"]: route["routeCode"] for route in routes}
+    for row in departures:
+        match = PERIOD_CODE.fullmatch(row["periodCode"])
+        assert match, row["periodCode"]
+        assert match.group(1) == date.fromisoformat(row["departDate"]).strftime("%Y%m%d")
+        assert row["periodCode"].split("-")[1] == codes[row["routeId"]]
 
 
 def test_each_route_carries_a_month_or_two_of_departures(routes, departures):
-    per_route = Counter(row["route_id"] for row in departures)
+    per_route = Counter(row["routeId"] for row in departures)
     for route in routes:
-        assert per_route[route["route_id"]] in DEPARTURES_PER_ROUTE, route["route_id"]
+        assert per_route[route["routeId"]] in DEPARTURES_PER_ROUTE, route["routeId"]
 
 
-def test_return_dates_match_the_routes_length(routes, departures):
-    days = {route["route_id"]: route["days"] for route in routes}
+def test_return_dates_and_day_counts_match_the_route(routes, departures):
+    days = {route["routeId"]: route["days"] for route in routes}
     for row in departures:
-        span = (
-            date.fromisoformat(row["return_date"]) - date.fromisoformat(row["depart_date"])
-        ).days
-        assert span == days[row["route_id"]] - 1, row["departure_id"]
+        span = date.fromisoformat(row["returnDate"]) - date.fromisoformat(row["departDate"])
+        assert row["days"] == days[row["routeId"]], row["periodId"]
+        assert span.days == row["days"] - 1, row["periodId"]
 
 
-def test_seats_left_never_exceeds_the_seats_the_group_has(departures):
+def test_the_seats_add_up_within_the_group_the_departure_plans_for(departures):
     for row in departures:
-        assert 0 <= row["seats_left"] <= row["seats_total"], row["departure_id"]
+        assert 0 <= row["availableSeats"] <= row["planGuests"], row["periodId"]
+        assert row["confirmCount"] + row["availableSeats"] <= row["planGuests"], row["periodId"]
+        assert 0 < row["minGroupSize"] <= row["planGuests"], row["periodId"]
+        assert row["reserveHours"] > 0, row["periodId"]
 
 
-def test_group_statuses_are_the_three_the_policies_name(departures):
-    assert {row["group_status"] for row in departures} <= GROUP_STATUSES
+def test_the_fixture_keeps_a_full_departure_and_some_that_have_not_formed(departures):
+    assert any(row["availableSeats"] == 0 for row in departures)
+    assert any(row["confirmCount"] < row["minGroupSize"] for row in departures)
+
+
+def test_every_departure_carries_a_complete_price(departures):
+    for row in departures:
+        price = row["priceInfo"]
+        assert set(price) == PRICE_KEYS, row["periodId"]
+        assert price["adultPrice"] > 0 and price["currency"] == "CNY", row["periodId"]
+        assert price["elderPrice"] == price["adultPrice"], row["periodId"]
+
+
+def test_a_routes_from_price_is_the_cheapest_departure_it_has(routes, departures):
+    cheapest: dict[int, float] = {}
+    for row in departures:
+        adult = row["priceInfo"]["adultPrice"]
+        cheapest[row["routeId"]] = min(cheapest.get(row["routeId"], adult), adult)
+    for route in routes:
+        assert route["fromPrice"] == cheapest[route["routeId"]], route["routeId"]
+
+
+def test_the_customers_are_three_trade_accounts(customers):
+    assert len(customers) == 3
+    assert {row["companyType"] for row in customers} == {1}
+    assert len({row["customerId"] for row in customers}) == 3
+    assert all(isinstance(row["customerId"], int) for row in customers)
 
 
 def test_both_fixtures_are_anchored_to_the_same_day(routes_raw, departures_raw):
     assert routes_raw["dates_anchored_to"] == departures_raw["dates_anchored_to"]
+    assert routes_raw["store_name"]
 
 
 def test_every_departure_falls_inside_the_window_after_the_anchor(departures_raw, departures):
     anchor = date.fromisoformat(departures_raw["dates_anchored_to"])
     for row in departures:
-        ahead = (date.fromisoformat(row["depart_date"]) - anchor).days
-        assert 0 <= ahead <= WINDOW_DAYS, row["departure_id"]
+        ahead = (date.fromisoformat(row["departDate"]) - anchor).days
+        assert 0 <= ahead <= WINDOW_DAYS, row["periodId"]

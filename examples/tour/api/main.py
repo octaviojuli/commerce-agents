@@ -2,9 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """ACME 旅行社 example API: the 旅行社 ERP behind the shared storefront routes, the
-``present_shortlist`` extension and the share link its card carries, the advisor's live
-seat holds on every cart payload, and the ERP's expiry notices delivered as app events.
-There is no merchant portal in this example.
+``present_shortlist`` extension and the share link its card carries, and the conversation's
+live 占位 on every cart payload. There is no merchant portal in this example.
 
     uvicorn tour.api.main:app --app-dir examples --reload --port 8004
 """
@@ -35,22 +34,36 @@ from .erp_client import ErpClient
 from .http_erp import HttpErpClient
 from .mock_erp import MockErpClient
 from .shortlist import build_shortlist_extension
-from .tour_backend import DATA_DIR, TourBackend, TourToolExecutor
+from .tour_backend import DATA_DIR, TourBackend, TourToolExecutor, first_advisor_mobile
 
 load_demo_env(DATA_DIR.parent)
 
 
 def build_erp() -> ErpClient:
     """A real 旅行社 ERP when TOUR_ERP_BASE_URL names one, the fixtures in ``data/``
-    otherwise. TOUR_ERP_TOKEN is the bearer the host sends; it never reaches the model."""
+    otherwise. The login is the advisor's own ERP account, the mobile and the password alone:
+    the ERP picks the department and the client switches into a 团期's own for a write.
+    Neither credential ever reaches the model."""
     base_url = os.environ.get("TOUR_ERP_BASE_URL", "").strip()
     if base_url:
-        return HttpErpClient(base_url, os.environ.get("TOUR_ERP_TOKEN", ""))
+        return HttpErpClient(
+            base_url, os.environ["TOUR_ERP_MOBILE"], os.environ["TOUR_ERP_PASSWORD"]
+        )
     return MockErpClient()
 
 
 erp = build_erp()
-backend = TourBackend(erp)
+# One 同行 customer per deployment, and the advisor's own mobile as every order's contact;
+# the mock knows only its own customers.json, so TOUR_ERP_CUSTOMER_ID applies to the real ERP.
+# TOUR_ERP_ALLOW_PAST lists departures that already left, for a beta with no future ones.
+backend = TourBackend(
+    erp,
+    customer_id=int(os.environ.get("TOUR_ERP_CUSTOMER_ID", "4101"))
+    if isinstance(erp, HttpErpClient)
+    else 4101,
+    contact_mobile=os.environ.get("TOUR_ERP_MOBILE") or first_advisor_mobile(),
+    allow_past=os.environ.get("TOUR_ERP_ALLOW_PAST") == "1",
+)
 agent = ShoppingAgent(
     backend=backend,
     skills_dir=REPO_ROOT / "shopping-agent" / "skills",
@@ -62,31 +75,20 @@ agent = ShoppingAgent(
 
 
 def holds_payload(record: SessionRecord) -> dict:
-    """The 占位 behind the conversation's cart lines, each with what is left of its TTL on
-    the host's UTC clock, which the mock ERP stamps its expiries from as well."""
+    """The 占位 behind the conversation's cart lines: the ERP's 订单号, the 团期 it holds,
+    and what is left of the backend's own 30-minute window on the host's UTC clock."""
     now = datetime.now(UTC)
     return {
         "holds": [
             {
-                "hold_id": hold.hold_id,
-                "product_id": hold.departure_id,
-                "expires_at": hold.expires_at.isoformat(),
-                "seconds_remaining": max(0, int((hold.expires_at - now).total_seconds())),
+                "hold_id": order_no,
+                "product_id": product_id,
+                "expires_at": expires_at.isoformat(),
+                "seconds_remaining": max(0, int((expires_at - now).total_seconds())),
             }
-            for hold in backend.holds_snapshot(record.session_id)
+            for order_no, product_id, expires_at in backend.holds_snapshot(record.session_id)
         ]
     }
-
-
-def deliver_hold_events() -> None:
-    """Queue the ERP's expiry notices on every live session of the advisor they concern;
-    the next turn hands them to the agent."""
-    # Only the mock notices its own expiries, so this is a no-op against an HTTP ERP.
-    collect = getattr(erp, "collect_notifications", None)
-    for note in collect() if collect else ():
-        for record in host.sessions.sessions_for_user(note.advisor_id):
-            record.pending_app_events.append(note.message)
-            host.sessions.save(record)  # outside a request, so nothing else writes it back
 
 
 host = build_storefront_host(
@@ -96,7 +98,6 @@ host = build_storefront_host(
     agent=agent,
     memory_seeder=MemorySeeder(DATA_DIR / "memory-seed.json"),
     cart_extras=holds_payload,
-    before_turn=deliver_hold_events,
 )
 app = host.app
 

@@ -1,17 +1,29 @@
 # Copyright 2026 Anthropic PBC
 # SPDX-License-Identifier: Apache-2.0
 
-"""The tour example's ``StorefrontBackend`` over the 旅行社 ERP: a route (线路) is a product
-family, its dated departures (团期) are that family's variants, and a cart line is a live
-seat hold. A tour price holds only for one party on one date, so the window and party the
-advisor last searched are kept per session and restated in every record's attributes. When
-the stated window or filters leave the advisor with nothing to quote, the search relaxes
-them a step at a time and each relaxed record says in Chinese what it does not meet, since
-the advisor reads that back to the customer."""
+"""The tour example's ``StorefrontBackend`` over the 旅行社 ERP (``docs/erp-contract.md``):
+a 线路 is a product family, its dated 团期 are that family's variants, and a cart line is a
+预留 order this conversation wrote. A tour price holds only for one party on one date, so the
+window and party the advisor last searched are kept per session and restated in every
+record's attributes. When the stated window or filters leave the advisor with nothing to
+quote, the search relaxes them a step at a time and each relaxed record says in Chinese what
+it does not meet, since the advisor reads that back to the customer.
+
+Three shapes of the ERP show through here. Its catalog carries no destination, hotel, vehicle
+or shopping field, so a destination is matched against 线路 names and tags and the rest is
+filtered on this side. An order is the only write it offers: nothing in the cart can cancel or
+resize one, so both are refused with the reason, and the advisor does it in the ERP's own
+backstage. And a 团期 has two prices — the 市场价 the departure lists, which is what the
+customer's share page shows, and the 同业价 the ERP quotes this customer, which is what the
+advisor settles at and what an order is booked at — so every record here is quoted at the
+同业价 and carries the 市场价 beside it."""
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
+import re
 import secrets
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
@@ -21,16 +33,11 @@ from typing import Any
 from commerce_common.streaming import ToolOutcome
 from demo_common.storefront_fixtures import (
     example_data_dir,
-    find_order,
     find_product,
     load_json,
-    load_orders,
     load_policies,
     load_users,
-    newest_orders,
-    orders_for,
     preferences_of,
-    search_help,
 )
 from shopping_agent import (
     Cart,
@@ -38,6 +45,8 @@ from shopping_agent import (
     FulfillmentOption,
     NotOffered,
     Order,
+    OrderItem,
+    OrderStatus,
     Policy,
     Product,
     ProductDetails,
@@ -50,15 +59,18 @@ from shopping_agent import (
 from shopping_agent.executor import ShoppingToolExecutor
 
 from .erp_client import (
-    MAX_ROUTE_RESULTS,
+    ORDER_STATUS,
     DepartureRecord,
+    ErpAuth,
     ErpClient,
-    ErpDeadlinePassed,
     ErpError,
-    ErpHoldLimit,
-    ErpHoldNotFound,
-    ErpSoldOut,
-    HoldRecord,
+    ErpNotFound,
+    ErpRefused,
+    ErpThrottled,
+    OrderRecord,
+    OrderRequest,
+    PriceInfo,
+    Quote,
     RouteQuery,
     RouteRecord,
 )
@@ -70,20 +82,36 @@ CATEGORY = "tour"
 ROUTE_PREFIX = "RT-"
 DEPARTURE_PREFIX = "DP-"
 
+log = logging.getLogger(__name__)
+
 # The window a search covers when the advisor states none, and the padding a route's
 # details add on each side so the neighbouring 团期 are quotable without a second search.
 DEFAULT_WINDOW_DAYS = 60
 DETAIL_PAD_DAYS = 7
+# How far back ``allow_past`` reaches: a beta environment whose 团期 have all departed.
+PAST_WINDOW_DAYS = 365
 # One fenced details result holds every variant, so a long-running route is trimmed to the
 # departures nearest the window the advisor is working in (docs/backends.md, step 4).
 MAX_VARIANTS = 24
+# A quoted departure costs two ERP calls — its detail for the 市场价 and its counts, and
+# ``order/price`` for the 同业价 — so both reads cap how many they price and take the
+# departures nearest the middle of the window first.
+MAX_LISTING_PRICES = 6
+MAX_DETAIL_PRICES = 12
+PRICE_CONCURRENCY = 4
+# What the boot snapshot fetches from a live ERP, where every route is an HTTP round trip.
+MAX_BOOT_ROUTES = 8
 DEFAULT_ADULTS = 2
 DEFAULT_CHILDREN = 0
 MAX_LABELS = 4
+MAX_POLICIES = 3
 # Fewer than two quotable routes is not a shortlist, so the search relaxes and says so.
 MIN_RESULTS = 2
 RELAX_WINDOW_DAYS = 7
 RELAX_DAYS_SPAN = 2
+# Our own hold window on a 预留 order, whatever the departure's ``reserve_hours`` says: the
+# advisor is told the seats are theirs for half an hour, and the line drops after that.
+HOLD_TTL_MINUTES = 30
 
 # Where the customer's copy of a shortlist lives: the advisor pastes the link into their
 # own chat with the customer. The page is not part of this example; the link and the token
@@ -91,11 +119,35 @@ RELAX_DAYS_SPAN = 2
 DEFAULT_SHARE_BASE_URL = "http://localhost:3004"
 SHARE_TOKEN_BYTES = 12
 
-_STATUS_TEXT = {"confirmed": "已成团", "pending": "待成团", "closed": "已截止"}
+_STATUS_TEXT = {"confirmed": "已成团", "pending": "待成团", "waitlist": "已满候补"}
+# The ERP's six order statuses as the shared enum's eight: everything the agency has not
+# cancelled is still being worked on, and nothing here ships.
+_ORDER_STATE = {
+    0: OrderStatus.PROCESSING,  # 预留
+    1: OrderStatus.PROCESSING,  # 占位
+    2: OrderStatus.PROCESSING,  # 确认
+    3: OrderStatus.CANCELLED,  # 取消
+    4: OrderStatus.PROCESSING,  # 审批中
+    5: OrderStatus.PROCESSING,  # 候补
+}
+# What a 纯玩 request reads as in a catalog whose only free text is the name and the tags.
+_NO_SHOPPING_WORDS = ("纯玩", "零购物", "无购物")
+# 五钻, 5钻, 五星 and 5星 name one standard; the ERP's editors write whichever they like.
+_HOTEL_DIGITS = {"三": "3", "四": "4", "五": "5", "3": "三", "4": "四", "5": "五"}
+# What a policy entry is scored on: its 标题 and 分类 answer a question more directly than a
+# clause buried in the body does.
+_HELP_TITLE_WEIGHT = 3.0
+_HELP_CONTENT_WEIGHT = 1.0
+_HELP_CHAR_WEIGHT = 1.0
+_WHITESPACE = re.compile(r"\s+")
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 def _number(value: float) -> str:
-    """A price or an hour count as the advisor says it: ``5980``, ``4.5``."""
+    """A price or a count as the advisor says it: ``5980``, ``4.5``."""
     return f"{value:g}"
 
 
@@ -128,43 +180,71 @@ def _date_of(raw: str | None, default: date) -> date:
 
 
 def _ages_of(raw: str | None) -> list[int]:
-    """``"5|9"`` as the ERP wants it; a part that is not a whole number is dropped."""
+    """``"5|9"`` as whole years; a part that is not a whole number is dropped."""
     parts = (str(raw or "")).split("|")
     return [age for age in (_int_or_none(part) for part in parts) if age is not None]
 
 
-def _labels(record: RouteRecord) -> list[str]:
-    """The display tags the advisor scans: the route's own 适合标签, plus the 纯玩 claim when
-    no fit tag already makes it."""
-    labels = list(record.fit_tags)
-    if record.shopping_stops == 0 and not any("纯玩" in label for label in labels):
-        labels.append("纯玩无购物")
-    return labels[:MAX_LABELS]
+def route_id_of(record: RouteRecord | int) -> str:
+    return f"{ROUTE_PREFIX}{record if isinstance(record, int) else record.route_id}"
+
+
+def departure_id_of(row: DepartureRecord | int) -> str:
+    return f"{DEPARTURE_PREFIX}{row if isinstance(row, int) else row.period_id}"
+
+
+def _erp_id(product_id: str, prefix: str) -> int | None:
+    """The integer the ERP knows behind ``RT-1021`` or ``DP-3001``, or None for anything
+    else the model may have written."""
+    if not product_id.startswith(prefix):
+        return None
+    return _int_or_none(product_id[len(prefix) :])
+
+
+def first_advisor_mobile(data_dir: Path = DATA_DIR) -> str:
+    """The ERP mobile of the first advisor in ``users.json``: the contact a deployment
+    without ``TOUR_ERP_MOBILE`` writes onto its orders."""
+    users = load_json(data_dir, "users.json")["users"]
+    return next((str(user.get("mobile") or "") for user in users), "")
+
+
+def _text_of(record: RouteRecord) -> str:
+    """A route's searchable free text: its name and its tags, which is all the ERP has."""
+    return record.route_name + " " + " ".join(record.tags)
+
+
+def _hotel_aliases(level: str) -> tuple[str, ...]:
+    """Every spelling of a hotel standard the advisor may state: 五钻, 5钻, 五星, 5星."""
+    wanted = level.strip()
+    other = _HOTEL_DIGITS.get(wanted[:1]) if wanted else None
+    if other is None:
+        return (wanted,)
+    return tuple(f"{head}{tail}" for head in (wanted[:1], other) for tail in ("钻", "星"))
+
+
+def _has_hotel_level(record: RouteRecord, level: str) -> bool:
+    text = _text_of(record)
+    return any(alias in text for alias in _hotel_aliases(level))
+
+
+def _is_no_shopping(record: RouteRecord) -> bool:
+    text = _text_of(record)
+    return any(word in text for word in _NO_SHOPPING_WORDS)
+
+
+def _feature_sentence(record: RouteRecord) -> str | None:
+    """The one feature written as a sentence; the others are place names."""
+    return next((text for text in record.features if "，" in text or "。" in text), None)
 
 
 def _route_attributes(record: RouteRecord, match: str, mismatch: str | None) -> dict[str, str]:
     return {
-        "destination": record.destination,
-        "region": record.region,
-        "departure_city": record.departure_city,
+        "route_code": record.route_code,
         "days": str(record.days),
-        "nights": str(record.nights),
-        "hotel_level": record.hotel_level,
-        "vehicle": record.vehicle,
-        "group_size_max": str(record.group_size_max),
-        "includes_transport": "yes" if record.includes_transport else "no",
-        "shopping_stops": str(record.shopping_stops),
-        "optional_paid_items": str(record.optional_paid_items),
-        "child_min_age": str(record.child_min_age),
-        "child_policy": record.child_policy,
-        "intensity": str(record.intensity),
-        **(
-            {"max_drive_hours_per_day": _number(record.max_drive_hours_per_day)}
-            if record.max_drive_hours_per_day is not None
-            else {}
-        ),
-        "highlights": "|".join(record.highlights),
-        "fit_tags": "|".join(record.fit_tags),
+        "depart_city": record.depart_city,
+        "company": record.company_name,
+        "tags": "|".join(record.tags),
+        "features": "|".join(record.features),
         "match": match,
         **({"mismatch": mismatch} if mismatch else {}),
     }
@@ -173,126 +253,151 @@ def _route_attributes(record: RouteRecord, match: str, mismatch: str | None) -> 
 def _specs(record: RouteRecord) -> dict[str, str]:
     """The 行程规格 the advisor reads out; display only, so the keys are Chinese."""
     specs = {
-        "行程天数": f"{record.days} 天 {record.nights} 晚",
-        "住宿标准": record.hotel_level,
-        "车型": record.vehicle,
-        "成团人数": f"最多 {record.group_size_max} 人",
+        "行程天数": f"{record.days} 天",
+        "出发城市": record.depart_city,
+        "标签": "、".join(record.tags),
+        "亮点": "、".join(record.features),
     }
-    if record.meals is not None:
-        specs["含餐"] = record.meals
-    specs["购物店"] = f"{record.shopping_stops} 个"
-    specs["自费项目"] = f"{record.optional_paid_items} 项"
-    specs["儿童政策"] = record.child_policy
-    if record.meeting_point is not None:
-        specs["集合地点"] = record.meeting_point
+    if record.attachment_name:
+        specs["行程附件"] = record.attachment_name
     return specs
 
 
+def _group_status(row: DepartureRecord) -> str:
+    """成团 against the ERP's own two counts, and 候补 once the seats are gone and someone
+    is already waiting for them."""
+    if row.available_seats <= 0 and (row.waitlist_count or 0) > 0:
+        return "waitlist"
+    return "confirmed" if row.confirm_count >= row.min_group_size else "pending"
+
+
+def _party_total(price: PriceInfo | None, adults: int, children: int) -> float | None:
+    if price is None:
+        return None
+    return adults * price.adult + children * price.child
+
+
 def _variant_title(row: DepartureRecord, record: RouteRecord | None) -> str:
-    return f"{record.route_name if record else row.route_id} {_md(row.depart_date)} 出发"
+    name = record.route_name if record is not None else row.route_name
+    return f"{name} {_md(row.depart_date)} 出发"
 
 
-def _variant_attributes(row: DepartureRecord, adults: int, children: int) -> dict[str, str]:
+def _variant_attributes(
+    row: DepartureRecord,
+    price: PriceInfo | None,
+    market: PriceInfo | None,
+    source: str,
+    adults: int,
+    children: int,
+) -> dict[str, str]:
+    """``price`` is what the advisor quotes and books at — the 同业价, or the 市场价 while only
+    that is known — and ``market`` is the departure's own 市场价, which the customer's share
+    page shows. ``quote_source`` says which of the two the priced keys hold."""
+    total = _party_total(price, adults, children)
     return {
+        "period_code": row.period_code,
         "depart_date": row.depart_date.isoformat(),
         "return_date": row.return_date.isoformat(),
-        "seats_left": str(row.seats_left),
-        "seats_total": str(row.seats_total),
-        "group_status": row.group_status,
-        "booking_deadline": row.booking_deadline.isoformat(),
-        "adult_price": _number(row.adult_price),
-        "child_price": _number(row.child_price),
-        **(
-            {"child_bed_price": _number(row.child_bed_price)}
-            if row.child_bed_price is not None
-            else {}
-        ),
-        "single_supplement": _number(row.single_supplement),
-        "party_quote_total": _number(row.party_quote_total),
+        "seats_left": str(row.available_seats),
+        "seats_total": str(row.plan_guests),
+        "min_group_size": str(row.min_group_size),
+        "confirm_count": str(row.confirm_count),
+        "group_status": _group_status(row),
+        "reserve_hours": str(row.reserve_hours),
+        "adult_price": _number(price.adult if price else 0),
+        "child_price": _number(price.child if price else 0),
+        "elder_price": _number(price.elder if price else 0),
+        "single_room_diff": _number(price.single_room_diff if price else 0),
+        "market_adult_price": _number(market.adult if market else 0),
+        "market_child_price": _number(market.child if market else 0),
+        "party_quote_total": _number(total or 0),
         "quote_party": _party_label(adults, children),
-        "hold_ttl_minutes": str(row.hold_ttl_minutes),
+        "quote_source": source,
     }
 
 
-def _variant_summary(row: DepartureRecord, adults: int, children: int) -> str:
-    status = _STATUS_TEXT.get(row.group_status, row.group_status)
+def _variant_summary(
+    row: DepartureRecord,
+    price: PriceInfo | None,
+    market: PriceInfo | None,
+    source: str,
+    adults: int,
+    children: int,
+) -> str:
+    """The 团期 in one line, on both of its prices: a total the 同业价 made is the advisor's own
+    and names the 市场价 beside it, so the sentence says what the order is booked at and what
+    the customer is shown; one the 市场价 made says so, because that is the customer's price and
+    not what the order would be booked at."""
+    status = _STATUS_TEXT.get(_group_status(row), _group_status(row))
     party = _party_label(adults, children)
-    return (
-        f"余位 {row.seats_left}/{row.seats_total}，{status}，"
-        f"{party}合计 {_number(row.party_quote_total)} 元"
+    seats = f"余位 {row.available_seats}/{row.plan_guests}，{status}"
+    total = _party_total(price, adults, children)
+    if total is None:
+        return f"{seats}，{party}报价待查"
+    if source == "list":
+        return f"{seats}，市场价 {party}合计 {_number(total)} 元（同业价待查）"
+    listed = market.adult if market is not None else 0.0
+    beside = f"（市场价成人 {_number(listed)} 元）" if listed > 0 else ""
+    return f"{seats}，同业价 {party}合计 {_number(total)} 元{beside}"
+
+
+def _flat(text: str) -> str:
+    return _WHITESPACE.sub("", text.lower())
+
+
+def _policy_score(query: str, policy: Policy) -> float:
+    """How much of the advisor's question one policy entry answers. The shared ``search_help``
+    tokenizer splits on ASCII word boundaries and so finds no word at all in a Chinese
+    question; this scores the way ``mock_erp`` ranks 线路 instead: every character 2-gram of the
+    question scores the best field it appears in, and a bare character scores in a title only,
+    which is where a one-word question (退改, 儿童价) lands. A character the question repeats
+    counts each time, so 退团怎么退 reads as a question about 退改 and not about 成团."""
+    heading = _flat(f"{policy.title} {policy.category}")
+    body = _flat(policy.content)
+    question = _flat(query)
+    grams = (question[at : at + 2] for at in range(len(question) - 1))
+    score = sum(
+        _HELP_TITLE_WEIGHT if gram in heading else _HELP_CONTENT_WEIGHT if gram in body else 0.0
+        for gram in grams
     )
+    return score + sum(_HELP_CHAR_WEIGHT for char in question if char in heading)
 
 
-def _sold_out_detail(product_id: str, sold_out: ErpSoldOut) -> str:
-    """``Unavailable`` leaves the fence, so it carries ids and nothing else."""
-    siblings = ", ".join(sold_out.sibling_departure_ids)
-    return f"{product_id}; in stock: {siblings}" if siblings else product_id
+# -- the advisor's stated request, and how it relaxes when nothing meets it ----------------
 
 
-# -- relaxation: how a search widens when the stated filters leave nothing to quote ------
+@dataclass(frozen=True)
+class Request:
+    """What the advisor asked for. Only the text and the window reach the ERP; the rest is
+    filtered on this side, because the ERP's catalog carries no field for any of it."""
+
+    text: str
+    depart_from: date
+    depart_to: date
+    days_min: int | None = None
+    days_max: int | None = None
+    no_shopping: bool = False
+    hotel_level: str | None = None
 
 
-def _widen_window(q: RouteQuery) -> RouteQuery:
-    if q.depart_from is None or q.depart_to is None:
-        return q
+def _widen_window(stated: Request) -> Request:
     return replace(
-        q,
-        depart_from=q.depart_from - timedelta(days=RELAX_WINDOW_DAYS),
-        depart_to=q.depart_to + timedelta(days=RELAX_WINDOW_DAYS),
+        stated,
+        depart_from=stated.depart_from - timedelta(days=RELAX_WINDOW_DAYS),
+        depart_to=stated.depart_to + timedelta(days=RELAX_WINDOW_DAYS),
     )
 
 
-def _widen_days(q: RouteQuery) -> RouteQuery:
+def _widen_days(stated: Request) -> Request:
     return replace(
-        q,
-        days_min=None if q.days_min is None else q.days_min - RELAX_DAYS_SPAN,
-        days_max=None if q.days_max is None else q.days_max + RELAX_DAYS_SPAN,
+        stated,
+        days_min=None if stated.days_min is None else stated.days_min - RELAX_DAYS_SPAN,
+        days_max=None if stated.days_max is None else stated.days_max + RELAX_DAYS_SPAN,
     )
 
 
-def _drop_preferences(q: RouteQuery) -> RouteQuery:
-    return replace(q, hotel_level=None, no_shopping=False)
-
-
-def _distance(day: date, start: date, end: date) -> int:
-    if start <= day <= end:
-        return 0
-    return min(abs((day - start).days), abs((day - end).days))
-
-
-def _date_note(stated: RouteQuery, dates: list[date]) -> str | None:
-    """Nothing departs inside the window the advisor stated; name the nearest one that does."""
-    start, end = stated.depart_from, stated.depart_to
-    if any(start <= day <= end for day in dates):
-        return None
-    span = f"{_md(start)}–{_md(end)}"
-    nearest = min(dates, key=lambda day: (_distance(day, start, end), day), default=None)
-    return f"无 {span} 团期，最近为 {_md(nearest)}" if nearest else f"无 {span} 团期"
-
-
-def _days_note(record: RouteRecord, stated: RouteQuery) -> str | None:
-    low = record.days if stated.days_min is None else stated.days_min
-    high = record.days if stated.days_max is None else stated.days_max
-    if low <= record.days <= high:
-        return None
-    return f"天数 {record.days} 天，超出要求的 {low}–{high} 天"
-
-
-def _preference_notes(record: RouteRecord, stated: RouteQuery) -> list[str]:
-    notes = []
-    if stated.hotel_level and stated.hotel_level != record.hotel_level:
-        notes.append(f"酒店为{record.hotel_level}，要求{stated.hotel_level}")
-    if stated.no_shopping and record.shopping_stops:
-        notes.append(f"含 {record.shopping_stops} 个购物店")
-    return notes
-
-
-def _mismatch(record: RouteRecord, stated: RouteQuery, dates: list[date]) -> str:
-    """What the advisor reads back: every condition they stated that this record fails, in
-    the order they stated them. A route admitted by one relaxation usually misses more than
-    that step alone relaxed, and a note that named only that step would understate it."""
-    notes = [note for note in (_date_note(stated, dates), _days_note(record, stated)) if note]
-    return "；".join(notes + _preference_notes(record, stated)) or "与所提条件略有出入"
+def _drop_preferences(stated: Request) -> Request:
+    return replace(stated, hotel_level=None, no_shopping=False)
 
 
 # Each step keeps the one before it, so a route found late is measured against everything
@@ -304,17 +409,92 @@ _RELAXATIONS = (
 )
 
 
+def _fits_days(record: RouteRecord, stated: Request) -> bool:
+    low = record.days if stated.days_min is None else stated.days_min
+    high = record.days if stated.days_max is None else stated.days_max
+    return low <= record.days <= high
+
+
+def _fits(record: RouteRecord, stated: Request) -> bool:
+    """The filters the ERP cannot apply: the day count, 纯玩, and the hotel standard."""
+    if not _fits_days(record, stated):
+        return False
+    if stated.no_shopping and not _is_no_shopping(record):
+        return False
+    return not (stated.hotel_level and not _has_hotel_level(record, stated.hotel_level))
+
+
+def _distance(day: date, start: date, end: date) -> int:
+    if start <= day <= end:
+        return 0
+    return min(abs((day - start).days), abs((day - end).days))
+
+
+def _date_note(stated: Request, dates: list[date]) -> str | None:
+    """Nothing departs inside the window the advisor stated; name the nearest one that does."""
+    start, end = stated.depart_from, stated.depart_to
+    if any(start <= day <= end for day in dates):
+        return None
+    span = f"{_md(start)}–{_md(end)}"
+    nearest = min(dates, key=lambda day: (_distance(day, start, end), day), default=None)
+    return f"无 {span} 团期，最近为 {_md(nearest)}" if nearest else f"无 {span} 团期"
+
+
+def _days_note(record: RouteRecord, stated: Request) -> str | None:
+    if _fits_days(record, stated):
+        return None
+    low = record.days if stated.days_min is None else stated.days_min
+    high = record.days if stated.days_max is None else stated.days_max
+    return f"天数 {record.days} 天，超出要求的 {low}–{high} 天"
+
+
+def _preference_notes(record: RouteRecord, stated: Request) -> list[str]:
+    """The ERP states a hotel standard and 纯玩 only as words in the name or the tags, so
+    what the advisor is told is that the route does not claim them, not that it fails them."""
+    notes = []
+    if stated.hotel_level and not _has_hotel_level(record, stated.hotel_level):
+        notes.append(f"未标注{stated.hotel_level}")
+    if stated.no_shopping and not _is_no_shopping(record):
+        notes.append("未标注纯玩或零购物")
+    return notes
+
+
+def _mismatch(record: RouteRecord, stated: Request, dates: list[date]) -> str:
+    """What the advisor reads back: every condition they stated that this record fails, in
+    the order they stated them. A route admitted by one relaxation usually misses more than
+    that step alone relaxed, and a note that named only that step would understate it."""
+    notes = [note for note in (_date_note(stated, dates), _days_note(record, stated)) if note]
+    return "；".join(notes + _preference_notes(record, stated)) or "与所提条件略有出入"
+
+
 @dataclass
 class SearchContext:
     """The window and party the advisor last searched. Every later quote is made for it:
-    ``get_product_details`` prices the departures for this party, and ``add_to_cart`` holds
-    seats for it."""
+    ``get_product_details`` prices the departures for this party, and ``add_to_cart`` writes
+    the order for it."""
 
     depart_from: date
     depart_to: date
     adults: int
     children: int
     child_ages: list[int]
+
+
+@dataclass
+class Hold:
+    """One order this conversation wrote, as the cart sees it. ``created_at`` is our own
+    clock, because the 30-minute hold the advisor is told about is ours and not the ERP's;
+    ``order_no`` is filled in by the first cart read that resolves the order."""
+
+    order_id: int
+    period_id: int
+    created_at: datetime
+    is_waitlist: bool
+    order_no: str = ""
+
+    @property
+    def expires_at(self) -> datetime:
+        return self.created_at + timedelta(minutes=HOLD_TTL_MINUTES)
 
 
 @dataclass(frozen=True)
@@ -329,14 +509,15 @@ class ShareRecord:
 
 
 class TourToolExecutor(ShoppingToolExecutor):
-    """The ERP refuses a hold with a rule the advisor can act on (报名截止, 占位上限, 占位已
-    过期); relay it so the model says what stands in the way instead of reporting an outage.
-    ``ErpUnavailable`` is an outage and falls through to the base default."""
+    """The ERP refuses a call with a rule the advisor can act on (a business refusal, an
+    unknown record, a login throttle, an account that cannot see the department); relay it so
+    the model says what stands in the way instead of reporting an outage. ``ErpUnavailable``
+    is an outage and falls through to the base default."""
 
     erp_rule_text = "Nothing changed: {detail}. Tell the advisor and offer what fits."
 
     def domain_error(self, error: Exception) -> ToolOutcome | None:
-        if isinstance(error, ErpDeadlinePassed | ErpHoldLimit | ErpHoldNotFound):
+        if isinstance(error, ErpRefused | ErpNotFound | ErpThrottled | ErpAuth):
             return ToolOutcome.error(
                 self.erp_rule_text.format(detail=self._sanitize(str(error), 200))
             )
@@ -345,28 +526,44 @@ class TourToolExecutor(ShoppingToolExecutor):
 
 class TourBackend(StorefrontBackend):
     """The advisor is the customer here: they search on behalf of the customer in front of
-    them, and the cart is the seat holds their conversation owns."""
+    them, and the cart is the 预留 orders their conversation wrote. The ERP logs one
+    salesperson in and books for one 同行 customer, so ``customer_id`` and ``contact_mobile``
+    are the deployment's, not the model's."""
 
     def __init__(
-        self, erp: ErpClient, data_dir: Path = DATA_DIR, today: date | None = None
+        self,
+        erp: ErpClient,
+        data_dir: Path = DATA_DIR,
+        today: date | None = None,
+        *,
+        customer_id: int,
+        contact_mobile: str,
+        allow_past: bool = False,
     ) -> None:
-        """``today`` is for a host that runs on its own clock; the default is the real date."""
+        """``today`` is for a host that runs on its own clock; the default is the real date.
+        ``allow_past`` lets the windows reach behind today, for a test environment whose 团期
+        have all departed; it is off in production."""
         self.erp = erp
-        self.today: date = today or datetime.now(UTC).date()
+        self.today: date = today or _utcnow().date()
+        self.customer_id = customer_id
+        self.contact_mobile = contact_mobile
+        self.allow_past = allow_past
         self.store_name: str = load_json(data_dir, "routes.json").get("store_name", STORE_NAME)
         self._users = load_users(data_dir)
-        self._orders = load_orders(data_dir)
         self._policies = load_policies(data_dir)
         self._contexts: dict[str, SearchContext] = {}
         # What the ERP has already returned this process: a route is looked up by id long
-        # after the search that found it, and a cart line names a departure by id alone.
-        self._routes: dict[str, RouteRecord] = {}
-        self._departures: dict[str, DepartureRecord] = {}
+        # after the search that found it, and a cart line names a departure by id alone. A
+        # departure's 同业价 is cached beside it, ``None`` where the ERP has no price row for
+        # it, so a second read of the same 团期 costs no further call.
+        self._routes: dict[int, RouteRecord] = {}
+        self._departures: dict[int, DepartureRecord] = {}
+        self._quotes: dict[int, Quote | None] = {}
         # The listing snapshot the host's catalog routes read; `load_listings` fills both.
         self.products: dict[str, ProductDetails] = {}
         self._variants: dict[str, ProductDetails] = {}
-        # The holds the last cart read saw, per session, for the sync cart payload.
-        self._hold_snapshots: dict[str, list[HoldRecord]] = {}
+        # The orders each conversation wrote, newest last.
+        self._holds: dict[str, list[Hold]] = {}
         # The shortlists sent to a customer, by the token in their link.
         self._shares: dict[str, ShareRecord] = {}
 
@@ -376,12 +573,15 @@ class TourBackend(StorefrontBackend):
         """What an id pasted into a fresh conversation is quoted for. The party is stated
         back as ``quote_party`` so the advisor sees it is an assumption, not their party."""
         return SearchContext(
-            depart_from=self.today,
+            depart_from=self._earliest(),
             depart_to=self.today + timedelta(days=DEFAULT_WINDOW_DAYS),
             adults=DEFAULT_ADULTS,
             children=DEFAULT_CHILDREN,
             child_ages=[],
         )
+
+    def _earliest(self) -> date:
+        return self.today - timedelta(days=PAST_WINDOW_DAYS) if self.allow_past else self.today
 
     def _context(self, session: ShoppingSessionContext) -> SearchContext:
         return self._contexts.get(session.session_id) or self._default_context()
@@ -389,7 +589,7 @@ class TourBackend(StorefrontBackend):
     def _read_context(self, attributes: dict[str, str]) -> SearchContext:
         """The advisor's stated window and party. The model writes these by hand, so a value
         that does not parse falls back to the default rather than failing the search."""
-        depart_from = _date_of(attributes.get("depart_from"), self.today)
+        depart_from = _date_of(attributes.get("depart_from"), self._earliest())
         depart_to = _date_of(
             attributes.get("depart_to"), self.today + timedelta(days=DEFAULT_WINDOW_DAYS)
         )
@@ -404,126 +604,177 @@ class TourBackend(StorefrontBackend):
             child_ages=_ages_of(attributes.get("child_ages")),
         )
 
-    def _route_query(
-        self,
-        query: str,
-        attributes: dict[str, str],
-        filters: SearchFilters | None,
-        context: SearchContext,
-        limit: int,
-    ) -> RouteQuery:
-        """The ERP query the advisor stated. ``destination`` is both the hard filter and the
-        scored text, so the free-text query stands in when no destination attribute came."""
-        return RouteQuery(
-            destination=(attributes.get("destination") or query or "").strip(),
-            depart_from=context.depart_from,
-            depart_to=context.depart_to,
-            days_min=_int_or_none(attributes.get("days_min")),
-            days_max=_int_or_none(attributes.get("days_max")),
-            adults=context.adults,
-            children=context.children,
-            child_ages=tuple(context.child_ages),
-            departure_city=attributes.get("departure_city") or None,
-            no_shopping=attributes.get("no_shopping", "").strip().lower() == "yes",
-            hotel_level=attributes.get("hotel_level") or None,
-            max_adult_price=filters.max_price if filters is not None else None,
-            limit=max(1, min(limit, MAX_ROUTE_RESULTS)),
-        )
-
-    def _listing_window(self, start: date, end: date) -> tuple[date, date]:
-        """A widened or padded window can reach into the past; nothing already gone is quotable."""
-        start = max(self.today, start)
+    def _window(self, start: date, end: date) -> tuple[date, date]:
+        """A widened or padded window can reach further back than anything is sellable; only
+        ``allow_past`` lets a window start behind today."""
+        start = max(self._earliest(), start)
         return start, max(start, end)
 
-    # -- catalog -----------------------------------------------------------------------
+    # -- the ERP's routes and departures -------------------------------------------------
 
-    async def _search(self, q: RouteQuery, filters: SearchFilters | None) -> list[RouteRecord]:
-        """The ERP's ranked routes, minus any whose 起价 falls under a stated floor: the ERP
-        filters on the ceiling, the floor is the advisor asking to be shown the better tier."""
-        records = await self.erp.search_routes(q)
-        self._routes.update({record.route_id: record for record in records})
-        floor = filters.min_price if filters is not None else None
-        if floor is None:
-            return records
-        return [record for record in records if record.min_adult_price_in_window >= floor]
-
-    async def _list(
-        self, route_id: str, window: tuple[date, date], context: SearchContext
-    ) -> list[DepartureRecord]:
-        rows = await self.erp.list_departures(
-            route_id, window[0], window[1], context.adults, context.children, context.child_ages
+    async def _search(self, stated: Request) -> list[RouteRecord]:
+        """The ERP's routes for the text and the window, minus the ones the day count, 纯玩
+        or the hotel standard rules out: the ERP has no field for any of those three."""
+        window = self._window(stated.depart_from, stated.depart_to)
+        records = await self.erp.search_routes(
+            RouteQuery(route_name=stated.text, depart_from=window[0], depart_to=window[1])
         )
-        self._departures.update({row.departure_id: row for row in rows})
+        self._routes.update({record.route_id: record for record in records})
+        return [record for record in records if _fits(record, stated)]
+
+    async def _list(self, record: RouteRecord, window: tuple[date, date]) -> list[DepartureRecord]:
+        rows = await self.erp.list_departures(
+            record.route_id, record.route_name, window[0], window[1]
+        )
+        for row in rows:
+            # A listed row carries no price; a detail read already cached one, so keep it.
+            self._departures.setdefault(row.period_id, row)
         return rows
 
-    async def _route(self, route_id: str) -> RouteRecord | None:
+    async def _route(self, route_id: int) -> RouteRecord | None:
         """The route record, from the search that returned it or, for an id this process has
-        not seen, from one broad ERP search. That search runs on the default window and two
-        adults rather than the session's, because a route the advisor names has to resolve
-        whatever they last searched for: an empty ``destination`` is not a filter, so it
-        brings back every route selling seats in the next couple of months. It asks about no
-        children either: an age rule is a reason to warn the advisor about the route they
-        named, not a reason to fail to find it."""
+        not seen, from one broad ERP search over the default window: an empty name is not a
+        filter, so it brings back every route selling seats in the next couple of months."""
         if route_id in self._routes:
             return self._routes[route_id]
         default = self._default_context()
         await self._search(
-            RouteQuery(
-                destination="",
-                depart_from=default.depart_from,
-                depart_to=default.depart_to,
-                adults=default.adults,
-                limit=MAX_ROUTE_RESULTS,
-            ),
-            None,
+            Request(text="", depart_from=default.depart_from, depart_to=default.depart_to)
         )
         return self._routes.get(route_id)
+
+    def _priced(self, row: DepartureRecord) -> PriceInfo | None:
+        """The departure's own 市场价, which only its detail call carries."""
+        cached = self._departures.get(row.period_id)
+        return cached.price if cached is not None else row.price
+
+    def _department(self, row: DepartureRecord) -> int:
+        """The department a write on this 团期 is made in. The ERP carries it on every period
+        row, and a fetched detail is the freshest one this process has."""
+        cached = self._departures.get(row.period_id)
+        return (cached.company_id if cached is not None else 0) or row.company_id
+
+    async def _quote(self, row: DepartureRecord) -> Quote | None:
+        """This customer's 同业价 for one departure, asked in the departure's own department. A
+        团期 the catalog has no price row for answers not-found, which is a gap in the catalog
+        and not a failed call."""
+        try:
+            return await self.erp.quote(row.period_id, self.customer_id, self._department(row))
+        except ErpNotFound:
+            return None
+
+    async def _price_one(self, row: DepartureRecord, gate: asyncio.Semaphore) -> None:
+        """One departure's two prices, kept in the caches the records read through: the 市场价
+        and the seat counts from its detail, then the 同业价 the order would be booked at. A row
+        the ERP cannot detail keeps no 市场价, and one it has no price row for keeps no 同业价;
+        the record then says which of the two its numbers are."""
+        async with gate:
+            if self._priced(row) is None:
+                detailed = await self.erp.get_departure(row.period_id)
+                if detailed is not None:
+                    self._departures[detailed.period_id] = detailed
+            if row.period_id not in self._quotes:
+                self._quotes[row.period_id] = await self._quote(row)
+
+    async def _prices(self, rows: list[DepartureRecord], middle: date, limit: int) -> None:
+        """Both prices for at most ``limit`` of the departures, nearest the middle of the
+        window first, since that is where the advisor is working. The ERP prices one departure
+        per call, so the calls run a few at a time rather than one after another."""
+        by_distance = sorted(rows, key=lambda row: abs((row.depart_date - middle).days))
+        nearest = by_distance[: max(0, limit)]
+        gate = asyncio.Semaphore(PRICE_CONCURRENCY)
+        await asyncio.gather(*(self._price_one(row, gate) for row in nearest))
+
+    # -- catalog records -----------------------------------------------------------------
 
     def _family(
         self,
         record: RouteRecord,
         rows: list[DepartureRecord],
+        context: SearchContext,
         match: str,
         mismatch: str | None,
     ) -> Product:
-        """One route as a family: its 起价 in the searched window, and the departure dates
-        that window holds as the one option a variant chooses."""
+        """One route as a family: its 起价 is the cheapest 同业价 among the departures in the
+        searched window that were quoted, the cheapest 市场价 when none of them was, and the
+        route's own 起价 when neither price is known. The dates that window holds are the one
+        option a variant chooses."""
+        party = context.adults + context.children
+        quoted = [q.price.adult for row in rows if (q := self._quotes.get(row.period_id))]
+        listed = [price.adult for row in rows if (price := self._priced(row))]
+        cheapest = (
+            min((adult for adult in quoted if adult > 0), default=0.0)
+            or min((adult for adult in listed if adult > 0), default=0.0)
+            or max(record.from_price, 0.0)
+        )
         return Product(
-            product_id=record.route_id,
+            product_id=route_id_of(record),
             title=record.route_name,
-            brand=record.supplier_name or STORE_NAME,
-            price=record.min_adult_price_in_window,
+            brand=record.company_name or self.store_name,
+            price=cheapest,
             currency=CURRENCY,
             image_url=record.image_url,
             category=CATEGORY,
-            labels=_labels(record),
+            labels=list(record.tags[:MAX_LABELS]),
             attributes=_route_attributes(record, match, mismatch),
-            in_stock=record.has_seats_in_window,
-            short_description=record.summary,
+            in_stock=any(row.available_seats >= party for row in rows),
+            short_description=(
+                _feature_sentence(record) or f"{record.days} 天 · {record.depart_city}出发"
+            ),
             options={"depart_date": [row.depart_date.isoformat() for row in rows]},
         )
 
     def _variant(
         self, row: DepartureRecord, record: RouteRecord | None, context: SearchContext
     ) -> Product:
-        """One departure as a variant, quoted for the party in ``context``: its price, its
-        seats, and whether this party can still take them."""
+        """One departure as a variant, quoted for the party in ``context``. What the advisor
+        reads is the 同业价 the order would be booked at; while only the departure's 市场价 is
+        known the record is quoted at that instead and says so, and ``quote_source`` —
+        ``customer``, ``list``, ``none`` — is which of the two, or neither, the numbers are."""
+        market = self._priced(row)
+        quote = self._quotes.get(row.period_id)
+        price = quote.price if quote is not None else market
+        source = "customer" if quote is not None else ("list" if market is not None else "none")
         party = context.adults + context.children
-        bookable = row.group_status != "closed" and row.booking_deadline >= self.today
         return Product(
-            product_id=row.departure_id,
+            product_id=departure_id_of(row),
             title=_variant_title(row, record),
-            brand=(record.supplier_name if record else None) or STORE_NAME,
-            price=row.adult_price,
+            brand=(record.company_name if record else None) or self.store_name,
+            price=price.adult if price is not None else 0.0,
             currency=CURRENCY,
             image_url=record.image_url if record else None,
             category=CATEGORY,
-            attributes=_variant_attributes(row, context.adults, context.children),
-            in_stock=bookable and row.seats_left >= party,
-            short_description=_variant_summary(row, context.adults, context.children),
+            attributes=_variant_attributes(
+                row, price, market, source, context.adults, context.children
+            ),
+            in_stock=row.available_seats >= party,
+            short_description=_variant_summary(
+                row, price, market, source, context.adults, context.children
+            ),
             option_values={"depart_date": row.depart_date.isoformat()},
-            variant_of=row.route_id,
+            variant_of=route_id_of(row.route_id),
         )
+
+    async def _families(
+        self,
+        records: list[RouteRecord],
+        stated: Request,
+        context: SearchContext,
+        match: str,
+        original: Request | None,
+        *,
+        prices: int = MAX_LISTING_PRICES,
+    ) -> list[Product]:
+        window = self._window(stated.depart_from, stated.depart_to)
+        middle = window[0] + (window[1] - window[0]) / 2
+        found = []
+        for record in records:
+            rows = await self._list(record, window)
+            await self._prices(rows, middle, prices)
+            dates = [row.depart_date for row in rows]
+            mismatch = _mismatch(record, original, dates) if original is not None else None
+            found.append(self._family(record, rows, context, match, mismatch))
+        return found
 
     async def search_products(
         self,
@@ -532,73 +783,84 @@ class TourBackend(StorefrontBackend):
         filters: SearchFilters | None = None,
         limit: int = 8,
     ) -> list[Product]:
+        """The routes matching the advisor's text over the stated window. ``destination`` is
+        matched against the ERP's route names and tags, because the catalog has no
+        destination field; ``child_ages`` is carried into every quote's party but filters
+        nothing, since the ERP states no minimum age."""
         attributes = dict(filters.attributes) if filters is not None else {}
         context = self._read_context(attributes)
         self._contexts[session.session_id] = context
-        stated = self._route_query(query, attributes, filters, context, limit)
-        window = self._listing_window(stated.depart_from, stated.depart_to)
-        found = [
-            self._family(record, await self._list(record.route_id, window, context), "exact", None)
-            for record in await self._search(stated, filters)
-        ]
+        stated = Request(
+            text=(attributes.get("destination") or query or "").strip(),
+            depart_from=context.depart_from,
+            depart_to=context.depart_to,
+            days_min=_int_or_none(attributes.get("days_min")),
+            days_max=_int_or_none(attributes.get("days_max")),
+            no_shopping=attributes.get("no_shopping", "").strip().lower() == "yes",
+            hotel_level=attributes.get("hotel_level") or None,
+        )
+        found = await self._families(await self._search(stated), stated, context, "exact", None)
         relaxed = stated
         for widen, match in _RELAXATIONS:
             if len(found) >= MIN_RESULTS:
                 break
             relaxed = widen(relaxed)
-            window = self._listing_window(relaxed.depart_from, relaxed.depart_to)
             seen = {product.product_id for product in found}
-            for record in await self._search(relaxed, filters):
-                if record.route_id in seen:
-                    continue
-                rows = await self._list(record.route_id, window, context)
-                dates = [row.depart_date for row in rows]
-                found.append(self._family(record, rows, match, _mismatch(record, stated, dates)))
+            fresh = [r for r in await self._search(relaxed) if route_id_of(r) not in seen]
+            found += await self._families(fresh, relaxed, context, match, stated)
         return found[:limit]
 
-    async def _route_details(self, route_id: str, context: SearchContext) -> ProductDetails | None:
+    # -- details -------------------------------------------------------------------------
+
+    async def _route_details(
+        self, route_id: int, context: SearchContext, *, prices: int = MAX_DETAIL_PRICES
+    ) -> ProductDetails | None:
         record = await self._route(route_id)
         if record is None:
             return None
-        window = self._listing_window(
+        window = self._window(
             context.depart_from - timedelta(days=DETAIL_PAD_DAYS),
             context.depart_to + timedelta(days=DETAIL_PAD_DAYS),
         )
-        rows = await self._list(record.route_id, window, context)
+        rows = await self._list(record, window)
         if not rows:
             # The searched window holds no 团期 of the route the advisor named. Quote the
             # default window instead, once: the dates say the route runs elsewhere, which
             # the advisor can act on, and a family with no variants does not.
             default = self._default_context()
-            window = self._listing_window(default.depart_from, default.depart_to)
-            rows = await self._list(record.route_id, window, context)
+            window = self._window(default.depart_from, default.depart_to)
+            rows = await self._list(record, window)
+        middle = window[0] + (window[1] - window[0]) / 2
         if len(rows) > MAX_VARIANTS:
-            middle = window[0] + (window[1] - window[0]) / 2
             nearest = sorted(rows, key=lambda row: abs((row.depart_date - middle).days))
-            rows = sorted(nearest[:MAX_VARIANTS], key=lambda row: row.depart_date)
-        family = self._family(record, rows, "exact", None)
+            rows = nearest[:MAX_VARIANTS]
+        rows = sorted(rows, key=lambda row: row.depart_date)
+        await self._prices(rows, middle, prices)
+        family = self._family(record, rows, context, "exact", None)
         details = ProductDetails(
             **family.model_dump(),
-            long_description=record.itinerary_brief[:1200],
+            long_description="\n".join(record.features)[:1200] or None,
             specs=_specs(record),
         )
         details.variants = [self._variant(row, record, context) for row in rows]
         return details
 
     async def _departure_details(
-        self, departure_id: str, context: SearchContext
+        self, period_id: int, context: SearchContext
     ) -> ProductDetails | None:
-        row = await self.erp.get_departure(
-            departure_id, context.adults, context.children, context.child_ages
-        )
+        """The one departure, in the same two calls a route's variants take: its detail for the
+        市场价 and the seat counts, and its 同业价 for the customer this deployment books for. A
+        departure the ERP has no price row for keeps the 市场价 it carries."""
+        row = await self.erp.get_departure(period_id)
         if row is None:
             return None
-        self._departures[row.departure_id] = row
+        self._departures[row.period_id] = row
+        self._quotes[row.period_id] = await self._quote(row)
         record = await self._route(row.route_id)
         variant = self._variant(row, record, context)
         return ProductDetails(
             **variant.model_dump(),
-            long_description=record.itinerary_brief[:1200] if record else None,
+            long_description=("\n".join(record.features)[:1200] or None) if record else None,
             specs=_specs(record) if record else {},
         )
 
@@ -606,151 +868,217 @@ class TourBackend(StorefrontBackend):
         self, session: ShoppingSessionContext, product_id: str
     ) -> ProductDetails | None:
         context = self._context(session)
-        if product_id.startswith(ROUTE_PREFIX):
-            return await self._route_details(product_id, context)
-        if product_id.startswith(DEPARTURE_PREFIX):
-            return await self._departure_details(product_id, context)
+        route_id = _erp_id(product_id, ROUTE_PREFIX)
+        if route_id is not None:
+            return await self._route_details(route_id, context)
+        period_id = _erp_id(product_id, DEPARTURE_PREFIX)
+        if period_id is not None:
+            return await self._departure_details(period_id, context)
         return None
 
-    # -- cart: a view of the conversation's live holds -----------------------------------
+    # -- cart: the 预留 orders this conversation wrote -------------------------------------
 
-    async def _holds(self, session: ShoppingSessionContext) -> list[HoldRecord]:
-        holds = await self.erp.list_holds(
-            advisor_id=session.user_id, session_key=session.session_id
-        )
-        self._hold_snapshots[session.session_id] = holds
+    def _live_holds(self, session_id: str) -> list[Hold]:
+        """The session's orders, minus the 预留 whose half hour has run out. Nothing is asked
+        of the ERP: the hold the advisor was told about is ours, and the ERP's own 预留 runs
+        on ``reserve_hours`` whatever we do here."""
+        now = _utcnow()
+        holds = [h for h in self._holds.get(session_id, ()) if h.is_waitlist or h.expires_at > now]
+        self._holds[session_id] = holds
         return holds
 
-    async def _hold_for(
-        self, session: ShoppingSessionContext, departure_id: str
-    ) -> HoldRecord | None:
-        holds = await self._holds(session)
-        return next((hold for hold in holds if hold.departure_id == departure_id), None)
+    def _advisor(self, session: ShoppingSessionContext) -> UserPreferences:
+        return preferences_of(self._users, session.user_id)
 
-    def _party(self, session: ShoppingSessionContext, quantity: int) -> tuple[int, int]:
-        """The quantity the model asked for is heads; the split into 成人 and 儿童 comes from
-        the searched party, because the ERP prices and seats them differently. A hold is for
-        at least one head and at least one 成人, whatever the model asked for: an unaccompanied
-        child is not a party the ERP will seat."""
-        quantity = max(1, quantity)
-        context = self._contexts.get(session.session_id)
-        if context is None:
-            return quantity, 0
-        children = min(context.children, quantity - 1)
-        return quantity - children, children
+    def _contact_name(self, session: ShoppingSessionContext) -> str:
+        """Who the ERP writes on the order: the salesperson the client logged in as, or the
+        advisor's own name from the profile when the client names nobody."""
+        user_info = getattr(self.erp, "user_info", None) or {}
+        logged_in = str(user_info.get("userName") or "")
+        if logged_in:
+            return logged_in
+        display = self._advisor(session).display_name or session.user_id
+        return display.split("（")[0]
 
-    async def _line(self, hold: HoldRecord, context: SearchContext) -> CartItem:
-        row = self._departures.get(hold.departure_id)
+    def _store_name(self, session: ShoppingSessionContext) -> str:
+        """The 门店 a 同行 order is written through. The profile states the 门店 and then what
+        it sells; the store is the first clause."""
+        profile = self._advisor(session)
+        return profile.preferences.get("门店", "").split("，")[0] or self.store_name
+
+    async def _line(self, hold: Hold, order: OrderRecord) -> CartItem:
+        row = self._departures.get(hold.period_id)
         if row is None:
-            row = await self.erp.get_departure(
-                hold.departure_id, hold.adults, hold.children, context.child_ages
-            )
+            row = await self.erp.get_departure(hold.period_id)
             if row is not None:
-                self._departures[hold.departure_id] = row
-        quantity = max(1, hold.adults + hold.children)
-        record = self._routes.get(row.route_id) if row is not None else None
+                self._departures[row.period_id] = row
+        quantity = max(1, order.adults + order.children + order.elders)
+        depart = order.depart_date or (row.depart_date if row is not None else None)
+        title = order.route_name if depart is None else f"{order.route_name} {_md(depart)} 出发"
         return CartItem(
-            product_id=hold.departure_id,
-            title=_variant_title(row, record) if row is not None else hold.departure_id,
-            # The ERP quotes the party as a whole; a cart line is per head, so the quote is
-            # split evenly and the line total comes back to the ERP's figure.
-            price=round(hold.total_price / quantity, 2),
+            product_id=departure_id_of(hold.period_id),
+            title=f"{title}（候补）" if hold.is_waitlist else title,
+            # The ERP totals the order; a cart line is per head, so the total is split
+            # evenly and the line total comes back to the ERP's figure.
+            price=round(order.total_amount / quantity, 2),
             quantity=quantity,
-            option_values=({"depart_date": row.depart_date.isoformat()} if row is not None else {}),
-            variant_of=row.route_id if row is not None else None,
+            option_values=({"depart_date": depart.isoformat()} if depart is not None else {}),
+            variant_of=route_id_of(row.route_id) if row is not None else None,
         )
 
     async def get_cart(self, session: ShoppingSessionContext) -> Cart:
-        context = self._context(session)
-        return Cart(
-            items=[await self._line(hold, context) for hold in await self._holds(session)],
-            currency=CURRENCY,
-        )
-
-    async def _hold(
-        self, session: ShoppingSessionContext, departure_id: str, quantity: int
-    ) -> None:
-        adults, children = self._party(session, quantity)
-        try:
-            await self.erp.create_hold(
-                departure_id,
-                adults,
-                children,
-                advisor_id=session.user_id,
-                session_key=session.session_id,
-            )
-        except ErpSoldOut as sold_out:
-            raise Unavailable(_sold_out_detail(departure_id, sold_out)) from sold_out
+        items = []
+        standing = []
+        for hold in self._live_holds(session.session_id):
+            order = await self.erp.get_order(hold.order_id)
+            if order is None:
+                continue  # written, then removed inside the ERP: it is no longer a line
+            hold.order_no = order.order_no
+            standing.append(hold)
+            items.append(await self._line(hold, order))
+        self._holds[session.session_id] = standing
+        return Cart(items=items, currency=CURRENCY)
 
     async def add_to_cart(
         self, session: ShoppingSessionContext, product_id: str, quantity: int
     ) -> Cart:
-        if not product_id.startswith(DEPARTURE_PREFIX):
+        """Write the 预留 order for this 团期, in the 团期's own department: the ERP refuses a
+        write made in any other, so the departure is read first when this process has not seen
+        it. The quantity the model asked for is heads; the split into 成人 and 儿童 comes from
+        the searched party, because the ERP prices and seats them differently, and at least one
+        head is an adult. A party larger than the seats left comes back as a 候补 order rather
+        than a refusal, and its line says so."""
+        period_id = _erp_id(product_id, DEPARTURE_PREFIX)
+        if period_id is None:
             # The executor's gate already holds an add of a family; this is the second layer,
             # and it also catches an id that is neither a route nor a departure.
             raise Unavailable(product_id)
-        await self._hold(session, product_id, quantity)
+        row = self._departures.get(period_id) or await self.erp.get_departure(period_id)
+        if row is None:
+            raise ErpNotFound(f"找不到该团期：{period_id}")
+        self._departures[period_id] = row
+        context = self._context(session)
+        heads = max(1, quantity)
+        children = min(context.children, heads - 1)
+        result = await self.erp.create_order(
+            OrderRequest(
+                period_id=period_id,
+                customer_id=self.customer_id,
+                company_id=self._department(row),
+                adults=heads - children,
+                children=children,
+                elders=0,
+                rooms=0,
+                single_room_diff_count=0,
+                contact_name=self._contact_name(session),
+                contact_mobile=self.contact_mobile,
+                store_name=self._store_name(session),
+            )
+        )
+        self._holds.setdefault(session.session_id, []).append(
+            Hold(
+                order_id=result.order_id,
+                period_id=period_id,
+                created_at=_utcnow(),
+                is_waitlist=result.is_waitlist,
+            )
+        )
         return await self.get_cart(session)
 
     async def update_cart_item(
         self, session: ShoppingSessionContext, product_id: str, quantity: int
     ) -> Cart:
-        """A hold is taken for one party, so a changed party is a new hold: the seats go back
-        first and the ERP decides whether it can take the larger one. A refused change leaves
-        the advisor the hold they had, not an empty cart."""
-        hold = await self._hold_for(session, product_id)
-        if hold is not None:
-            await self.erp.release_hold(hold.hold_id, session.user_id)
-            try:
-                await self._hold(session, product_id, quantity)
-            except (Unavailable, ErpError):
-                # The seats were just freed, so the party that already fitted still fits.
-                await self.erp.create_hold(
-                    product_id,
-                    hold.adults,
-                    hold.children,
-                    advisor_id=session.user_id,
-                    session_key=session.session_id,
-                )
-                raise
-        return await self.get_cart(session)
+        del session, product_id, quantity
+        raise NotOffered(
+            "在对话里改人数（订单已写进 ERP，只能由顾问在 ERP 后台改单，或另占一个团期）"
+        )
 
     async def remove_from_cart(self, session: ShoppingSessionContext, product_id: str) -> Cart:
-        hold = await self._hold_for(session, product_id)
-        if hold is not None:
-            await self.erp.release_hold(hold.hold_id, session.user_id)
-        return await self.get_cart(session)
+        del session, product_id
+        raise NotOffered("在对话里取消占位（ERP 没有取消接口，请顾问在 ERP 后台处理该订单）")
 
     # -- advisor, orders, help content, fulfillment ---------------------------------------
 
     async def get_preferences(self, session: ShoppingSessionContext) -> UserPreferences:
-        return preferences_of(self._users, session.user_id)
+        return self._advisor(session)
 
     async def get_account_context(self, session: ShoppingSessionContext) -> dict[str, Any] | None:
-        profile = preferences_of(self._users, session.user_id)
-        # The profile states the 门店 and then what it sells; the store is the first clause.
-        store = profile.preferences.get("门店", STORE_NAME).split("，")[0]
+        """``department`` is the one the ERP logged this account into and ``departments`` how
+        many it reads across; a client that logs nobody in — the fixtures — is one department,
+        the store's own."""
+        user_info = getattr(self.erp, "user_info", None) or {}
+        companies = getattr(self.erp, "companies", None) or ()
         return {
             "advisor": session.user_id,
-            "store": store,
-            "active_holds": len(await self._holds(session)),
+            "store": self._store_name(session),
+            "department": str(user_info.get("companyName") or "") or self.store_name,
+            "departments": len(companies) or 1,
+            "customer_id": self.customer_id,
+            "active_holds": len(self._live_holds(session.session_id)),
         }
 
+    def _order(self, record: OrderRecord) -> Order:
+        """One ERP order as the shared record. The ERP's own status word rides along with the
+        departure date, because the enum has no 预留 and the advisor works in the ERP's."""
+        quantity = max(1, record.adults + record.children + record.elders)
+        depart = f"出发 {record.depart_date.isoformat()}" if record.depart_date else ""
+        status_text = record.status_text or ORDER_STATUS.get(record.status, "")
+        return Order(
+            order_id=str(record.order_id),
+            status=_ORDER_STATE.get(record.status, OrderStatus.PROCESSING),
+            placed_at=record.created_at,
+            items=[
+                OrderItem(
+                    product_id=departure_id_of(record.period_id),
+                    title=f"{record.route_name}（{record.period_code}）",
+                    quantity=quantity,
+                    price=round(record.total_amount / quantity, 2),
+                    option_values=(
+                        {"depart_date": record.depart_date.isoformat()}
+                        if record.depart_date
+                        else {}
+                    ),
+                )
+            ],
+            total=record.total_amount,
+            currency=CURRENCY,
+            estimated_delivery="，".join(part for part in (status_text, depart) if part) or None,
+        )
+
     async def get_orders(self, session: ShoppingSessionContext, limit: int = 5) -> list[Order]:
-        return orders_for(self._orders, session.user_id, limit)
+        """The salesperson's own orders: the ERP's credentials name one, so there is no id
+        to filter on here."""
+        del session
+        return [self._order(record) for record in await self.erp.list_orders()][:limit]
 
     async def get_order(self, session: ShoppingSessionContext, order_id: str) -> Order | None:
-        return find_order(self._orders, session.user_id, order_id)
+        """One order by the ERP's own id, or by the 订单号 the advisor reads off a screen."""
+        del session
+        numeric = _int_or_none(order_id)
+        if numeric is not None:
+            record = await self.erp.get_order(numeric)
+            return None if record is None else self._order(record)
+        listed = [row for row in await self.erp.list_orders() if row.order_no == order_id]
+        return self._order(listed[0]) if listed else None
 
     async def search_policies(self, session: ShoppingSessionContext, query: str) -> list[Policy]:
+        """The agency's own rules, best answer first. The advisor types the customer's question
+        in Chinese, so the entries are ranked by what its characters share with them; a question
+        this agency has no rule for gets nothing rather than the least bad entry."""
         del session
-        return search_help(self._policies, query)
+        scored = [
+            (score, policy)
+            for policy in self._policies
+            if (score := _policy_score(query, policy)) > 0
+        ]
+        scored.sort(key=lambda pair: -pair[0])
+        return [policy for _, policy in scored[:MAX_POLICIES]]
 
     async def get_fulfillment_options(
         self, session: ShoppingSessionContext, product_ids: list[str]
     ) -> list[FulfillmentOption]:
-        """Nothing ships: the customer joins the group at its 集合地点, which the route's
-        specs carry. The tool is switched off in the config; this is the second layer."""
+        """Nothing ships: the customer joins the group at its 集合地点. The tool is switched
+        off in the config; this is the second layer."""
         del session, product_ids
         raise NotOffered("Delivery, pickup, and shipping for a tour booking")
 
@@ -760,29 +1088,35 @@ class TourBackend(StorefrontBackend):
         """Fill ``products`` with one record per route, its ``variants`` the departures in
         the default window. This is a boot snapshot for the host's catalog routes and the
         demo's listing pages; the agent's own tools call the ERP on every turn, so seats,
-        prices, and party quotes in the conversation are live and these are not."""
+        prices, and party quotes in the conversation are live and these are not. Against a
+        live ERP every route is a round trip, so the snapshot takes the first few routes and
+        no list prices; an ERP that refuses or is down leaves the snapshot empty rather than
+        stopping the host from booting."""
         context = self._default_context()
-        window = self._listing_window(context.depart_from, context.depart_to)
-        records = await self._search(
-            RouteQuery(
-                destination="",
-                depart_from=window[0],
-                depart_to=window[1],
-                adults=context.adults,
-                limit=MAX_ROUTE_RESULTS,
-            ),
-            None,
-        )
+        stated = Request(text="", depart_from=context.depart_from, depart_to=context.depart_to)
         listings: dict[str, ProductDetails] = {}
         variants: dict[str, ProductDetails] = {}
-        for record in records:
-            details = await self._route_details(record.route_id, context)
-            if details is None:
-                continue
-            listings[details.product_id] = details
-            for variant in details.variants:
-                variants[variant.product_id] = ProductDetails(**variant.model_dump())
+        try:
+            records = await self._search(stated)
+            live = self._live_erp()
+            for record in records[: MAX_BOOT_ROUTES if live else len(records)]:
+                details = await self._route_details(
+                    record.route_id, context, prices=0 if live else MAX_DETAIL_PRICES
+                )
+                if details is None:
+                    continue
+                listings[details.product_id] = details
+                for variant in details.variants:
+                    variants[variant.product_id] = ProductDetails(**variant.model_dump())
+        except ErpError as error:
+            log.warning("tour listings not loaded: %s: %s", type(error).__name__, error)
+            listings, variants = {}, {}
         self.products, self._variants = listings, variants
+
+    def _live_erp(self) -> bool:
+        """A client that logs a salesperson in is the agency's own ERP over HTTP; the
+        fixtures answer in memory and cost nothing to page through."""
+        return hasattr(self.erp, "user_info")
 
     def product(self, product_id: str) -> ProductDetails | None:
         """A loaded route or one of its departures by id, from the snapshot ``load_listings``
@@ -791,10 +1125,10 @@ class TourBackend(StorefrontBackend):
 
     def reset_session(self, session_id: str) -> None:
         """Forget what the conversation accumulated: the window and party it searched, and
-        the holds its last cart read saw. The holds themselves stay with the ERP until their
-        TTL runs out, because releasing one is an async write and this call is not."""
+        the orders its cart showed. The orders themselves stand in the ERP, which offers no
+        way to take one back; the advisor handles that in the ERP's own backstage."""
         self._contexts.pop(session_id, None)
-        self._hold_snapshots.pop(session_id, None)
+        self._holds.pop(session_id, None)
 
     # -- the shortlist the advisor sends the customer -------------------------------------
 
@@ -809,7 +1143,7 @@ class TourBackend(StorefrontBackend):
             session_id=session_id,
             advisor_id=advisor_id,
             departure_ids=list(departure_ids),
-            created_at=datetime.now(UTC),
+            created_at=_utcnow(),
         )
         # Read per call: the host loads .env after this module is imported.
         base = os.environ.get("TOUR_SHARE_BASE_URL", DEFAULT_SHARE_BASE_URL).rstrip("/")
@@ -820,9 +1154,17 @@ class TourBackend(StorefrontBackend):
         return self._shares.get(token)
 
     def recent_orders(self, limit: int = 6) -> list[Order]:
-        return newest_orders(self._orders, limit)
+        """The cross-user feed a merchant portal would show. This example has no portal, and
+        the ERP's order list belongs to the logged-in salesperson, not to the demo."""
+        del limit
+        return []
 
-    def holds_snapshot(self, session_id: str) -> list[HoldRecord]:
-        """The holds this session's last cart read returned. The host builds its cart extras
-        synchronously, so they read this rather than the ERP."""
-        return list(self._hold_snapshots.get(session_id, ()))
+    def holds_snapshot(self, session_id: str) -> list[tuple[str, str, datetime]]:
+        """``(order_no, product_id, expires_at)`` for the 预留 this session still holds. The
+        host builds its cart extras synchronously, so it reads this rather than the ERP; a
+        候补 order is not a hold and does not count down."""
+        return [
+            (hold.order_no, departure_id_of(hold.period_id), hold.expires_at)
+            for hold in self._live_holds(session_id)
+            if not hold.is_waitlist
+        ]

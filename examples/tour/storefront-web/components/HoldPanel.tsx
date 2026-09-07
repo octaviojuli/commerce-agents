@@ -4,94 +4,96 @@
 "use client";
 
 /**
- * The 占位 beside the conversation: one line per held 团期, priced for the party on it. Every
- * control here is a message to 选团助手, because the hold lives in the ERP and only the agent
- * writes to it. `productIndex` lets /showcase render the panel from fixtures.
+ * The 占位 beside the conversation: one line per 团期 this session holds, which is one 预留
+ * order in the ERP. The line states the 订单号 and what is left of the half hour; it offers no
+ * way to resize or release, because the ERP has neither call and the advisor does both in its
+ * own backstage. `productIndex` lets /showcase render the panel from fixtures.
  */
 
 import { AskLink, BagPanel, TotalRow, useCatalogIndex, useStoreFrame } from "web-shared";
 import { fetchProducts } from "@/lib/api";
-import { dateLabel, formatYuan, formatYuanText } from "@/lib/format";
-import type { CartItem, CartPayload, Product } from "@/lib/types";
+import {
+  dateLabel,
+  formatCountdown,
+  formatYuan,
+  formatYuanText,
+  marketAdultYuan,
+} from "@/lib/format";
+import { isWaitlist, lineTitle, useHoldClock } from "@/lib/holds";
+import type { CartItem, CartPayload, Hold, Product } from "@/lib/types";
 
 /** The route a held 团期 belongs to; the catalog lists 线路, not 团期. */
 function routeOf(item: CartItem, index: Record<string, Product>): Product | undefined {
   return item.variant_of ? index[item.variant_of] : undefined;
 }
 
-function PartyStepper({ item }: { item: CartItem }) {
-  const { ask, chat } = useStoreFrame();
-  const busy = chat?.busy ?? false;
-  const set = (quantity: number) =>
-    ask(
-      quantity < 1
-        ? `把 ${item.title} 的占位释放掉。`
-        : `${item.title} 改成 ${quantity} 个人。`,
-    );
-  return (
-    <div className="flex items-center rounded-full border border-(--line-strong) bg-(--card)">
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => set(item.quantity - 1)}
-        aria-label={`减少 ${item.title} 的人数`}
-        className="px-2.5 py-0.5 text-sm text-(--ink-soft) hover:text-(--ink) disabled:opacity-40"
-      >
-        −
-      </button>
-      <span className="tg-num min-w-10 text-center text-[12.5px] font-semibold text-(--ink)">
-        {item.quantity} 人
+/** The route's own line, from what the ERP's catalog carries: how long, and out of where. */
+function routeLine(route: Product): string {
+  const attrs = route.attributes ?? {};
+  return [attrs.days ? `${attrs.days} 天` : null, attrs.depart_city ? `${attrs.depart_city}出发` : null]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** The half hour left on the 预留, or the 候补 badge for a line that holds no seats. */
+function HoldState({ hold, seconds, waitlisted }: { hold?: Hold; seconds: number | null; waitlisted: boolean }) {
+  if (waitlisted) {
+    return (
+      <span className="rounded-full bg-(--warn-soft) px-2 py-0.5 text-[11.5px] font-semibold text-(--warn)">
+        候补
       </span>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => set(item.quantity + 1)}
-        aria-label={`增加 ${item.title} 的人数`}
-        className="px-2.5 py-0.5 text-sm text-(--ink-soft) hover:text-(--ink) disabled:opacity-40"
-      >
-        +
-      </button>
-    </div>
+    );
+  }
+  if (!hold) return null;
+  const expired = seconds !== null && seconds <= 0;
+  return (
+    <span className="tg-num text-[12px] font-semibold text-(--ink-2)">
+      {seconds === null ? "占位 —:—" : expired ? "占位已过期" : `占位 ${formatCountdown(seconds)}`}
+    </span>
   );
 }
 
-function HoldLine({ item, route }: { item: CartItem; route?: Product }) {
-  const { ask, chat } = useStoreFrame();
-  const busy = chat?.busy ?? false;
-  const attrs = route?.attributes ?? {};
+function HoldLine({
+  item,
+  route,
+  departure,
+  hold,
+  seconds,
+}: {
+  item: CartItem;
+  route?: Product;
+  departure?: Product;
+  hold?: Hold;
+  seconds: number | null;
+}) {
   const depart = dateLabel(item.option_values?.depart_date);
+  const waitlisted = isWaitlist(item);
+  // A cart line carries only the price the order was booked at, which is the 同业价; the 市场价
+  // beside it comes from the 团期 record, and a line whose 团期 this page has not read shows none.
+  const market = departure ? marketAdultYuan(departure) : null;
   return (
     <div>
-      <div className="text-[14px] font-semibold leading-snug text-(--ink)">{item.title}</div>
-      <div className="tg-num tg-label mt-0.5">{item.product_id}</div>
-      {route ? (
-        <div className="tg-label mt-1">
-          {[attrs.days ? `${attrs.days} 天` : null, attrs.hotel_level, attrs.vehicle]
-            .filter(Boolean)
-            .join(" · ")}
-        </div>
-      ) : null}
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="text-[14px] font-semibold leading-snug text-(--ink)">
+          {lineTitle(item)}
+        </span>
+        <HoldState hold={hold} seconds={seconds} waitlisted={waitlisted} />
+      </div>
+      <div className="tg-num tg-label mt-0.5">
+        {hold ? `订单号 ${hold.hold_id}` : item.product_id}
+      </div>
+      {route ? <div className="tg-label mt-1">{routeLine(route)}</div> : null}
       {depart ? <div className="tg-label mt-0.5">出发 {depart}</div> : null}
       <div className="mt-1.5 flex items-baseline justify-between gap-3">
         <span className="tg-num text-[12px] text-(--ink-soft)">
+          <span className="tg-label mr-1">同业价</span>
           {formatYuan(item.price)} × {item.quantity} 人
         </span>
         <span className="tg-num shrink-0 text-[15px] font-bold text-(--ink)">
           {formatYuan(item.line_total)}
         </span>
       </div>
-      <div className="mt-2 flex items-center gap-2.5">
-        <PartyStepper item={item} />
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => ask(`把 ${item.title} 的占位释放掉。`)}
-          aria-label={`释放 ${item.title} 的占位`}
-          className="text-[12px] text-(--ink-soft) underline-offset-2 hover:text-(--danger) hover:underline disabled:opacity-40"
-        >
-          释放占位
-        </button>
-      </div>
+      {market ? <div className="tg-num tg-label mt-0.5">市场价 {market}/人</div> : null}
     </div>
   );
 }
@@ -138,6 +140,7 @@ export default function HoldPanel({
 }) {
   const catalog = useCatalogIndex(fetchProducts);
   const index = productIndex ?? catalog;
+  const { seconds, byProduct } = useHoldClock(cart);
   const items = cart?.items ?? [];
   const people = cart?.item_count ?? 0;
   return (
@@ -162,22 +165,35 @@ export default function HoldPanel({
           <QuoteButton staged={quoteStaged} disabled={items.length === 0} />
           {items.length ? (
             <div className="mt-2.5 flex justify-center">
-              <AskLink label="核一遍这些占位" prompt="把我现在占的团期核对一遍：余位、截止时间和总价有没有问题？" />
+              <AskLink label="核一遍这些占位" prompt="把我现在占的团期核对一遍：余位、成团状态和总价有没有问题？" />
             </div>
           ) : null}
         </>
       }
     >
       <ul>
-        {items.map((item, position) => (
-          <li
-            key={item.product_id}
-            className={`py-3.5 first:pt-0 ${position > 0 ? "border-t border-dashed border-(--line)" : ""}`}
-          >
-            <HoldLine item={item} route={routeOf(item, index)} />
-          </li>
-        ))}
+        {items.map((item, position) => {
+          const hold = byProduct[item.product_id];
+          return (
+            <li
+              key={item.product_id}
+              className={`py-3.5 first:pt-0 ${position > 0 ? "border-t border-dashed border-(--line)" : ""}`}
+            >
+              <HoldLine
+                item={item}
+                route={routeOf(item, index)}
+                departure={index[item.product_id]}
+                hold={hold}
+                seconds={hold ? (seconds[hold.hold_id] ?? null) : null}
+              />
+            </li>
+          );
+        })}
       </ul>
+      {/* The ERP has no cancel and no amend call, so neither is offered here. */}
+      <p className="mt-1 border-t border-dashed border-(--line) pt-3 text-[12.5px] leading-relaxed text-(--ink-soft)">
+        取消或改人数请在 ERP 后台处理。
+      </p>
     </BagPanel>
   );
 }

@@ -1,0 +1,8 @@
+{
+  "_comment": "同行 (trade) customers the demo books for, in the ERP's customer row shape (GET /customer/list); companyType 1 is 同行.",
+  "customers": [
+    {"customerId": 4101, "companyName": "ACME 同业 · 北京营业部", "csCode": "TX-BJ-0001", "companyType": 1},
+    {"customerId": 4102, "companyName": "ACME 同业 · 上海营业部", "csCode": "TX-SH-0002", "companyType": 1},
+    {"customerId": 4103, "companyName": "ACME 同业 · 成都营业部", "csCode": "TX-CD-0003", "companyType": 1}
+  ]
+}

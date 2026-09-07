@@ -59,21 +59,33 @@ def build_shopping_config() -> ShoppingAgentConfig:
             "(上旬=1–10, 中旬=11–20, 下旬=21–end of month; a bare month is the whole month; "
             "国庆=10-01..10-07); adults (default 2); children and child_ages (e.g. '5|9') when named; "
             "days_min/days_max when a length is given; no_shopping=yes when the customer wants "
-            "纯玩. Search returns routes (lines). A route's departures with seats and quotes come "
-            "only from get_product_details on that route; book with the departure id (DP-…), never the "
-            "route id (RT-…). add_to_cart quantity is the whole party (adults + children). "
-            "State the expanded date window back to the advisor once."
+            "纯玩; hotel_level (四钻, 五钻) when a standard is named. Search returns routes (lines) "
+            "and matches destination against route names and tags, so a destination the catalog "
+            "does not name in either finds nothing. A route's departures come only from "
+            "get_product_details on that route (RT-…), and one departure's own record from "
+            "get_product_details on its id (DP-…). A departure carries two prices: adult_price and "
+            "party_quote_total are the 同业价, the advisor's settlement price and what an order is "
+            "booked at, while market_adult_price is the 市场价, which is what the customer is "
+            "shown. When presenting a departure, state both: name the 同业价 as what the advisor "
+            "books at and the 市场价 as what the customer sees, and never quote only one of them. "
+            "quote_source=list means only the "
+            "市场价 is known, so say the 同业价 is still to be confirmed. Book with the "
+            "departure id, never the route id. add_to_cart quantity is the whole party (adults + "
+            "children) and writes a 占位 order that this workbench keeps for 30 minutes — tell the "
+            "advisor 30 minutes, never the ERP's reserve_hours. The cart cannot remove or resize a "
+            "占位; the advisor does that in the ERP. State the expanded date window back to the "
+            "advisor once."
         ),
         # Nothing ships: the customer joins the group at its 集合地点, which the route's
         # specs carry, so the fulfillment tool is not registered at all.
         enable_fulfillment=False,
-        # One line is one 团期 and its quantity is the whole party; the ERP allows three
-        # live holds per conversation.
+        # One line is one 团期 and its quantity is the whole party; a conversation writes at
+        # most three 占位 orders, because every one of them is a real order in the ERP.
         max_quantity_per_item=20,
         max_cart_lines=3,
         policy_intent_terms=_DEFAULTS.policy_intent_terms + _POLICY_TERMS,
         order_intent_terms=_DEFAULTS.order_intent_terms + _ORDER_TERMS,
         # The two id shapes this catalog has, replacing the defaults: nothing else in the
         # conversation reads as a product id.
-        product_id_patterns=(r"\bRT-\d{4}\b", r"\bDP-\d{4}-\d{8}\b"),
+        product_id_patterns=(r"\bRT-\d+\b", r"\bDP-\d+\b"),
     )
