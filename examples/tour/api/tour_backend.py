@@ -10,8 +10,9 @@ quote, the search relaxes them a step at a time and each relaxed record says in 
 it does not meet, since the advisor reads that back to the customer.
 
 Three shapes of the ERP show through here. Its catalog carries no destination, hotel, vehicle
-or shopping field, so a destination is matched against 线路 names and tags and the rest is
-filtered on this side. An order is the only write it offers: nothing in the cart can cancel or
+or shopping field, so a destination is matched against the free text a 线路 carries — its
+name, its tags, its 亮点, the department that sells it, the city it leaves from — and the rest
+is filtered on this side. An order is the only write it offers: nothing in the cart can cancel or
 resize one, so both are refused with the reason, and the advisor does it in the ERP's own
 backstage. And a 团期 has two prices — the 市场价 the departure lists, which is what the
 customer's share page shows, and the 同业价 the ERP quotes this customer, which is what the
@@ -81,6 +82,8 @@ CURRENCY = "CNY"
 CATEGORY = "tour"
 ROUTE_PREFIX = "RT-"
 DEPARTURE_PREFIX = "DP-"
+# The gate that keeps the 线路 cards ahead of a route's 团期, named in the held result.
+ROUTE_FIRST_GATE = "route_first"
 
 log = logging.getLogger(__name__)
 
@@ -109,6 +112,9 @@ MAX_POLICIES = 3
 MIN_RESULTS = 2
 RELAX_WINDOW_DAYS = 7
 RELAX_DAYS_SPAN = 2
+# How many routes the broad pass may add. Every route kept costs a departure list and up to
+# ``MAX_LISTING_PRICES`` priced 团期, and the model is handed a shortlist either way.
+MAX_BROAD_MATCHES = 8
 # Our own hold window on a 预留 order, whatever the departure's ``reserve_hours`` says: the
 # advisor is told the seats are theirs for half an hour, and the line drops after that.
 HOLD_TTL_MINUTES = 30
@@ -211,6 +217,24 @@ def first_advisor_mobile(data_dir: Path = DATA_DIR) -> str:
 def _text_of(record: RouteRecord) -> str:
     """A route's searchable free text: its name and its tags, which is all the ERP has."""
     return record.route_name + " " + " ".join(record.tags)
+
+
+def _mentions(record: RouteRecord, text: str) -> bool:
+    """Whether the destination the advisor stated is written anywhere on the route. The ERP
+    matches a search on the 线路 name alone, and its editors do not put the destination in
+    every name: 欧洲 is the department that sells the line, 伊犁 a tag, 喀纳斯 a 亮点, and the
+    city a group leaves from is its own field. A plain substring, because a destination the
+    advisor typed and one the ERP's editors wrote are the same characters or nothing."""
+    if not text:
+        return False
+    fields = (
+        record.route_name,
+        record.company_name,
+        record.depart_city,
+        *record.tags,
+        *record.features,
+    )
+    return any(text in field for field in fields)
 
 
 def _hotel_aliases(level: str) -> tuple[str, ...]:
@@ -508,13 +532,38 @@ class ShareRecord:
     created_at: datetime
 
 
+def _picked_routes(tool_input: dict[str, Any]) -> list[str]:
+    """The 线路 ids among a ``present_products`` call's ``picks``. The payload is the model's
+    and is validated downstream, so a shape that is not the tool's yields no id here rather
+    than failing: the base validation is what reports it."""
+    picks = tool_input.get("picks")
+    if not isinstance(picks, list):
+        return []
+    chosen = (pick.get("product_id") for pick in picks if isinstance(pick, dict))
+    return [
+        picked for picked in chosen if isinstance(picked, str) and picked.startswith(ROUTE_PREFIX)
+    ]
+
+
 class TourToolExecutor(ShoppingToolExecutor):
     """The ERP refuses a call with a rule the advisor can act on (a business refusal, an
     unknown record, a login throttle, an account that cannot see the department); relay it so
     the model says what stands in the way instead of reporting an outage. ``ErpUnavailable``
-    is an outage and falls through to the base default."""
+    is an outage and falls through to the base default.
+
+    It also holds the route-first gate, the way ``gates.py`` holds a cart write: the advisor
+    picks the 线路 off the cards, and the 团期 of one route open only after they have. A
+    conversation's own searches are what the gate measures against, so the record of what was
+    presented lives on the backend and not here, where a new executor is built every turn."""
 
     erp_rule_text = "Nothing changed: {detail}. Tell the advisor and offer what fits."
+    route_first_text = (
+        "{product_id} came out of a search in this session and the advisor has not seen it "
+        "yet. Present the matching routes with present_products first, so the advisor can "
+        "pick one; open a route's departures only after the advisor names it. If the advisor "
+        "already named this route in their latest message, present it now and open it in the "
+        "next round."
+    )
 
     def domain_error(self, error: Exception) -> ToolOutcome | None:
         if isinstance(error, ErpRefused | ErpNotFound | ErpThrottled | ErpAuth):
@@ -522,6 +571,33 @@ class TourToolExecutor(ShoppingToolExecutor):
                 self.erp_rule_text.format(detail=self._sanitize(str(error), 200))
             )
         return super().domain_error(error)
+
+    async def dispatch(self, name: str, tool_input: dict[str, Any]) -> ToolOutcome:
+        """The base dispatch, with the route-first gate around the two tools it spans: a
+        route's details are held until the model has presented it, and a rendered
+        ``present_products`` is what lifts the hold for the ids it showed."""
+        if name == "get_product_details" and (held := self._route_first(tool_input)):
+            return held
+        outcome = await super().dispatch(name, tool_input)
+        if name == "present_products" and not outcome.refused:
+            self._backend.note_presented(self._session.session_id, _picked_routes(tool_input))
+        return outcome
+
+    def _route_first(self, tool_input: dict[str, Any]) -> ToolOutcome | None:
+        """The held outcome when the model opens a 线路 this session searched but has not put
+        in front of the advisor, else None. A 团期 id is not gated — that is the step after
+        the pick — and neither is a route id the advisor pasted, which no search returned and
+        no card could have shown."""
+        product_id = str(tool_input.get("product_id", ""))
+        if not product_id.startswith(ROUTE_PREFIX):
+            return None
+        if product_id not in self._state.seen_products:
+            return None
+        if product_id in self._backend.presented(self._session.session_id):
+            return None
+        return ToolOutcome.held(
+            ROUTE_FIRST_GATE, self.route_first_text.format(product_id=product_id)
+        )
 
 
 class TourBackend(StorefrontBackend):
@@ -564,6 +640,10 @@ class TourBackend(StorefrontBackend):
         self._variants: dict[str, ProductDetails] = {}
         # The orders each conversation wrote, newest last.
         self._holds: dict[str, list[Hold]] = {}
+        # The 线路 each conversation has put in front of the advisor as cards, which the
+        # executor's route-first gate reads. It lives here because the executor is built
+        # again for every turn while the conversation is not.
+        self._presented: dict[str, set[str]] = {}
         # The shortlists sent to a customer, by the token in their link.
         self._shares: dict[str, ShareRecord] = {}
 
@@ -612,15 +692,53 @@ class TourBackend(StorefrontBackend):
 
     # -- the ERP's routes and departures -------------------------------------------------
 
-    async def _search(self, stated: Request) -> list[RouteRecord]:
+    async def _broad(
+        self, window: tuple[date, date], cache: dict[tuple[date, date], list[RouteRecord]]
+    ) -> list[RouteRecord]:
+        """Every route the ERP sells inside the window: an empty name is not a filter, so one
+        call (the client caps its paging) brings back the whole window's catalog. ``cache`` is
+        the one search's own, so the three relaxation steps share what the first of them
+        fetched and a widened window costs exactly one further call."""
+        cached = cache.get(window)
+        if cached is None:
+            cached = await self.erp.search_routes(
+                RouteQuery(route_name="", depart_from=window[0], depart_to=window[1])
+            )
+            cache[window] = cached
+            self._routes.update({record.route_id: record for record in cached})
+        return cached
+
+    async def _search(
+        self,
+        stated: Request,
+        broad: dict[tuple[date, date], list[RouteRecord]] | None = None,
+    ) -> list[RouteRecord]:
         """The ERP's routes for the text and the window, minus the ones the day count, 纯玩
-        or the hotel standard rules out: the ERP has no field for any of those three."""
+        or the hotel standard rules out: the ERP has no field for any of those three.
+
+        The ERP's own search is fuzzy on the 线路 name, and a destination its editors never
+        wrote into a name matches nothing there however far the window is relaxed. So when the
+        named query is not a shortlist, ``broad`` reads the window's whole catalog once and
+        every route that carries the destination anywhere else it is written is kept. Those
+        routes do meet what the advisor asked for, so they are exact matches, not relaxed
+        ones, and the day count, 纯玩 and the hotel standard filter them the same way."""
         window = self._window(stated.depart_from, stated.depart_to)
         records = await self.erp.search_routes(
             RouteQuery(route_name=stated.text, depart_from=window[0], depart_to=window[1])
         )
         self._routes.update({record.route_id: record for record in records})
-        return [record for record in records if _fits(record, stated)]
+        found = [record for record in records if _fits(record, stated)]
+        if broad is None or not stated.text or len(found) >= MIN_RESULTS:
+            return found
+        seen = {record.route_id for record in found}
+        for record in await self._broad(window, broad):
+            if len(found) >= MAX_BROAD_MATCHES:
+                break
+            if record.route_id in seen or not _mentions(record, stated.text):
+                continue
+            if _fits(record, stated):
+                found.append(record)
+        return found
 
     async def _list(self, record: RouteRecord, window: tuple[date, date]) -> list[DepartureRecord]:
         rows = await self.erp.list_departures(
@@ -784,7 +902,8 @@ class TourBackend(StorefrontBackend):
         limit: int = 8,
     ) -> list[Product]:
         """The routes matching the advisor's text over the stated window. ``destination`` is
-        matched against the ERP's route names and tags, because the catalog has no
+        matched against the ERP's route names, and against the free text the rest of a 线路
+        carries when the names alone are not a shortlist, because the catalog has no
         destination field; ``child_ages`` is carried into every quote's party but filters
         nothing, since the ERP states no minimum age."""
         attributes = dict(filters.attributes) if filters is not None else {}
@@ -799,14 +918,19 @@ class TourBackend(StorefrontBackend):
             no_shopping=attributes.get("no_shopping", "").strip().lower() == "yes",
             hotel_level=attributes.get("hotel_level") or None,
         )
-        found = await self._families(await self._search(stated), stated, context, "exact", None)
+        # This search's broad pass, shared by the steps below: the window widens once, so the
+        # whole run costs at most two calls for it however many steps it takes.
+        broad: dict[tuple[date, date], list[RouteRecord]] = {}
+        found = await self._families(
+            await self._search(stated, broad), stated, context, "exact", None
+        )
         relaxed = stated
         for widen, match in _RELAXATIONS:
             if len(found) >= MIN_RESULTS:
                 break
             relaxed = widen(relaxed)
             seen = {product.product_id for product in found}
-            fresh = [r for r in await self._search(relaxed) if route_id_of(r) not in seen]
+            fresh = [r for r in await self._search(relaxed, broad) if route_id_of(r) not in seen]
             found += await self._families(fresh, relaxed, context, match, stated)
         return found[:limit]
 
@@ -875,6 +999,16 @@ class TourBackend(StorefrontBackend):
         if period_id is not None:
             return await self._departure_details(period_id, context)
         return None
+
+    # -- the 线路 the conversation has shown the advisor ------------------------------------
+
+    def note_presented(self, session_id: str, product_ids: list[str]) -> None:
+        """Remember the 线路 this conversation has put in front of the advisor as cards."""
+        self._presented.setdefault(session_id, set()).update(product_ids)
+
+    def presented(self, session_id: str) -> set[str]:
+        """The 线路 ids this conversation has already shown as cards."""
+        return set(self._presented.get(session_id, ()))
 
     # -- cart: the 预留 orders this conversation wrote -------------------------------------
 
@@ -1124,11 +1258,13 @@ class TourBackend(StorefrontBackend):
         return find_product(self.products, self._variants, product_id)
 
     def reset_session(self, session_id: str) -> None:
-        """Forget what the conversation accumulated: the window and party it searched, and
-        the orders its cart showed. The orders themselves stand in the ERP, which offers no
-        way to take one back; the advisor handles that in the ERP's own backstage."""
+        """Forget what the conversation accumulated: the window and party it searched, the
+        线路 it showed as cards, and the orders its cart showed. The orders themselves stand
+        in the ERP, which offers no way to take one back; the advisor handles that in the
+        ERP's own backstage."""
         self._contexts.pop(session_id, None)
         self._holds.pop(session_id, None)
+        self._presented.pop(session_id, None)
 
     # -- the shortlist the advisor sends the customer -------------------------------------
 
