@@ -175,11 +175,13 @@ Single prompts worth trying after those turns:
   in Chinese the ids it dropped for want of provenance, refuses the call when nothing is
   left, and mints the customer's link through `TourBackend.create_share_link`, which holds
   the token and the shortlist's ids in memory so the link's contents never pass through the
-  model. `POST /api/share/{token}/choose` is where the customer's page answers: it takes no
-  session, because the customer is not a user here, and the 团期 they chose becomes an app
-  event on the advisor's conversation, or on their other live sessions when that one has
-  ended. `TOUR_SHARE_BASE_URL` is the origin the link points at, `http://localhost:3004` by
-  default; the page itself is not part of this example.
+  model. The card is the step after the advisor's pick, so it is refused while any 团期 on it
+  has not been shown as a `present_products` card of its own, read off the same record the
+  route-first gate keeps. `POST /api/share/{token}/choose` is where the customer's page
+  answers: it takes no session, because the customer is not a user here, and the 团期 they
+  chose becomes an app event on the advisor's conversation, or on their other live sessions
+  when that one has ended. `TOUR_SHARE_BASE_URL` is the origin the link points at,
+  `http://localhost:3004` by default; the page itself is not part of this example.
 - `api/main.py`: the host. It builds the ERP client from the environment, hands the backend
   the one customer id and the advisor's mobile, and puts the conversation's 预留 on every
   cart payload with what is left of each thirty-minute window. A 候补 order is not a hold and

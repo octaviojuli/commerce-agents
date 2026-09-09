@@ -532,16 +532,19 @@ class ShareRecord:
     created_at: datetime
 
 
-def _picked_routes(tool_input: dict[str, Any]) -> list[str]:
-    """The 线路 ids among a ``present_products`` call's ``picks``. The payload is the model's
-    and is validated downstream, so a shape that is not the tool's yields no id here rather
-    than failing: the base validation is what reports it."""
+def _picked_ids(tool_input: dict[str, Any]) -> list[str]:
+    """The 线路 and 团期 ids among a ``present_products`` call's ``picks``: cards of both kinds
+    are what the advisor picks off, so both are recorded. The payload is the model's and is
+    validated downstream, so a shape that is not the tool's yields no id here rather than
+    failing: the base validation is what reports it."""
     picks = tool_input.get("picks")
     if not isinstance(picks, list):
         return []
     chosen = (pick.get("product_id") for pick in picks if isinstance(pick, dict))
     return [
-        picked for picked in chosen if isinstance(picked, str) and picked.startswith(ROUTE_PREFIX)
+        picked
+        for picked in chosen
+        if isinstance(picked, str) and picked.startswith((ROUTE_PREFIX, DEPARTURE_PREFIX))
     ]
 
 
@@ -575,12 +578,13 @@ class TourToolExecutor(ShoppingToolExecutor):
     async def dispatch(self, name: str, tool_input: dict[str, Any]) -> ToolOutcome:
         """The base dispatch, with the route-first gate around the two tools it spans: a
         route's details are held until the model has presented it, and a rendered
-        ``present_products`` is what lifts the hold for the ids it showed."""
+        ``present_products`` is what lifts the hold for the ids it showed. The 团期 ids it
+        showed are recorded the same way, because ``present_shortlist`` reads that record."""
         if name == "get_product_details" and (held := self._route_first(tool_input)):
             return held
         outcome = await super().dispatch(name, tool_input)
         if name == "present_products" and not outcome.refused:
-            self._backend.note_presented(self._session.session_id, _picked_routes(tool_input))
+            self._backend.note_presented(self._session.session_id, _picked_ids(tool_input))
         return outcome
 
     def _route_first(self, tool_input: dict[str, Any]) -> ToolOutcome | None:
@@ -1000,14 +1004,16 @@ class TourBackend(StorefrontBackend):
             return await self._departure_details(period_id, context)
         return None
 
-    # -- the 线路 the conversation has shown the advisor ------------------------------------
+    # -- what the conversation has shown the advisor ----------------------------------------
 
     def note_presented(self, session_id: str, product_ids: list[str]) -> None:
-        """Remember the 线路 this conversation has put in front of the advisor as cards."""
+        """Remember the 线路 and 团期 this conversation has put in front of the advisor as
+        cards."""
         self._presented.setdefault(session_id, set()).update(product_ids)
 
     def presented(self, session_id: str) -> set[str]:
-        """The 线路 ids this conversation has already shown as cards."""
+        """The 线路 and 团期 ids this conversation has already shown as cards: the route-first
+        gate reads the routes, ``present_shortlist`` the departures."""
         return set(self._presented.get(session_id, ()))
 
     # -- cart: the 预留 orders this conversation wrote -------------------------------------

@@ -4,20 +4,50 @@
 """``present_shortlist`` and the share link its card carries: what the model may put on the
 card, what the server joins onto it, and the one route the customer's page calls back."""
 
+import pytest
+
 from commerce_common.presentation import enrich_partial, partial_ui_tool_names
+from commerce_common.skills import SkillRegistry
 from demo_common import SESSION_HEADER
 from tour.api.shortlist import build_shortlist_extension
+from tour.api.tour_backend import TourToolExecutor
 
 ROUTE = "RT-1022"
 FIRST = "DP-3012"
 SECOND = "DP-3017"
 UNSEEN = "DP-399999"
+OTHER_ROUTE = "RT-1021"
+OTHER_DEPARTURE = "DP-3008"
+
+
+@pytest.fixture
+def executor(main, backend, session, state) -> TourToolExecutor:
+    """The executor the deployment builds, in place of the shared fixture's plain one: the
+    shortlist is the last step of a gated flow, so the steps before it have to run as they
+    do in the workbench."""
+    return TourToolExecutor(
+        backend=backend,
+        config=main.agent.config,
+        skills=SkillRegistry([]),
+        session=session,
+        state=state,
+        extensions=list(main.agent.extra_presentation_tools),
+    )
+
+
+async def _shown(executor, route: str, *departure_ids: str) -> None:
+    """The flow a shortlist comes after: the 线路 searched and presented, opened for its 团期,
+    and those 团期 shown as cards of their own."""
+    await executor.execute("search_products", {"query": "伊犁", "limit": 8})
+    await executor.execute("present_products", {"picks": [{"product_id": route}]})
+    await executor.execute("get_product_details", {"product_id": route})
+    await executor.execute(
+        "present_products", {"picks": [{"product_id": pid} for pid in departure_ids]}
+    )
 
 
 async def _seen_shortlist(executor):
-    """Search the 线路 and open it, so the session has both 团期 and their route."""
-    await executor.execute("search_products", {"query": "伊犁", "limit": 8})
-    await executor.execute("get_product_details", {"product_id": ROUTE})
+    await _shown(executor, ROUTE, FIRST, SECOND)
 
 
 def _ui_payload(result):
@@ -75,15 +105,39 @@ async def test_a_shortlist_joins_each_departure_to_its_route_and_carries_a_share
 
 async def test_a_route_never_searched_is_fetched_for_the_card(executor):
     # Opening a 团期 by id puts the departure in provenance and not its 线路.
-    await executor.execute("get_product_details", {"product_id": "DP-3008"})
+    await executor.execute("get_product_details", {"product_id": OTHER_DEPARTURE})
+    await executor.execute("present_products", {"picks": [{"product_id": OTHER_DEPARTURE}]})
     result = await executor.execute(
         "present_shortlist",
-        {"title": "客人指定的团期", "departure_ids": ["DP-3008"]},
+        {"title": "客人指定的团期", "departure_ids": [OTHER_DEPARTURE]},
     )
     assert not result.is_error
     item = _ui_payload(result)["payload"]["items"][0]
-    assert item["route"]["product_id"] == "RT-1021"
+    assert item["route"]["product_id"] == OTHER_ROUTE
     assert item["route"]["title"] == "伊犁北疆环线 8 日纯玩小团"
+
+
+async def test_a_departure_the_advisor_has_not_seen_is_not_sent_to_the_customer(executor):
+    """The shortlist is what the advisor sends, so it is the step after their pick: a 团期 the
+    session opened but never showed is refused, and the refusal names the step it skipped.
+    Showing that 团期 as a ``present_products`` card is what lets the same call through."""
+    await executor.execute("search_products", {"query": "伊犁", "limit": 8})
+    await executor.execute("present_products", {"picks": [{"product_id": ROUTE}]})
+    await executor.execute("get_product_details", {"product_id": ROUTE})
+
+    held = await executor.execute(
+        "present_shortlist", {"title": "还没给顾问看过", "departure_ids": [FIRST]}
+    )
+    assert held.is_error
+    assert not [event for event in held.events if event.type == "ui"]
+    assert "present_products" in held.result_text and "DP-" in held.result_text
+
+    await executor.execute("present_products", {"picks": [{"product_id": FIRST}]})
+    sent = await executor.execute(
+        "present_shortlist", {"title": "顾问选中的团期", "departure_ids": [FIRST]}
+    )
+    assert not sent.is_error
+    assert "/s/" in _ui_payload(sent)["payload"]["share_url"]
 
 
 async def test_an_unseen_departure_is_dropped_and_named_to_the_model(executor):

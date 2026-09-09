@@ -519,6 +519,21 @@ async def test_the_gate_holds_only_the_routes_this_conversation_searched(backend
     )
 
 
+async def test_the_departures_a_card_showed_are_recorded_beside_the_routes(backend, session):
+    """A route's 团期 are cards too, so the ids a card showed are recorded whichever kind they
+    are; ``present_shortlist`` reads that record to keep the customer's list behind the
+    advisor's pick. Anything in ``picks`` that is not an id of ours is recorded as nothing."""
+    state = ShoppingSessionState()
+    tour = await searched(backend, session, state)
+    await tour.dispatch("present_products", {"picks": [{"product_id": ROUTE}]})
+    await executor(backend, session, state).dispatch("get_product_details", {"product_id": ROUTE})
+    shown = await executor(backend, session, state).dispatch(
+        "present_products", {"picks": [{"product_id": OPEN}, {"product_id": "客人指定"}]}
+    )
+    assert not shown.refused
+    assert backend.presented(session.session_id) == {ROUTE, OPEN}
+
+
 async def test_resetting_a_session_forgets_the_routes_it_showed(backend, session):
     state = ShoppingSessionState()
     tour = await searched(backend, session, state)
