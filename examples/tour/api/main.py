@@ -49,6 +49,7 @@ from .advisor_memory import advisor_memory, advisor_write_filter
 from .advisors import NEED_LOGIN, AdvisorLogin, AdvisorRegistry, FixtureAdvisorRegistry
 from .agent_config import brand_name, build_shopping_config
 from .erp_client import ErpAuth, ErpClient, ErpError, ErpThrottled
+from .focus import build_focus_extension
 from .http_erp import HttpErpClient
 from .mock_erp import MockErpClient
 from .shortlist import build_shortlist_extension
@@ -129,7 +130,7 @@ agent = ShoppingAgent(
     config=build_shopping_config(live=live),
     memory_store=JsonFileMemoryStore(STATE_DIR / "memory-store.json"),
     memory_write_filter=advisor_write_filter(),
-    extra_presentation_tools=[build_shortlist_extension()],
+    extra_presentation_tools=[build_shortlist_extension(), build_focus_extension()],
     executor_class=TourToolExecutor,
 )
 # The advisor is the subject of the memory, not their customers: the extraction runs under

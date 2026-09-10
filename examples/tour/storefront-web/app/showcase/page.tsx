@@ -35,6 +35,8 @@ const SECTIONS: { component: string; id?: string; payload: unknown; status?: UIS
     payload: { ...SHOWCASE.products, items: SHOWCASE.products.items.slice(0, 2) },
     status: "partial",
   },
+  // A request too broad to shortlist: one question, the catalog's groups as chips.
+  { component: "focus", payload: SHOWCASE.focus },
   // The 团期 the advisor sends the customer, with the link they answer on.
   { component: "shortlist", payload: SHOWCASE.shortlist },
   // The same call still streaming: one 团期 in, and no share link until it finishes.

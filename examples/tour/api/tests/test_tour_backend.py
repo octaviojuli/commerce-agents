@@ -340,7 +340,7 @@ async def test_too_many_matches_hand_the_model_an_overview_not_a_shortlist(backe
     assert "按线路系（filter region）" in text and "伊犁 4" in text
     assert "按出发城市（filter departure_city）" in text
     assert "按天数（filter days_min/days_max）" in text
-    assert "ask ONE narrowing question" in text
+    assert "present_focus with ONE narrowing question" in text
     overview = backend.overview(session.session_id)
     assert overview is not None and overview.total > overview.shown == 2
     # Narrowed to one 线路系, the search fits and the overview is gone.

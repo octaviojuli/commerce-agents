@@ -132,6 +132,21 @@ export interface ShortlistPayload {
 }
 
 /**
+ * `present_focus`: one narrowing question over a search that matched more 线路 than a shortlist
+ * shows. `dimension` names the group whose values are the chips; a value with an `ask` sends
+ * those words when tapped, one without is a count alone. `anchors` are up to three results the
+ * card carries as a foothold when the match is not huge.
+ */
+export interface FocusPayload {
+  question: string;
+  total: number;
+  shown: number;
+  dimension: string;
+  groups: { label: string; filter: string; values: { value: string; count: number; ask?: string }[] }[];
+  anchors: Product[];
+}
+
+/**
  * One 历史会话 as `GET /api/sessions` lists it, newest first: the conversation's id, the title
  * the API made for it, when it was last spoken in, and how many messages it holds. `current` is
  * the session the request itself was made in.

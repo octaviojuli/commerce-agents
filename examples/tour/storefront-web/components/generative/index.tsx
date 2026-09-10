@@ -11,6 +11,7 @@ import { HISTORY_MARK } from "@/lib/sessions";
 import type {
   CheckoutPayload,
   ComparisonPayload,
+  FocusPayload,
   GuidePayload,
   OrderStatusPayload,
   PlanPayload,
@@ -19,6 +20,7 @@ import type {
 } from "@/lib/types";
 import BookingStatusCard from "./BookingStatusCard";
 import ComparisonSpread from "./ComparisonSpread";
+import FocusCard from "./FocusCard";
 import HistoryMark from "./HistoryMark";
 import PlanChecklist from "./PlanChecklist";
 import PolicyCard from "./PolicyCard";
@@ -34,6 +36,9 @@ export default function GenerativeBlock({ block, status }: GenerativeBlockProps)
       return <RouteCarousel payload={payload as ProductsPayload} partial={partial} />;
     case "shortlist":
       return <ShortlistCard payload={payload as ShortlistPayload} partial={partial} />;
+    case "focus":
+      if (partial) return null;
+      return <FocusCard payload={payload as FocusPayload} />;
     case "comparison":
       return <ComparisonSpread payload={payload as ComparisonPayload} partial={partial} />;
     case "plan":

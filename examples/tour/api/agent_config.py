@@ -145,9 +145,9 @@ def build_shopping_config(*, live: bool = False) -> ShoppingAgentConfig:
             "advisor once. Every result carries catalog_matches, the number of 线路 that met "
             "the request in the window; when it exceeds the results shown, say how many there "
             "are. When the search result carries a 目录概览 block, the request was too broad to "
-            "shortlist: follow that block — state the total, give the groups, ask one narrowing "
-            "question with the group values as chips, and present cards only after the advisor "
-            "narrows. A record carrying line_type (包团, 会销, 定制) is not on "
+            "shortlist: follow that block — state the total in a sentence, call present_focus "
+            "with one narrowing question, and present cards only after the advisor narrows; "
+            "a shortlist over that overview is held. A record carrying line_type (包团, 会销, 定制) is not on "
             "general sale and appears only because the advisor named it or pasted its id; say "
             "what it is and do not offer it to another customer."
         ),

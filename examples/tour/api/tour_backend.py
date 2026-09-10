@@ -89,6 +89,11 @@ ROUTE_PREFIX = "RT-"
 DEPARTURE_PREFIX = "DP-"
 # The gate that keeps the 线路 cards ahead of a route's 团期, named in the held result.
 ROUTE_FIRST_GATE = "route_first"
+# The gate that holds a shortlist over a request too broad for one: the 聚焦卡 comes first.
+FOCUS_FIRST_GATE = "focus_first"
+# Beside a 聚焦卡 a shortlist may carry this many picks, and only up to this many matches.
+FOCUS_ANCHORS = 3
+FOCUS_ANCHORS_UP_TO = 12
 
 log = logging.getLogger(__name__)
 
@@ -702,6 +707,9 @@ class Overview:
     total: int
     shown: int
     groups: dict[str, list[tuple[str, int]]]
+    # The advisor has already answered one 聚焦卡 and this search is their narrowing: cards
+    # now, whatever is left, and no second question.
+    answered: bool = False
 
     # The filter each group's values go back through.
     FILTERS = {
@@ -713,6 +721,12 @@ class Overview:
     }
 
     def text(self) -> str:
+        if self.answered:
+            return (
+                f"目录概览：缩小范围后仍有 {self.total} 条，上面是排序靠前的 {self.shown} 条。"
+                "The advisor has already narrowed once: present these with present_products "
+                "now and do not ask again; offer any further narrowing as chips beside them."
+            )
         lines = [
             f"目录概览：共 {self.total} 条线路符合，上面只是其中 {self.shown} 条的样本，不是结论。"
         ]
@@ -722,13 +736,15 @@ class Overview:
                 how = f"filter {key}" if (key := self.FILTERS[label]) else "无过滤，仅供说明"
                 lines.append(f"按{label}（{how}）：{cells}")
         lines.append(
-            "Too many lines to shortlist: do not present these as the answer. State the total, "
-            "give the groups above in one or two sentences, and ask ONE narrowing question with "
-            "present_suggestions whose chips are the group values that split this set best "
-            "(the 线路系 when it has several values, else the departure city, else the length). "
-            "When the advisor answers, search again with that filter and present cards. Between "
-            "7 and 12 matches you may show up to three cards beside the question; above 12, "
-            "none. Do not ask twice in a row: after one narrowing, present what is left."
+            "Too many lines to shortlist: do not present these as the answer. State the total "
+            "in a sentence and call present_focus with ONE narrowing question, naming the "
+            "dimension that splits this set best (the 线路系 when it has several values, else "
+            "the departure city, else the length); the card carries the groups above as chips. "
+            "Between 7 and 12 matches you may put up to three of the results on the card as "
+            "picks; above 12, none. The advisor's answer comes back as 只看<维度>：<值> — map "
+            "线路系 to region, 出发城市 to departure_city, a 天数 band to days_min/days_max and a "
+            "起价 band to price_max (its upper edge) — then search again and present cards. Do "
+            "not ask twice in a row: after one narrowing, present what is left."
         )
         return "\n".join(lines)
 
@@ -802,6 +818,11 @@ class TourToolExecutor(ShoppingToolExecutor):
     presented lives on the backend and not here, where a new executor is built every turn."""
 
     erp_rule_text = "Nothing changed: {detail}. Tell the advisor and offer what fits."
+    focus_first_text = (
+        "The last search matched {total} 线路, too many for a shortlist. Call present_focus "
+        "with one narrowing question first; while that overview stands, present_products may "
+        "carry at most {anchors} picks, and only when the matches are {up_to} or fewer."
+    )
     route_first_text = (
         "{product_id} came out of a search in this session and the advisor has not seen it "
         "yet. Present the matching routes with present_products first, so the advisor can "
@@ -824,6 +845,8 @@ class TourToolExecutor(ShoppingToolExecutor):
         showed are recorded the same way, because ``present_shortlist`` reads that record."""
         if name == "get_product_details" and (held := self._route_first(tool_input)):
             return held
+        if name == "present_products" and (held := self._focus_first(tool_input)):
+            return held
         outcome = await super().dispatch(name, tool_input)
         if name == "present_products" and not outcome.refused:
             self._backend.note_presented(self._session.session_id, _picked_ids(tool_input))
@@ -834,6 +857,25 @@ class TourToolExecutor(ShoppingToolExecutor):
                     outcome, result_text=f"{outcome.result_text}\n\n{overview.text()}"
                 )
         return outcome
+
+    def _focus_first(self, tool_input: dict[str, Any]) -> ToolOutcome | None:
+        """The held outcome when the model shortlists a search that was too broad for one
+        and the advisor has not been asked to narrow it, else None. Beside the question a card
+        may still carry a foothold of ``FOCUS_ANCHORS`` picks while the matches are no more
+        than ``FOCUS_ANCHORS_UP_TO``; an answered overview gates nothing."""
+        overview = self._backend.overview(self._session.session_id)
+        if overview is None or overview.answered:
+            return None
+        picks = tool_input.get("picks")
+        count = len(picks) if isinstance(picks, list) else 0
+        if overview.total <= FOCUS_ANCHORS_UP_TO and count <= FOCUS_ANCHORS:
+            return None
+        return ToolOutcome.held(
+            FOCUS_FIRST_GATE,
+            self.focus_first_text.format(
+                total=overview.total, anchors=FOCUS_ANCHORS, up_to=FOCUS_ANCHORS_UP_TO
+            ),
+        )
 
     def _route_first(self, tool_input: dict[str, Any]) -> ToolOutcome | None:
         """The held outcome when the model opens a 线路 this session searched but has not put
@@ -913,6 +955,8 @@ class TourBackend(StorefrontBackend):
         self._policies = load_policies(data_dir)
         self._contexts: dict[str, SearchContext] = {}
         self._overviews: dict[str, Overview] = {}
+        # Sessions whose standing overview has been put to the advisor as a 聚焦卡.
+        self._focused: set[str] = set()
         # What the ERP has already returned this process: a route is looked up by id long
         # after the search that found it, and a cart line names a departure by id alone. A
         # departure's 同业价 is cached beside it, ``None`` where the ERP has no price row for
@@ -1552,9 +1596,14 @@ class TourBackend(StorefrontBackend):
         for product in found[:limit]:
             product.attributes["catalog_matches"] = str(matched)
         # A request too broad to shortlist keeps its overview for the executor to hand the
-        # model beside the sample; one that fits keeps none.
+        # model beside the sample; one that fits keeps none. A search made after a 聚焦卡 is
+        # the advisor's answer to it, and its overview says so: cards now, no second question.
+        answered = session.session_id in self._focused
+        self._focused.discard(session.session_id)
         if overview is not None and matched > OVERVIEW_ABOVE and matched > len(found[:limit]):
-            self._overviews[session.session_id] = replace(overview, shown=len(found[:limit]))
+            self._overviews[session.session_id] = replace(
+                overview, shown=len(found[:limit]), answered=answered
+            )
         else:
             self._overviews.pop(session.session_id, None)
         return found[:limit]
@@ -1562,6 +1611,12 @@ class TourBackend(StorefrontBackend):
     def overview(self, session_id: str) -> Overview | None:
         """The last search's overview, when that search matched more than it could show."""
         return self._overviews.get(session_id)
+
+    def note_focused(self, session_id: str) -> None:
+        """A 聚焦卡 was put to the advisor over the standing overview: the next search is
+        their answer."""
+        if session_id in self._overviews:
+            self._focused.add(session_id)
 
     # -- details -------------------------------------------------------------------------
 
