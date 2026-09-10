@@ -128,12 +128,14 @@ with no total and a card that says `儿童价未发布，合计待定`.
 
 ## Try
 
-`scripts/smoke_chat.py --vertical tour` runs the same three turns. The advisor types what
+`scripts/smoke_chat.py --vertical tour` runs the same five turns. The advisor types what
 the customer said, in Chinese:
 
 1. 10月中旬有四位客人计划去新疆伊犁，8–10天，两个大人两个小孩，孩子5岁和9岁，不要购物店。
 2. 那条 10 天的喀拉峻深度线路，10 月 15 号前后有什么团？
 3. 就 10/14 那个团，帮我把 4 个位置锁上。
+4. 就这条线给客人做个定制方案，先把逐日行程摆出来。
+5. 第 5 天多住一晚，其余不动。
 
 The first turn is one `search_products` over 10-11 to 10-20: a shortlist of 纯玩 线路 with
 their 起价 — 5,780 元 for the 8 日小团, 7,880 元 for the 10 日深度 line, 9,680 元 for the
@@ -145,6 +147,16 @@ is `add_to_cart` on `DP-3017`, the 10/14 团期, which still seats four; the ERP
 order and the reply carries the cart line counting down from thirty minutes. Asking for
 more heads than the 团期 has seats is not refused: the ERP writes a 候补 order instead, and
 its cart line says （候补） and does not count down.
+
+The fourth turn is `present_itinerary` on the same 线路 with `DP-3017` as the baseline 团期: v1
+of a new plan, the route's ten 第N天 specs restated a sentence or two a day, the 10/14 团期's own
+figures as the reference price, and 待计调确认 in the note of any day the customer's ask goes
+past what the line carries. The fifth turn asks for a night on day 5, which is v2 of that plan.
+Two things stand in the way of it on the fixtures, and both are open: the plan's id is on the
+card and not in what the tool answers the model with, so a model that was not told the id by the
+advisor starts a second plan rather than revising the first; and a version re-sends every day,
+which together with the model's own deliberation runs past the 2,048-token `max_tokens` the
+config ships, ending the turn with nothing at all.
 
 Single prompts worth trying after those turns:
 
@@ -516,8 +528,11 @@ list row is the number of lines the transcript route returns.
 `scripts/review_sessions.py --state-dir <dir> [--since YYYY-MM-DD] [--out report.md]` reads both
 files and prints one Markdown report for the agency's staff: what the advisors searched for and
 with which conditions, the searches that came back empty or only after the backend relaxed them,
-the calls a gate or the ERP refused, the facts the memory file holds, the destination words
-`data/tag-rules.json` has no rule for, and the answers whose wording is worth a second look. It
+the 定制方案 they built and the days those wrote 待计调确认 into, the calls a gate or the ERP
+refused, the facts the memory file holds, the destination words
+`data/tag-rules.json` has no rule for, and the answers whose wording is worth a second look. The
+方案 section is the one read off the plan tables rather than the conversations, because a plan's
+id is the server's and a call carries it only once the advisor revises the plan. It
 reports only — nothing is written, and the words it lists are candidates to review, because a
 change to the vocabulary or the prompt is made by hand afterwards. The sections and the parsing
 are `api/review.py`, which is where the tests read them.

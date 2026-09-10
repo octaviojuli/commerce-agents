@@ -20,6 +20,15 @@ from demo_common.host import append_user_turn
 from shopping_agent import Product
 from shopping_agent.executor import ShoppingToolExecutor
 from shopping_agent.serialization import search_result_text
+from tour.api.plans import (
+    REQUEST_NOTE,
+    Plan,
+    PlanDay,
+    PlanVersion,
+    diff_days,
+    mark_requests,
+    new_share_token,
+)
 from tour.api.review import (
     HOLD_ROUTE_FIRST,
     MEMORY_FILE,
@@ -46,6 +55,20 @@ OTHER = "advisor-of-the-review-suite-2"
 # candidate word; 伊犁 has a rule and is neither.
 UNKNOWN_PLACE = "塞舌尔"
 ROUTE = "RT-1021"
+ROUTE_NAME = "伊犁北疆环线"
+# The 定制方案 the first conversation builds on that 线路, in the two versions the two
+# ``present_itinerary`` calls sent. The 待计调确认 day stands in both, which is one candidate
+# for the product staff and not two.
+PLAN = "PL-abcd1234"
+PLAN_TITLE = f"{ROUTE_NAME} 定制方案"
+REQUEST_DAY = PlanDay(
+    label="第 2 天 · 乌鲁木齐—赛里木湖", note=f"环湖看落日。客人要湖景房，{REQUEST_NOTE}。"
+)
+FIRST_DAYS = [PlanDay(label="第 1 天 · 乌鲁木齐集合", note="接机入住，晚上发行程册。"), REQUEST_DAY]
+SECOND_DAYS = [
+    PlanDay(label="第 1 天 · 乌鲁木齐集合", note="接机入住，客人航班晚点，接机改到夜里。"),
+    REQUEST_DAY,
+]
 
 
 def user(text: str) -> dict:
@@ -91,6 +114,47 @@ def not_offered(detail: str) -> str:
     return ShoppingToolExecutor.not_offered_text.format(detail=detail)
 
 
+def itinerary(days: list[PlanDay], plan_id: str | None = None) -> dict:
+    """One ``present_itinerary`` call as the model sends it: the whole plan every time, and
+    the plan's own id only on a call that revises one."""
+    call = {
+        "title": PLAN_TITLE,
+        "route_id": ROUTE,
+        "days": [{"label": day.label, "note": day.note} for day in days],
+    }
+    return call if plan_id is None else {**call, "plan_id": plan_id}
+
+
+def store_plan(store: SqliteSessionStore, session_id: str) -> None:
+    """The plan those two calls left in the plan tables, stored the way the backend stores
+    one: the days marked from what their notes say, each version read against the one before
+    it."""
+    store.create_plan(
+        Plan(
+            plan_id=PLAN,
+            session_id=session_id,
+            user_id=ADVISOR,
+            route_id=1021,
+            route_name=ROUTE_NAME,
+        )
+    )
+    parent: list[PlanDay] | None = None
+    for number, written in ((1, FIRST_DAYS), (2, SECOND_DAYS)):
+        days = mark_requests(written)
+        store.add_version(
+            PlanVersion(
+                plan_id=PLAN,
+                version=number,
+                parent_version=None if number == 1 else number - 1,
+                title=PLAN_TITLE,
+                days=days,
+                share_token=new_share_token(),
+            ),
+            diff_days(parent, days),
+        )
+        parent = days
+
+
 @pytest.fixture
 def store(tmp_path) -> SqliteSessionStore:
     """Two conversations in a fresh state directory: one advisor searching, one whose calls the
@@ -117,8 +181,17 @@ def store(tmp_path) -> SqliteSessionStore:
         },
         results(("t3", TourToolExecutor.route_first_text.format(product_id=ROUTE), False)),
         assistant("已为客人锁位，10月17日出发，共 8 天。"),
+        user("就这条线给客人做个定制方案"),
+        assistant("好的。", ("t9", "present_itinerary", itinerary(FIRST_DAYS))),
+        results(("t9", ShoppingToolExecutor.displayed_text, False)),
+        assistant("已出 v1，逐日行程按行程附件摆好了。"),
+        user("第一天接机改到夜里，其余不动"),
+        assistant("好的。", ("t10", "present_itinerary", itinerary(SECOND_DAYS, PLAN))),
+        results(("t10", ShoppingToolExecutor.displayed_text, False)),
+        assistant("已出 v2，改了第一天。"),
     ]
     store.save(first)
+    store_plan(store, first.session_id)
     second = store.start(OTHER)
     second.pending_app_events.append("客人已在分享页选定团期 DP-3008")
     append_user_turn(second, "帮客人占两个位", "客人的动作")
@@ -169,14 +242,14 @@ def memory_path(tmp_path):
 
 @pytest.fixture
 def review(store, memory_path):
-    return review_sessions(read_sessions(store), memory_path=memory_path)
+    return review_sessions(read_sessions(store), memory_path=memory_path, plan_store=store)
 
 
 def test_the_overview_counts_sessions_turns_and_advisors(review):
     assert len(review.sessions) == 2
-    # Three advisor messages: two in the first conversation and the one the app-event note
-    # rides in front of in the second.
-    assert review.turns == 3
+    # Five advisor messages: four in the first conversation, two of them the plan's, and the
+    # one the app-event note rides in front of in the second.
+    assert review.turns == 5
     assert review.users == [ADVISOR, OTHER]
     assert review.period == (datetime.now(UTC).date(), datetime.now(UTC).date())
 
@@ -190,6 +263,28 @@ def test_every_search_carries_its_attributes_and_its_result_count(review):
     assert relaxed.conditions == "days_min=7、days_max=9、adults=2"
     assert relaxed.count == 1
     assert relaxed.matches == ("adjacent_date",) and relaxed.relaxed_only
+
+
+def test_the_plans_built_in_the_conversations(review):
+    first = next(session for session in review.sessions if session.user_id == ADVISOR)
+    assert [
+        (plan.session_id, plan.plan_id, plan.route, plan.versions) for plan in review.plans
+    ] == [(first.session_id, PLAN, f"{ROUTE} {ROUTE_NAME}", 2)]
+
+
+def test_a_day_that_waits_on_the_ji_diao_is_one_candidate_however_often_it_is_sent(review):
+    # The day stands unchanged in both versions, so the product staff read it once.
+    assert [(day.plan_id, day.route, day.label, day.note) for day in review.requests] == [
+        (PLAN, f"{ROUTE} {ROUTE_NAME}", REQUEST_DAY.label, REQUEST_DAY.note)
+    ]
+    report = render(review)
+    assert PLAN in report and REQUEST_DAY.note in report
+
+
+def test_without_the_plan_tables_the_section_is_empty_rather_than_absent(store, memory_path):
+    review = review_sessions(read_sessions(store), memory_path=memory_path)
+    assert review.plans == [] and review.requests == []
+    assert "## 定制方案" in render(review)
 
 
 def test_the_gates_and_the_refusals_are_counted_with_an_example(review):
@@ -249,12 +344,13 @@ def test_since_keeps_the_sessions_updated_on_or_after_that_day(store):
     assert len(read_sessions(store, since=today - timedelta(days=1))) == 2
 
 
-def test_the_report_is_the_six_sections_in_order(review):
+def test_the_report_is_the_seven_sections_in_order(review):
     report = render(review)
     headings = [line for line in report.splitlines() if line.startswith("## ")]
     assert headings == [
         "## 概览",
         "## 搜索",
+        "## 定制方案",
         "## 门禁与拒绝",
         "## 记忆",
         "## 待审词表",

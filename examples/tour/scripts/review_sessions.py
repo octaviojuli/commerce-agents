@@ -2,9 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Read a period of the workbench's conversations and print what they came to: what the
-advisors searched for, where the system fell short, and which data-file changes look worth
-reviewing. It opens the state directory read-only and changes nothing — a word this report
-proposes for ``data/tag-rules.json`` is written by hand, after someone has read it.
+advisors searched for, which 定制方案 they built and what those ask the 计调 to confirm, where
+the system fell short, and which data-file changes look worth reviewing. It opens the state
+directory read-only and changes nothing — a word this report proposes for
+``data/tag-rules.json`` is written by hand, after someone has read it.
 
     python examples/tour/scripts/review_sessions.py --state-dir examples/tour/data/.state
     python examples/tour/scripts/review_sessions.py --state-dir /srv/tour-state \
@@ -67,6 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         read_sessions(store, since=args.since),
         memory_path=args.state_dir / MEMORY_FILE,
         since=args.since,
+        plan_store=store,
     )
     report = render(review)
     if args.out is None:

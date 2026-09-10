@@ -370,8 +370,9 @@ def build_itinerary_extension() -> PresentationExtension:
         description=(
             "Show the day-by-day itinerary of a custom plan (定制方案) for this customer, "
             "built on one 线路 the advisor has been shown. Pass route_id (RT-…) and one entry "
-            "per day — label '第 N 天 · 起点—终点', note the day's programme in your own words "
-            "drawn from the route's 第N天 specs; write 待计调确认 into a note for anything the "
+            "per day — label '第 N 天 · 起点—终点', note the day's programme in one or two "
+            "sentences of your own drawn from the route's 第N天 specs, because every later "
+            "version sends every day again; write 待计调确认 into a note for anything the "
             "customer wants that the route does not carry; never write a price. The first "
             "call creates the plan and is v1; to change it, call again with plan_id and the "
             "full list of days with only the asked days changed — the server numbers the "

@@ -10,6 +10,10 @@ the next customer's conversation, where it is wrong. So the same template is ren
 advisor — what qualifies is a standing habit of their own work — and ``advisor_write_filter``
 refuses in code what the prompt asks to leave out, on every path a fact reaches the store:
 the extraction pass, the model's own memory tool, and the workbench's memory editor.
+
+A conversation that builds a 定制方案 is the same case and its card is the densest one: the
+party, the 出行日期 and the plan's own id are that customer's trip written out, and each is
+refused by a check of its own.
 """
 
 from __future__ import annotations
@@ -41,8 +45,9 @@ ADVISOR_MEMORY_EXTRACTION_PROMPT = MEMORY_EXTRACTION_TEMPLATE.format(
     ),
     excluded=(
         "any customer's trip or request (destination, dates, party, budget, the 线路 or 团期 "
-        "discussed); the advisor's own name, department and account, which their login already "
-        "states; anything that came from listings, results, or the ERP's own records; the "
+        "discussed, the 定制方案 built for them); the advisor's own name, department and "
+        "account, which their login already states; anything that came from listings, "
+        "results, or the ERP's own records; the "
         "mechanics of this conversation (what was searched or held); anything inferred rather "
         "than said; and health, financial, or identity details of anyone."
     ),
@@ -52,19 +57,31 @@ ADVISOR_MEMORY_EXTRACTION_PROMPT = MEMORY_EXTRACTION_TEMPLATE.format(
 _TRIP_KEYS = re.compile(r"current_project|trip|customer|客人|客户", re.IGNORECASE)
 # A party size: 两位, 4人, 2大1小, 三位客人.
 _PARTY = re.compile(r"(?:\d+|[一二三四五六七八九十两])\s*(?:位|人|大|小)")
-# A date or a holiday the trip is on.
+# A month or a holiday the trip is in, which says a trip only beside a journey.
 _WHEN = re.compile(
     r"\d{1,2}\s*月|\d{4}-\d{2}|国庆|春节|暑假|寒假|中秋|五一|端午|清明|元旦|上旬|中旬|下旬|月初|月底"
 )
 # Going somewhere.
 _GOING = re.compile(r"去|出发|出行|旅行|旅游|团期|线路|行程")
 
+# One day of one month. A standing habit of the advisor's own work does not turn on a date,
+# so a fact carrying one is a journey's: a search window, a 团期's departure day, the 出行日期
+# on a 定制方案's card.
+_DATE = re.compile(r"\d{1,2}\s*月\s*\d{1,2}|\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}")
+# The ids the records of one conversation carry: a 定制方案 (the shape ``api/plans.py`` mints)
+# and the ERP's own 线路 and 团期 (``agent_config.product_id_patterns``). A fact naming one is
+# that conversation's work, whatever it says about it.
+_RECORD_ID = re.compile(r"PL-[A-Za-z0-9]{8}|RT-\d+|DP-\d+")
+
 
 def is_customer_trip(key: str, value: str) -> bool:
     """Whether a candidate fact is one customer's trip rather than the advisor's own habit: a
-    key the customer prompt would use, a party size, or a date on a journey. A habit has none
-    of those — the advisor's customers usually depart from 成都 — and stays."""
-    if _TRIP_KEYS.search(key):
+    key the customer prompt would use, one of the ids the conversation's own records carry, a
+    party size, a date, or a season on a journey. A habit has none of those — the advisor's
+    customers usually depart from 成都 — and stays."""
+    if _TRIP_KEYS.search(key) or _RECORD_ID.search(key) or _RECORD_ID.search(value):
+        return True
+    if _DATE.search(value):
         return True
     return bool(_PARTY.search(value)) or bool(_WHEN.search(value) and _GOING.search(value))
 
