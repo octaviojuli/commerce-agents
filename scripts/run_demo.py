@@ -51,7 +51,13 @@ VERTICALS: dict[str, dict[str, object]] = {
     "travel": {"api_port": 8001, "store": "ACME Travel"},
     "telecom": {"api_port": 8002, "store": "ACME Mobile"},
     "entertainment": {"api_port": 8003, "store": "ACME Tickets"},
-    "tour": {"api_port": 8004, "store": "ACME 旅行社"},
+    # Tour keeps its sessions and its memory in data/.state/; --fresh-memory deletes the
+    # memory file, and the advisor's conversations in sessions.sqlite beside it are left alone.
+    "tour": {
+        "api_port": 8004,
+        "store": "ACME 旅行社",
+        "memory_files": ("data/.state/memory-store.json",),
+    },
 }
 
 PYTHON_MODULES = (

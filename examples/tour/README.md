@@ -50,6 +50,8 @@ The same file carries the ERP block, which decides what is behind the seam:
 | `TOUR_ERP_ALLOW_PAST` | `1` lists departures that already left, for a beta with no future ones |
 | `TOUR_BRAND_NAME` | the agency's own name, `ACME 旅行社` unset |
 | `TOUR_ASSISTANT_NAME` | what the advisor calls the assistant, `选团助手` unset |
+| `TOUR_STATE_DIR` | where the sessions and the memory are written, `data/.state/` unset |
+| `TOUR_MEMORY_RETENTION_DAYS` | how many days a remembered fact stays readable; unset, no age limit |
 
 Unset `TOUR_ERP_BASE_URL` and `api/main.py` builds `MockErpClient` over `data/`, which is
 what the demo runs on. Set it and `api/main.py` builds `HttpErpClient` and logs in with
@@ -220,8 +222,14 @@ Single prompts worth trying after those turns:
   before it, and the note is measured against everything the advisor stated. The last step
   spends one route query and the departure lists behind it: its broad pass is what the steps
   above already read.
-- `api/agent_config.py`: the shopping config, and the one reader of `TOUR_BRAND_NAME` and
-  `TOUR_ASSISTANT_NAME`. `enable_fulfillment=False`, because the
+- `api/store.py`: `SqliteSessionStore`, the shared `SessionStore` with its six storage
+  methods over one SQLite file, and the two reads the history routes answer from —
+  `summaries`, one line per conversation of one advisor, and `transcript`, its messages as
+  stored. `display_messages` beside them is the view a person is shown, which is what drops
+  the tool exchange and the app-event notes. The section above is what the file holds and how
+  a restart reads it.
+- `api/agent_config.py`: the shopping config, and the one reader of `TOUR_BRAND_NAME`,
+  `TOUR_ASSISTANT_NAME` and `TOUR_MEMORY_RETENTION_DAYS`. `enable_fulfillment=False`, because the
   customer joins the group at its 集合地点; `enable_policies=not live`, because the agency's
   rules are in a knowledge base this deployment does not read; `product_id_patterns` replaced
   with the two id
@@ -248,9 +256,10 @@ Single prompts worth trying after those turns:
 - `api/main.py`: the host. It builds the ERP client from the environment, and `live =
   isinstance(erp, HttpErpClient)` is the switch the table above hangs off: it hands the backend
   the 客户编码, the 门店, the brand and the advisor's mobile, picks the empty memory seed, and
-  builds the config with `live=live`. It also puts the conversation's 预留 on every
-  cart payload with what is left of each thirty-minute window. A 候补 order is not a hold and
-  carries no countdown.
+  builds the config with `live=live`. It creates `TOUR_STATE_DIR` and builds the two stores
+  in it — the sessions and the memory — and holds the two history routes over the session
+  one. It also puts the conversation's 预留 on every cart payload with what is left of each
+  thirty-minute window. A 候补 order is not a hold and carries no countdown.
 
 `storefront-web/` is the advisor's workbench, Chinese throughout: 线路 cards read the
 trade-offs an advisor reads out off a family's attributes (`days`, `depart_city`, `tags`,
@@ -333,6 +342,49 @@ the same rules.
 
 Sessions and identity are the shared host code in [`../demo_common/`](../demo_common/): a
 session id stands for one advisor.
+
+## Sessions and memory on disk
+
+An advisor keeps the workbench open all day and the API restarts under them, so this is the
+one example whose sessions are not in the process. `TOUR_STATE_DIR` — `data/.state/` unset,
+gitignored, created at boot — holds both files:
+
+| File | Written by | What is in it |
+|---|---|---|
+| `sessions.sqlite` | `api/store.py`'s `SqliteSessionStore` | one row per conversation (the advisor it belongs to, the session state, the version a write is checked against) and one row per message |
+| `memory-store.json` | the core's `JsonFileMemoryStore` | the facts the post-turn extraction pass keeps about each advisor |
+
+`SqliteSessionStore` is a subclass of `demo_common.sessions.SessionStore` with the six
+storage methods over one SQLite file, which is what that class's docstring describes a
+deployment doing; nothing about a record, a route or the request header changes, and the
+other examples still keep their sessions in the process. `write_state` is the compare-and-set
+the base class relies on, run inside a transaction that takes the write lock first, so two
+processes on one file cannot overwrite each other. The file stays in WAL mode, so a restarted
+API, a second worker or a script reads the sessions the last process wrote.
+
+Resuming a conversation needs no route: the client sends its id in `X-Session-Id` as it does
+for a live one, and the store loads it. Two reads serve the history list:
+
+    GET /api/sessions                        the caller's own conversations, newest first, at most 50
+    GET /api/sessions/{id}/messages          one of them, as a person reads it
+
+Both answer for the caller alone — the caller is the session id in the header and nothing
+else — and a conversation belonging to another advisor is a 404. The messages route is a
+display view: the advisor's turns and the assistant's replies as strings, with the tool
+exchange and the app-event notes the host writes for the model left out, so the count on a
+list row is the number of lines the transcript route returns.
+
+`python scripts/run_demo.py tour --fresh-memory` deletes `memory-store.json` and leaves the
+conversations beside it alone. The fixture seed in `data/memory-seed.json` is loaded at every
+boot, so on the fixtures a seeded fact the advisor retracted is back after a restart; live
+mode seeds nothing and only the advisor's own extracted facts are in the file.
+
+The memory subject and a session's owner are both the storefront's `user_id`, which is
+`demo-user` for everyone until the advisor login lands: today every advisor of one deployment
+shares one history and one set of facts. Per-advisor isolation is that login's to make — the
+ERP already authenticates the advisor, and the session's principal is the one value the
+routes read — and nothing here has to change for it besides what `POST /api/session` is
+handed.
 
 ## Diagrams
 

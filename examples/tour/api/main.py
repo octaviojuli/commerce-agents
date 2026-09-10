@@ -2,10 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """ACME 旅行社 example API: the 旅行社 ERP behind the shared storefront routes, the
-``present_shortlist`` extension and the share link its card carries, and the conversation's
-live 占位 on every cart payload. There is no merchant portal in this example.
+``present_shortlist`` extension and the share link its card carries, the conversation's
+live 占位 on every cart payload, and the advisor's own conversation history. There is no
+merchant portal in this example.
 
     uvicorn tour.api.main:app --app-dir examples --reload --port 8004
+
+An advisor keeps the workbench open all day, so this example is the one whose sessions and
+memory are on disk: ``TOUR_STATE_DIR`` (``data/.state/`` unset) holds ``sessions.sqlite``,
+which ``api/store.py``'s ``SqliteSessionStore`` writes, and ``memory-store.json``, which
+the core's ``JsonFileMemoryStore`` writes. A restart keeps both, so the client resumes a
+conversation by sending its id in ``X-Session-Id`` and needs no route to do it.
 """
 
 from __future__ import annotations
@@ -14,11 +21,12 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from commerce_common.memory import InMemoryMemoryStore
+from commerce_common.memory import JsonFileMemoryStore
 from demo_common import (
     REPO_ROOT,
     MemorySeeder,
@@ -34,9 +42,19 @@ from .erp_client import ErpClient
 from .http_erp import HttpErpClient
 from .mock_erp import MockErpClient
 from .shortlist import build_shortlist_extension
+from .store import SqliteSessionStore, display_messages
 from .tour_backend import DATA_DIR, TourBackend, TourToolExecutor, first_advisor_mobile
 
 load_demo_env(DATA_DIR.parent)
+
+# Where this deployment's own state lives, created at boot. Both files hold what the advisor
+# said and what was remembered about them, so a deployment puts them somewhere it backs up
+# and nothing here is committed.
+STATE_DIR = Path(os.environ.get("TOUR_STATE_DIR", "").strip() or DATA_DIR / ".state")
+STATE_DIR.mkdir(parents=True, exist_ok=True)
+
+# How many conversations the history list carries at most.
+MAX_HISTORY = 50
 
 # The 同行 customer the fixtures book for; a live deployment names its own by 客户编码.
 MOCK_CUSTOMER_ID = 4101
@@ -78,11 +96,14 @@ backend = TourBackend(
 agent = ShoppingAgent(
     backend=backend,
     skills_dir=REPO_ROOT / "shopping-agent" / "skills",
+    # TOUR_MEMORY_RETENTION_DAYS reaches the store through the config's
+    # memory_retention_days, which the agent's MemoryRuntime wraps the store with.
     config=build_shopping_config(live=live),
-    memory_store=InMemoryMemoryStore(),
+    memory_store=JsonFileMemoryStore(STATE_DIR / "memory-store.json"),
     extra_presentation_tools=[build_shortlist_extension()],
     executor_class=TourToolExecutor,
 )
+sessions = SqliteSessionStore(STATE_DIR / "sessions.sqlite")
 # The seeded habits are this example's own invention, so a live deployment starts with an
 # empty memory and the advisor's own facts are the ones the conversation extracts.
 MEMORY_SEED = DATA_DIR / ("memory-seed-empty.json" if live else "memory-seed.json")
@@ -112,6 +133,7 @@ host = build_storefront_host(
     agent=agent,
     memory_seeder=MemorySeeder(MEMORY_SEED),
     cart_extras=holds_payload,
+    sessions=sessions,
 )
 app = host.app
 
@@ -129,6 +151,38 @@ async def _lifespan(current: FastAPI) -> AsyncIterator[None]:
 
 
 app.router.lifespan_context = _lifespan
+
+
+@app.get("/api/sessions")
+async def list_sessions(record: host.CurrentSession) -> dict:
+    """The caller's own conversations, the one written last first, at most
+    ``MAX_HISTORY``. The caller is the session id in the header and nothing else, so the
+    list is theirs by construction; ``current`` marks the conversation the header names.
+    Resuming one takes no route: the client sends its id in ``X-Session-Id``."""
+    return {
+        "sessions": [
+            {
+                "session_id": summary.session_id,
+                "title": summary.title,
+                "updated_at": summary.updated_at.isoformat(),
+                "message_count": summary.message_count,
+                "current": summary.session_id == record.session_id,
+            }
+            for summary in sessions.summaries(record.user_id)[:MAX_HISTORY]
+        ]
+    }
+
+
+# The path names a conversation of the caller's, not the caller: identity stays in the
+# header, and a conversation that is not theirs is not found.
+@app.get("/api/sessions/{past_id}/messages")
+async def session_messages(past_id: str, record: host.CurrentSession) -> dict:
+    """One conversation as a person reads it: the advisor's turns and the assistant's
+    replies, with the tool exchange and the host's app-event notes left out."""
+    stored = sessions.read_state(past_id)
+    if stored is None or stored[1]["user_id"] != record.user_id:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    return {"session_id": past_id, "messages": display_messages(sessions.transcript(past_id))}
 
 
 class ShareChoiceRequest(BaseModel):
