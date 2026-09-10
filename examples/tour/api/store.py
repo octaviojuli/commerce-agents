@@ -8,11 +8,13 @@ open all day and the API restarts under them, so a conversation has to be there 
 restart; a single file is all this deployment needs for it, and the store is a subclass exactly
 as the base class's docstring describes, so no route or record shape changes.
 
-Two tables. ``sessions`` holds one row per session — the principal, the state document, and
+Four tables. ``sessions`` holds one row per session — the principal, the state document, and
 the version the base class's compare-and-set runs on — and ``messages`` holds the transcript
 as one row per message, so a long conversation appends rather than rewriting itself. Both
 sides of a turn go through the base class: it decides what changed, and these methods only
-store it.
+store it. ``plans`` and ``plan_versions`` hold the 定制方案 of ``api/plans.py``, one row per
+plan and one per version, in this same file: a plan is built in a conversation, outlives the
+restart the conversation does, and is read back by the version the customer was sent.
 
 Reads and writes are synchronous, like the base class's, and serialised on one lock: the
 host is a single asyncio process, so nothing here blocks another request for longer than a
@@ -33,8 +35,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from pydantic import TypeAdapter
+
 from demo_common import SessionConflictError, SessionStore
 from shopping_agent import ShoppingSessionState
+
+from .plans import DayDiff, Plan, PlanVersion
 
 # How long a statement waits for another writer's transaction before it gives up.
 _BUSY_TIMEOUT_S = 5.0
@@ -56,6 +62,28 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at   TEXT NOT NULL,
     PRIMARY KEY (session_id, seq)
 );
+CREATE TABLE IF NOT EXISTS plans (
+    plan_id      TEXT PRIMARY KEY,
+    session_id   TEXT NOT NULL,
+    user_id      TEXT NOT NULL,
+    route_id     INTEGER NOT NULL,
+    route_name   TEXT NOT NULL,
+    line_type    TEXT,
+    departure_id INTEGER,
+    erp_route_id INTEGER,
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS plans_by_session ON plans (session_id, created_at);
+CREATE TABLE IF NOT EXISTS plan_versions (
+    plan_id        TEXT NOT NULL,
+    version        INTEGER NOT NULL,
+    parent_version INTEGER,
+    payload_json   TEXT NOT NULL,
+    diff_json      TEXT NOT NULL,
+    share_token    TEXT NOT NULL UNIQUE,
+    created_at     TEXT NOT NULL,
+    PRIMARY KEY (plan_id, version)
+);
 """
 
 # The note ``demo_common.host.append_user_turn`` puts in front of a user's message when
@@ -67,6 +95,34 @@ _APP_EVENT_NOTE = re.compile(r"^\[[^\]]{0,80}since your last reply:")
 UNTITLED = "新会话"
 
 TITLE_CHARS = 40
+
+# The plan columns, in the order ``_plan`` reads them back. A read names them by their table,
+# because the share-link read joins them to one that has a ``created_at`` of its own.
+_PLAN_FIELDS = (
+    "plan_id",
+    "session_id",
+    "user_id",
+    "route_id",
+    "route_name",
+    "line_type",
+    "departure_id",
+    "erp_route_id",
+    "created_at",
+)
+_PLAN_COLUMNS = ", ".join(f"plans.{column}" for column in _PLAN_FIELDS)
+# A version's read of its parent, stored beside the version itself: it is what the version
+# was when it was sent, and a later version must not change what an earlier card said.
+_DIFF = TypeAdapter(list[DayDiff])
+
+
+class PlanConflictError(RuntimeError):
+    """Another writer added this version first; the caller numbers again from
+    ``latest_version`` and writes the card as the version after that one."""
+
+    def __init__(self, plan_id: str, version: int):
+        super().__init__(f"{plan_id} v{version} is not the version after the stored one")
+        self.plan_id = plan_id
+        self.version = version
 
 
 @dataclass(frozen=True)
@@ -273,6 +329,143 @@ class SqliteSessionStore(SessionStore[ShoppingSessionState]):
     def transcript(self, session_id: str) -> list[dict[str, Any]]:
         """The stored messages of one session, as stored. An unknown session has none."""
         return self.read_messages(session_id)
+
+    # -- the 定制方案 and their versions ---------------------------------------------------
+
+    def create_plan(self, plan: Plan) -> None:
+        """The plan itself, once. Its versions are added after it, one row each."""
+        with self._write() as connection:
+            connection.execute(
+                f"INSERT INTO plans ({', '.join(_PLAN_FIELDS)})"
+                f" VALUES ({', '.join('?' * len(_PLAN_FIELDS))})",
+                (
+                    plan.plan_id,
+                    plan.session_id,
+                    plan.user_id,
+                    plan.route_id,
+                    plan.route_name,
+                    plan.line_type,
+                    plan.departure_id,
+                    plan.erp_route_id,
+                    _iso(plan.created_at),
+                ),
+            )
+
+    def add_version(self, version: PlanVersion, diff: list[DayDiff]) -> None:
+        """One card as a version, with its read of the version before it. The number is the
+        caller's, taken from :meth:`latest_version`, and it is checked here inside the write
+        transaction: two turns numbering against the same read do not both become v3, and the
+        loser raises :class:`PlanConflictError` rather than replacing the winner's card."""
+        with self._write() as connection:
+            stored = connection.execute(
+                "SELECT MAX(version) FROM plan_versions WHERE plan_id = ?", (version.plan_id,)
+            ).fetchone()
+            if version.version != (stored[0] or 0) + 1:
+                raise PlanConflictError(version.plan_id, version.version)
+            connection.execute(
+                "INSERT INTO plan_versions (plan_id, version, parent_version, payload_json,"
+                " diff_json, share_token, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    version.plan_id,
+                    version.version,
+                    version.parent_version,
+                    version.model_dump_json(),
+                    _DIFF.dump_json(diff).decode(),
+                    version.share_token,
+                    _iso(version.created_at),
+                ),
+            )
+
+    def plan(self, plan_id: str) -> Plan | None:
+        with self._open() as connection:
+            row = connection.execute(
+                f"SELECT {_PLAN_COLUMNS} FROM plans WHERE plan_id = ?", (plan_id,)
+            ).fetchone()
+        return None if row is None else _plan(row)
+
+    def plans_for_session(self, session_id: str) -> list[Plan]:
+        """The plans built in one conversation, oldest first: the order the advisor made
+        them in is the order the workbench lists them in."""
+        with self._open() as connection:
+            rows = connection.execute(
+                f"SELECT {_PLAN_COLUMNS} FROM plans WHERE session_id = ?"
+                " ORDER BY created_at, plan_id",
+                (session_id,),
+            ).fetchall()
+        return [_plan(row) for row in rows]
+
+    def versions(self, plan_id: str) -> list[tuple[PlanVersion, list[DayDiff]]]:
+        """Every version of one plan with its diff, v1 first."""
+        with self._open() as connection:
+            rows = connection.execute(
+                "SELECT payload_json, diff_json FROM plan_versions WHERE plan_id = ?"
+                " ORDER BY version",
+                (plan_id,),
+            ).fetchall()
+        return [_version(row) for row in rows]
+
+    def version(self, plan_id: str, n: int) -> tuple[PlanVersion, list[DayDiff]] | None:
+        with self._open() as connection:
+            row = connection.execute(
+                "SELECT payload_json, diff_json FROM plan_versions WHERE plan_id = ?"
+                " AND version = ?",
+                (plan_id, n),
+            ).fetchone()
+        return None if row is None else _version(row)
+
+    def latest_version(self, plan_id: str) -> int:
+        """The highest version number stored, and 0 for a plan with no version yet, so the
+        next card is always this plus one."""
+        with self._open() as connection:
+            row = connection.execute(
+                "SELECT MAX(version) FROM plan_versions WHERE plan_id = ?", (plan_id,)
+            ).fetchone()
+        return row[0] or 0
+
+    def version_by_token(self, token: str) -> tuple[Plan, PlanVersion, list[DayDiff]] | None:
+        """The version one share link stands for, with the plan it belongs to. A token names
+        a version and not a plan, so a customer sent v2 keeps reading v2."""
+        with self._open() as connection:
+            row = connection.execute(
+                f"SELECT {_PLAN_COLUMNS}, payload_json, diff_json FROM plan_versions"
+                " JOIN plans USING (plan_id) WHERE share_token = ?",
+                (token,),
+            ).fetchone()
+        if row is None:
+            return None
+        version, diff = _version(row[-2:])
+        return _plan(row), version, diff
+
+    def link_route(self, plan_id: str, erp_route_id: int) -> None:
+        """Record the 线路 the agency created in the ERP for this plan. It is the plan's and
+        not a version's: the 计调 prices the plan once, whatever version it was asked on."""
+        with self._write() as connection:
+            connection.execute(
+                "UPDATE plans SET erp_route_id = ? WHERE plan_id = ?", (erp_route_id, plan_id)
+            )
+
+
+def _plan(row: tuple[Any, ...]) -> Plan:
+    return Plan(
+        plan_id=row[0],
+        session_id=row[1],
+        user_id=row[2],
+        route_id=row[3],
+        route_name=row[4],
+        line_type=row[5],
+        departure_id=row[6],
+        erp_route_id=row[7],
+        created_at=datetime.fromisoformat(row[8]),
+    )
+
+
+def _version(row: tuple[Any, ...]) -> tuple[PlanVersion, list[DayDiff]]:
+    return PlanVersion.model_validate_json(row[0]), _DIFF.validate_json(row[1])
+
+
+def _iso(moment: datetime) -> str:
+    """A record's own timestamp as the file stores one: UTC ISO 8601."""
+    return moment.astimezone(UTC).isoformat()
 
 
 def _now() -> str:

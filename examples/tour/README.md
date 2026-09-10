@@ -299,7 +299,15 @@ Single prompts worth trying after those turns:
   `summaries`, one line per conversation of one advisor, and `transcript`, its messages as
   stored. `display_messages` beside them is the view a person is shown, which is what drops
   the tool exchange and the app-event notes. The section above is what the file holds and how
-  a restart reads it.
+  a restart reads it. The same file also holds the 定制方案 the advisor builds on a published
+  线路 — one row per plan and one row per version, each version under its own share token —
+  because a plan outlives the conversation it was built in.
+- `api/plans.py`: what a plan and one version of it are made of, and the reading of a version
+  against the one before it. `diff_days` aligns two versions on what each day says rather
+  than on where it sits, so a day inserted in the middle is one added day and not a
+  renumbering of every day after it; `summarize` is that diff in the one Chinese line the
+  advisor reads above a version, and `handoff_text` is the plain text they copy to the
+  agency's 计调, which is who prices a custom plan.
 - `api/agent_config.py`: the shopping config, and the one reader of `TOUR_BRAND_NAME`,
   `TOUR_ASSISTANT_NAME` and `TOUR_MEMORY_RETENTION_DAYS`. `enable_fulfillment=False`, because the
   customer joins the group at its 集合地点; `enable_policies=not live`, because the agency's
