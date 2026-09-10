@@ -73,6 +73,14 @@ LINK_NOT_PRESENTED = (
 # A reference price is the 团期's own, so a 团期 that is not this route's is dropped rather
 # than refused: the plan stands, and the model is told it went out with no reference price.
 _DROPPED_DEPARTURE = "参考团期不在本次会话里，或者不是这条线路的团期，方案已按无参考价出："
+# What the model is told once a version is stored. The plan id is minted here and the card
+# is a ``ui`` event the model never reads, so the tool result is the one place the model
+# learns the id it has to pass back on a revision; without it every change starts a new plan.
+_STORED = (
+    "方案 {plan_id} 已存为 v{version}{parent}；修订时再次调用 present_itinerary，带 "
+    "plan_id={plan_id} 和 route_id={route_id}，交回完整的天列表。"
+)
+_LINKED = "方案 {plan_id} 已关联 ERP 线路 {erp_route_id}，未新增版本，最新版仍是 v{version}。"
 
 
 class ItineraryDay(BaseModel):
@@ -312,6 +320,11 @@ async def _linked(
     if not versions:
         raise PresentationRefused(NO_SUCH_PLAN)
     version, diff = versions[-1]
+    context.notes.append(
+        _LINKED.format(
+            plan_id=plan.plan_id, erp_route_id=payload.erp_route_id, version=version.version
+        )
+    )
     return card_payload(plan, version, diff, route, departure, context.backend)
 
 
@@ -340,6 +353,12 @@ async def _enrich(payload: ItineraryPayload, context: EnrichmentContext) -> dict
         party=payload.party,
         reference_price=reference_price(departure),
         base_version=payload.base_version,
+    )
+    parent = "" if version.parent_version is None else f"（基于 v{version.parent_version}）"
+    context.notes.append(
+        _STORED.format(
+            plan_id=plan.plan_id, version=version.version, parent=parent, route_id=payload.route_id
+        )
     )
     return card_payload(plan, version, diff, route, departure, context.backend)
 

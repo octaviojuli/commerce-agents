@@ -165,6 +165,11 @@ def build_shopping_config(*, live: bool = False) -> ShoppingAgentConfig:
         # most three 占位 orders, because every one of them is a real order in the ERP.
         max_quantity_per_item=20,
         max_cart_lines=3,
+        # A turn that redraws a 定制方案 sends every day again, and a provider that reasons
+        # before it answers spends the same budget on the reasoning: a ten-day revision on
+        # the fixtures ran to 4,065 output tokens, and a 线路 runs to twenty days. The repo
+        # default of 2048 ends such a turn before the tool call is written.
+        max_tokens=8192,
         policy_intent_terms=_DEFAULTS.policy_intent_terms + _POLICY_TERMS,
         order_intent_terms=_DEFAULTS.order_intent_terms + _ORDER_TERMS,
         # The two id shapes this catalog has, replacing the defaults: nothing else in the

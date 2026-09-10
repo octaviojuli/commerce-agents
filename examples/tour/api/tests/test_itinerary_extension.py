@@ -191,6 +191,29 @@ async def test_a_second_version_marks_the_day_it_added_and_leaves_the_rest_alone
     assert payload["share_url"] != first["share_url"]
 
 
+async def test_the_tool_result_names_the_plan_and_the_version_for_the_next_call(executor):
+    """The card is a ``ui`` event the model never reads, so the plan id it has to pass back
+    on a revision comes to it in the tool result, with the version the store assigned."""
+    await _shown(executor)
+    first_result = await executor.execute(
+        "present_itinerary", {"title": "伊犁定制", "days": BASELINE, "route_id": ROUTE}
+    )
+    first = _ui_payload(first_result)["payload"]
+    assert f"plan_id={first['plan_id']}" in first_result.result_text
+    assert "v1" in first_result.result_text and ROUTE in first_result.result_text
+    second_result = await executor.execute(
+        "present_itinerary",
+        {
+            "title": "伊犁定制",
+            "days": [*BASELINE[:2], EXTRA, BASELINE[2]],
+            "route_id": ROUTE,
+            "plan_id": first["plan_id"],
+        },
+    )
+    assert "v2（基于 v1）" in second_result.result_text
+    assert f"plan_id={first['plan_id']}" in second_result.result_text
+
+
 async def test_a_day_the_next_version_drops_is_drawn_where_it_sat(executor):
     await _shown(executor)
     first = await _plan(executor)

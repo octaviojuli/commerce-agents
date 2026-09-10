@@ -151,12 +151,11 @@ its cart line says （候补） and does not count down.
 The fourth turn is `present_itinerary` on the same 线路 with `DP-3017` as the baseline 团期: v1
 of a new plan, the route's ten 第N天 specs restated a sentence or two a day, the 10/14 团期's own
 figures as the reference price, and 待计调确认 in the note of any day the customer's ask goes
-past what the line carries. The fifth turn asks for a night on day 5, which is v2 of that plan.
-Two things stand in the way of it on the fixtures, and both are open: the plan's id is on the
-card and not in what the tool answers the model with, so a model that was not told the id by the
-advisor starts a second plan rather than revising the first; and a version re-sends every day,
-which together with the model's own deliberation runs past the 2,048-token `max_tokens` the
-config ships, ending the turn with nothing at all.
+past what the line carries. The fifth turn asks for a night on day 5, which is v2 of that plan:
+the tool's answer to the fourth turn names the plan id and the version, which is how the model
+knows what to pass back, and the reply names the version the store assigned. A version re-sends
+every day, so `agent_config.py` gives a turn `max_tokens=8192` rather than the repo's 2048: a
+provider that reasons before it answers spends the same budget on the reasoning.
 
 Single prompts worth trying after those turns:
 
