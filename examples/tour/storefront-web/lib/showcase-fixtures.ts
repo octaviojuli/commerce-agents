@@ -19,7 +19,19 @@
  * by whole weeks from that day, while `periodId`, and so the `DP-` id, stays put.
  */
 
-import type { CartPayload, CheckoutPayload, ComparisonPayload, GuidePayload, ItineraryPayload, OrderStatusPayload, PlanPayload, Product, ProductsPayload, ShortlistPayload } from "./types";
+import type {
+  CartPayload,
+  CheckoutPayload,
+  ComparisonPayload,
+  FocusPayload,
+  GuidePayload,
+  ItineraryPayload,
+  OrderStatusPayload,
+  PlanPayload,
+  Product,
+  ProductsPayload,
+  ShortlistPayload,
+} from "./types";
 
 // --- Routes (线路), as search returns them ---
 
@@ -545,8 +557,48 @@ const order_status: OrderStatusPayload = {
   },
 };
 
+// A request too broad to shortlist: the question, the catalog's own groups as chips, and the
+// footholds the advisor may open straight away.
+const focus: FocusPayload = {
+  question: "新疆这批线路先按方向缩一下，客人想走哪一片？",
+  total: 7,
+  shown: 3,
+  dimension: "线路系",
+  groups: [
+    {
+      label: "线路系",
+      filter: "region",
+      values: [
+        { value: "伊犁", count: 4, ask: "只看线路系：伊犁" },
+        { value: "喀纳斯", count: 2, ask: "只看线路系：喀纳斯" },
+        { value: "南疆", count: 1, ask: "只看线路系：南疆" },
+      ],
+    },
+    {
+      label: "出发城市",
+      filter: "departure_city",
+      values: [
+        { value: "乌鲁木齐", count: 6, ask: "只看出发城市：乌鲁木齐" },
+        { value: "喀什", count: 1, ask: "只看出发城市：喀什" },
+      ],
+    },
+    {
+      label: "天数",
+      filter: "days_min/days_max",
+      values: [
+        { value: "7 天以内", count: 2, ask: "只看天数：7 天以内" },
+        { value: "8–10 天", count: 4, ask: "只看天数：8–10 天" },
+        { value: "11–13 天", count: 1, ask: "只看天数：11–13 天" },
+      ],
+    },
+    { label: "成团", filter: "", values: [{ value: "已成团", count: 3 }, { value: "待成团", count: 4 }] },
+  ],
+  anchors: [XINJIANG_8, KALAJUN_10, LUXURY_8],
+};
+
 export const SHOWCASE = {
   products,
+  focus,
   departures,
   shortlist,
   shortlist_streaming,
