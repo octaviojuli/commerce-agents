@@ -50,7 +50,7 @@ The same file carries the ERP block, which decides what is behind the seam:
 | `TOUR_ERP_ALLOW_PAST` | `1` lists departures that already left, for a beta with no future ones |
 | `TOUR_BRAND_NAME` | the agency's own name, `ACME 旅行社` unset |
 | `TOUR_ASSISTANT_NAME` | what the advisor calls the assistant, `选团助手` unset |
-| `TOUR_STATE_DIR` | where the sessions and the memory are written, `data/.state/` unset |
+| `TOUR_STATE_DIR` | where the sessions, the memory and the parsed 行程附件 are written, `data/.state/` unset |
 | `TOUR_MEMORY_RETENTION_DAYS` | how many days a remembered fact stays readable; unset, no age limit |
 
 Unset `TOUR_ERP_BASE_URL` and `api/main.py` builds `MockErpClient` over `data/`, which is
@@ -159,14 +159,14 @@ Single prompts worth trying after those turns:
 
 ## What is specific to this example
 
-- `api/erp_client.py`: the `ErpClient` Protocol — eight calls: `search_routes`,
-  `list_departures`, `get_departure`, `search_customers`, `quote`, `create_order`,
-  `list_orders`, `get_order` — with `WindowReader` beside it, the one further call a client
-  offers by having it: `list_window` reads a whole date window's 团期 across every 线路 and
+- `api/erp_client.py`: the `ErpClient` Protocol — nine calls: `search_routes`,
+  `list_departures`, `get_itinerary`, `get_departure`, `search_customers`, `quote`,
+  `create_order`, `list_orders`, `get_order` — with `WindowReader` beside it, the one further
+  call a client offers by having it: `list_window` reads a whole date window's 团期 across every 线路 and
   department, which is how a search weighs many candidates against the window when
   `period/list` takes no route id. And the records they exchange (`RouteQuery`, `RouteRecord`,
-  `DepartureRecord`, `PriceInfo`, `CustomerRecord`, `Quote`, `OrderRequest`, `OrderResult`,
-  `OrderRecord`) as frozen dataclasses of plain types, so a real ERP maps onto them without
+  `Itinerary`, `ItineraryDay`, `DepartureRecord`, `PriceInfo`, `CustomerRecord`, `Quote`,
+  `OrderRequest`, `OrderResult`, `OrderRecord`) as frozen dataclasses of plain types, so a real ERP maps onto them without
   importing this example. `ORDER_STATUS` is the ERP's own six: 预留, 占位, 确认, 取消,
   审批中, 候补. Every `ErpError` message is advisor-facing Chinese, because the executor
   relays it into the conversation unchanged.
@@ -196,6 +196,17 @@ Single prompts worth trying after those turns:
   names any department but the 团期's own is refused with 部门不匹配, which is the guard the
   real ERP enforces with a bare 404. Nothing expires here, because the ERP's own 预留 runs on
   the departure's `reserveHours`.
+- `api/itinerary_source.py`: where a 线路's day-by-day 行程 comes from. A details record carries
+  行程来源 and one spec per day — the day's title, its programme cut to 200 characters, its
+  住宿 and its 用餐 — for at most 20 days, and a 线路 whose days could not be read says 无 there
+  instead of saying nothing. The days are the ERP's own where `get_itinerary` answers with any,
+  and otherwise are parsed out of the .docx 行程附件 the catalog links: `parse_docx` walks the
+  document in order, reads `第 N 天` headers — or `DAY-N` where the file has no Chinese header at
+  all — and stops at the 费用/须知 sections after the last day. `TourBackend` reads one 线路's
+  行程 once per process behind a per-route lock, and `cache_read` / `cache_write` keep the
+  reading as one owner-only JSON file per 线路 under `TOUR_STATE_DIR`, sent back as an ETag so an
+  unchanged attachment is not downloaded again; a fetch or a parse that fails is logged and
+  leaves the record saying 无, because a details read must not fail over an unreadable file.
 - `api/advisor_memory.py`: the memory's subject. The core extracts a customer's one live
   undertaking as `current_project`; an advisor's conversations are their customers' trips one
   after another, and a trip kept as the advisor's own would be read into the next customer's
@@ -328,9 +339,9 @@ Single prompts worth trying after those turns:
 - `api/main.py`: the host. It builds the ERP client from the environment, and `live =
   isinstance(erp, HttpErpClient)` is the switch the table above hangs off: it hands the backend
   the 客户编码, the 门店, the brand and the advisor's mobile, picks the empty memory seed, and
-  builds the config with `live=live`. It creates `TOUR_STATE_DIR` and builds the two stores
-  in it — the sessions and the memory — and holds the two history routes over the session
-  one. It builds the registry the advisors sign in to, holds `POST /api/login`,
+  builds the config with `live=live`. It creates `TOUR_STATE_DIR`, builds the two stores in it
+  — the sessions and the memory — hands the same directory to the backend as the 行程附件
+  cache, and holds the two history routes over the session one. It builds the registry the advisors sign in to, holds `POST /api/login`,
   `POST /api/logout` and `GET /api/advisor` over it, and in live mode installs
   `install_login_guard`, the middleware that answers the demo's own `POST /api/session` with a
   403. It also puts the conversation's 预留 on every cart payload with what is left of each
@@ -400,6 +411,10 @@ The filter keys the model writes into `filters.attributes` on every search:
   `confirmCount`, `reserveHours`, the route's own `companyId`, and the `priceInfo` block
   (`adultPrice`, `childPrice`, `elderPrice`, `singleRoomDiff`) the ERP carries only on a
   departure's detail, which is the 市场价.
+- `data/itineraries.json`: the baseline 行程 of the three 线路 the demo scripts and the showcase
+  open — RT-1021, RT-1022, RT-1024 — one entry per day of the route with its 住宿 and its 用餐,
+  in the shape `route/itinerary` is asked for. A 线路 the file writes none for has none, as most
+  of a live catalog does.
 - `data/customers.json`: three 同行 customers in the ERP's customer row shape; the demo books
   for the first, and a live deployment for the one `TOUR_ERP_CUSTOMER_CODE` resolves to.
 - `data/policies.json`: 退改政策, 儿童价规则, 成团规则, 定金规则 — what `search_policies`
@@ -425,7 +440,7 @@ enumerated fields.
 `docs/erp-contract.md` is the agency's API as observed on its beta environment: the login,
 the paging, the error envelope, the seven reads, the one write, and the decisions Phase 4
 took on top of them. `ErpClient` in `api/erp_client.py` is the seam it maps onto.
-`MockErpClient` in `api/mock_erp.py` answers the eight calls from `data/` and
+`MockErpClient` in `api/mock_erp.py` answers the nine calls from `data/` and
 `HttpErpClient` in `api/http_erp.py` answers them over HTTP; what both owe — the ranking,
 the window, the 候补 rule, the validation, the error classes — is stated as tests in
 `api/tests/test_mock_erp.py` and `api/tests/test_http_erp.py`, so a third client is held to
@@ -438,12 +453,13 @@ session id stands for one advisor.
 
 An advisor keeps the workbench open all day and the API restarts under them, so this is the
 one example whose sessions are not in the process. `TOUR_STATE_DIR` — `data/.state/` unset,
-gitignored, created at boot — holds both files:
+gitignored, created at boot — holds all three:
 
 | File | Written by | What is in it |
 |---|---|---|
 | `sessions.sqlite` | `api/store.py`'s `SqliteSessionStore` | one row per conversation (the advisor it belongs to, the session state, the version a write is checked against) and one row per message |
 | `memory-store.json` | the core's `JsonFileMemoryStore` | the facts the post-turn extraction pass keeps about each advisor |
+| `itineraries/{routeId}.json` | `api/itinerary_source.py`'s `cache_write` | one 线路's days as parsed out of its 行程附件, with the URL and the ETag they were read at |
 
 `SqliteSessionStore` is a subclass of `demo_common.sessions.SessionStore` with the six
 storage methods over one SQLite file, which is what that class's docstring describes a

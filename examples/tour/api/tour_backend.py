@@ -69,6 +69,7 @@ from .erp_client import (
     ErpNotFound,
     ErpRefused,
     ErpThrottled,
+    Itinerary,
     OrderRecord,
     OrderRequest,
     PriceInfo,
@@ -77,6 +78,7 @@ from .erp_client import (
     RouteRecord,
     WindowReader,
 )
+from .itinerary_source import cache_read, cache_write, fetch_attachment, parse_docx
 from .private_lines import load_private_line_rules
 from .tags import UNKNOWN, RouteFacets, normalize
 
@@ -146,6 +148,16 @@ _HOTEL_GRADES = {"三": "三钻", "3": "三钻", "四": "四钻", "4": "四钻",
 # How many of a route's raw tags a record carries: the ERP extracts some fifty, an advisor
 # reads a handful, and every one of them rides in a fenced tool result.
 MAX_RAW_TAGS = 12
+# How much of a 线路's baseline 行程 a details record carries. A details result is fenced whole
+# at ``max_fenced_chars`` (12 000), and a route's own fields and its priced 团期 already spend
+# two thirds of that, so the days take what is left: 200 characters of programme per day over
+# at most 20 days keeps a 12-day 线路 inside the fence with its variants intact. What is cut is
+# the tail of a day's own text; the title, the 住宿 and the 用餐 always ride.
+MAX_DAY_CHARS = 200
+MAX_ITINERARY_DAYS = 20
+# What a 线路 whose 行程 could not be read says instead, because an advisor who reads nothing
+# here has to lay the days out against the attachment themselves.
+NO_ITINERARY = "无（行程附件无法解析或缺失，请对照附件手工摆出）"
 # What a policy entry is scored on: its 标题 and 分类 answer a question more directly than a
 # clause buried in the body does.
 _HELP_TITLE_WEIGHT = 3.0
@@ -338,6 +350,26 @@ def _specs(record: RouteRecord, facets: RouteFacets) -> dict[str, str]:
     specs["亮点"] = "、".join(record.features)
     if record.attachment_name:
         specs["行程附件"] = record.attachment_name
+    return specs
+
+
+def _itinerary_specs(record: RouteRecord, itinerary: Itinerary | None) -> dict[str, str]:
+    """The 线路's baseline 行程 as one spec per day, under the line saying where it was read.
+    行程来源 is stated whichever way the reading went, because a day the advisor cannot see
+    here is one they have to open the attachment for, and the record has to say which case it
+    is. The day itself is the 线路's and not the 团期's: what a party actually gets is the
+    计调's to confirm."""
+    if itinerary is None:
+        return {"行程来源": NO_ITINERARY}
+    attachment = f"行程附件 {record.attachment_name or ''}".strip()
+    specs = {"行程来源": "ERP" if itinerary.source == "erp" else attachment}
+    for day in itinerary.days[:MAX_ITINERARY_DAYS]:
+        line = f"{day.title}｜{day.text[:MAX_DAY_CHARS]}"
+        if day.hotel:
+            line += f"｜住宿：{day.hotel}"
+        if day.meals:
+            line += f"｜用餐：{day.meals}"
+        specs[f"第{day.day_no}天"] = line
     return specs
 
 
@@ -778,6 +810,7 @@ class TourBackend(StorefrontBackend):
         store_name: str = "",
         order_store_name: str = "",
         registry: AdvisorRegistry | None = None,
+        state_dir: Path | None = None,
     ) -> None:
         """``today`` is for a host that runs on its own clock; the default is the real date.
         ``allow_past`` lets the windows reach behind today, for a test environment whose 团期
@@ -791,9 +824,13 @@ class TourBackend(StorefrontBackend):
         advisor's name and department come from the ERP login rather than from users.json.
 
         ``registry`` is where the logged-in advisors are; with none — the tests, and a host
-        that has not built one — every call goes out on ``erp``."""
+        that has not built one — every call goes out on ``erp``.
+
+        ``state_dir`` is where the parsed 行程附件 are kept between restarts; with none the
+        attachment is parsed again in every process that reads the 线路."""
         self.erp = erp
         self.registry = registry
+        self._state_dir = state_dir
         self.today: date = today or _utcnow().date()
         self.live = live
         self.customer_id = customer_id
@@ -826,6 +863,11 @@ class TourBackend(StorefrontBackend):
         self._route_facets: dict[int, RouteFacets] = {}
         self._departures: dict[int, DepartureRecord] = {}
         self._quotes: dict[int, Quote | None] = {}
+        # Each 线路's baseline 行程 once it has been read, ``None`` for one that has none, so a
+        # second details read of the same 线路 downloads and parses nothing. One lock per 线路
+        # keeps two conversations opening it at the same moment to one reading between them.
+        self._itineraries: dict[int, Itinerary | None] = {}
+        self._itinerary_locks: dict[int, asyncio.Lock] = {}
         # The listing snapshot the host's catalog routes read; `load_listings` fills both.
         self.products: dict[str, ProductDetails] = {}
         self._variants: dict[str, ProductDetails] = {}
@@ -1365,15 +1407,66 @@ class TourBackend(StorefrontBackend):
 
     # -- details -------------------------------------------------------------------------
 
-    def _details(self, record: RouteRecord, family: Product) -> ProductDetails:
-        """One route's family as a details record: the route's own free text and the specs its
-        tags normalise into, both read off the record and costing no call. The variants, where
-        the caller has any, are the caller's to fill in."""
+    def _details(
+        self, record: RouteRecord | None, family: Product, itinerary: Itinerary | None
+    ) -> ProductDetails:
+        """One 线路's family, or one of its 团期, as a details record: the route's own free
+        text, the specs its tags normalise into — both read off the record and costing no call
+        — and the baseline 行程 the caller read, day by day. The variants, where the caller has
+        any, are the caller's to fill in."""
+        if record is None:
+            return ProductDetails(**family.model_dump(), long_description=None, specs={})
         return ProductDetails(
             **family.model_dump(),
             long_description="\n".join(record.features)[:1200] or None,
-            specs=_specs(record, self._facets(record)),
+            specs=_specs(record, self._facets(record)) | _itinerary_specs(record, itinerary),
         )
+
+    async def _itinerary(self, erp: ErpClient, record: RouteRecord) -> Itinerary | None:
+        """The 线路's baseline 行程, read once per process: the ERP's own days where it has
+        them, the 行程附件 parsed where it does not. The lock is what keeps two conversations
+        opening the same 线路 at once to one download between them."""
+        if record.route_id in self._itineraries:
+            return self._itineraries[record.route_id]
+        async with self._itinerary_locks.setdefault(record.route_id, asyncio.Lock()):
+            if record.route_id not in self._itineraries:
+                self._itineraries[record.route_id] = await self._read_itinerary(erp, record)
+            return self._itineraries[record.route_id]
+
+    async def _read_itinerary(self, erp: ErpClient, record: RouteRecord) -> Itinerary | None:
+        """One reading of a 线路's 行程. Nothing here raises: the attachment is a file on a
+        server neither this host nor the ERP owns, and a details read the advisor is waiting on
+        must not fail because it is unreachable, oversized or not a readable .docx — such a
+        route reads 行程来源：无 and the advisor opens the attachment themselves."""
+        try:
+            found = await erp.get_itinerary(record.route_id)
+        except ErpError as error:
+            log.warning("tour: route %s itinerary: %s", record.route_id, error)
+            found = None
+        if found is not None or not record.attachment_url:
+            return found
+        url = record.attachment_url
+        cached = cache_read(self._state_dir, record.route_id, url) if self._state_dir else None
+        try:
+            fetched = await fetch_attachment(url, etag=cached[1] if cached else None)
+            if fetched is None:
+                # Unchanged since the cached reading, or unreachable; either way, what is
+                # already known about this 线路 is the best answer there is.
+                return cached[0] if cached else None
+            days = parse_docx(fetched[0])
+        except (ValueError, OSError) as error:
+            log.warning("tour: route %s attachment not read: %s", record.route_id, error)
+            return cached[0] if cached else None
+        if not days:
+            log.warning("tour: route %s attachment names no 第N天", record.route_id)
+            return None
+        itinerary = Itinerary(record.route_id, "attachment", fetched[1], tuple(days))
+        if self._state_dir:
+            try:
+                cache_write(self._state_dir, itinerary, url, fetched[1])
+            except OSError as error:
+                log.warning("tour: route %s itinerary not cached: %s", record.route_id, error)
+        return itinerary
 
     async def _route_details(
         self,
@@ -1404,7 +1497,8 @@ class TourBackend(StorefrontBackend):
             rows = nearest[:MAX_VARIANTS]
         rows = sorted(rows, key=lambda row: row.depart_date)
         await self._prices(erp, rows, middle, prices)
-        details = self._details(record, self._family(record, rows, context, "exact", None))
+        family = self._family(record, rows, context, "exact", None)
+        details = self._details(record, family, await self._itinerary(erp, record))
         details.variants = [self._variant(row, record, context) for row in rows]
         return details
 
@@ -1413,7 +1507,8 @@ class TourBackend(StorefrontBackend):
     ) -> ProductDetails | None:
         """The one departure, in the same two calls a route's variants take: its detail for the
         市场价 and the seat counts, and its 同业价 for the customer this deployment books for. A
-        departure the ERP has no price row for keeps the 市场价 it carries."""
+        departure the ERP has no price row for keeps the 市场价 it carries. It reads its 线路's
+        baseline 行程 as a route's details do, out of the same per-process cache."""
         row = await erp.get_departure(period_id)
         if row is None:
             return None
@@ -1421,11 +1516,8 @@ class TourBackend(StorefrontBackend):
         self._quotes[row.period_id] = await self._quote(erp, row)
         record = await self._route(erp, row.route_id)
         variant = self._variant(row, record, context)
-        return ProductDetails(
-            **variant.model_dump(),
-            long_description=("\n".join(record.features)[:1200] or None) if record else None,
-            specs=_specs(record, self._facets(record)) if record else {},
-        )
+        itinerary = await self._itinerary(erp, record) if record else None
+        return self._details(record, variant, itinerary)
 
     async def get_product_details(
         self, session: ShoppingSessionContext, product_id: str
@@ -1756,8 +1848,8 @@ class TourBackend(StorefrontBackend):
         线路, and the workbench's home page reads this snapshot whole to name the directions
         the catalog sells — so a live snapshot is the families alone, out of the reads one
         search already makes: the route list, and the window's 团期 read once for every route
-        in it. It costs no call per route and carries no variant and no price beyond the
-        route's 起价; a 团期 id the host asks for is read from the ERP by the conversation
+        in it. It costs no call per route and carries no variant, no 行程 and no price beyond
+        the route's 起价; a 团期 id the host asks for is read from the ERP by the conversation
         instead. An ERP that refuses or is down leaves the snapshot empty rather than stopping
         the host from booting. This is also where the deployment's 同行 customer is resolved,
         because that costs one ERP call too."""
@@ -1776,7 +1868,12 @@ class TourBackend(StorefrontBackend):
                 for record in await self._search(self.erp, stated, fetched):
                     rows = await self._list(self.erp, record, window, fetched)
                     family = self._family(record, rows, context, "exact", None)
-                    listings[family.product_id] = self._details(record, family)
+                    snapshot = self._details(record, family, None)
+                    # No 行程 either, for the same reason there is no variant and no price: it
+                    # is a read per 线路, and a 行程附件 is a download on top of it. A snapshot
+                    # record says nothing about the 行程 rather than saying there is none.
+                    snapshot.specs.pop("行程来源", None)
+                    listings[family.product_id] = snapshot
             else:
                 for record in await self._search(self.erp, stated):
                     details = await self._route_details(self.erp, record.route_id, context)

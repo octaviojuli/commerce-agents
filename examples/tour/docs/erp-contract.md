@@ -43,6 +43,7 @@ decisions that shape Phase 4. Fictional example values throughout.
 |---|---|---|---|
 | routes | `GET /route/list` | `routeName~`, `routeCode~`, `departDateStart/End` | `routeId, routeCode, routeName, days, departCityId, departCityName, companyId, companyName, groupId, fromPrice, tags[], itineraryTags[], itineraryTagsStatus, periodTags[], periodPriceTags[], periodHolidayTags[], features[], firstImageUrl, posterUrls[], routeAttachmentName, routeAttachmentUrl` |
 | departures | `GET /period/list` | `periodCode~`, `routeName~`, `departDateStart/End` — **no `routeId`**, so a route's departures are fetched by name and kept by `routeId`, or the whole window is read once and grouped by `routeId`, which is what a search does | `periodId, periodCode, routeId, routeName, departDate, returnDate, days, planGuests, minGroupSize, confirmCount, availableSeats, reserveHours, companyId, companyName, departCityName, groupId` |
+| itinerary | `GET /route/itinerary?routeId=` | **asked for, not built** | `routeId, version, days[{dayNo, title, morning, midday, afternoon, evening, transport[], hotel, meals}]` → one `ItineraryDay` per row, its `text` the four period fields joined by `；` with the empty ones left out, `source_ref` the `version` |
 | departure | `GET /period/detail?periodId=` | | the row above (`companyId` included) plus `reserveCount, placeholderCount, waitlistCount, flightInfo[], priceInfo{adultPrice, childPrice, elderPrice, singleRoomDiff, currency}` (the 市场价) |
 | customers | `GET /customer/list` | `keyword~` | `customerId, companyName, csCode, companyType` (1 = 同行) |
 | quote | `GET /order/price?periodId=&customerId=` | needs a token in the period's `companyId` | `isExternalOrder, priceType, priceInfo{...}` — the customer's 同业价 |
@@ -140,8 +141,19 @@ singleRoomDiffCount, storeId?, storeName?, contactName, contactMobile, remark?}`
   listed first — 罗马尼亚 and 布加勒斯特 above 罗马 and 加勒, 都柏林 above 柏林, 菲斯特 above
   菲斯, 马拉喀什 above 喀什 — and a tag naming a dish or a square is a negative, because
   土耳其烤肉卷 is a meal on 65 European lines and 西班牙广场 is in Rome.
+- **The day-by-day 行程 is in a Word attachment, and the host reads it.** `route/list` carries
+  `routeAttachmentName` and `routeAttachmentUrl` and no itinerary field, so the only place a
+  线路's days are written down is that .docx. **Asked of the ERP:** `GET
+  /route/itinerary?routeId=` returning the day rows in the ERP's own 上午/中午/下午/晚上 +
+  内陆交通 + 酒店 + 餐 model; until it exists the host parses `routeAttachmentUrl`.
+  `ErpClient.get_itinerary` is the seam for it and `HttpErpClient` maps the row shape above;
+  the endpoint answers 404 or 405 today and the call reads as no itinerary, which is when
+  `api/itinerary_source.py` fetches the attachment, reads its days and keeps the reading under
+  `TOUR_STATE_DIR`. Two document layouts are in the production catalog — one table of `第 N 天`
+  rows with `用餐` and `住宿` rows under each, and an English `DAY-N` overview table above a
+  Chinese detail table — and a document that names no day yields none rather than a guess.
 - **A search reads the window's 团期 once, not each route's** (`WindowReader.list_window`, the
-  one call beside the eight). `period/list` takes no route
+  one call beside the nine). `period/list` takes no route
   id, so weighing every candidate 线路 against the window would cost a call apiece — and the
   candidates are the window's whole catalog whenever the destination is written only in the
   tags. The backend reads `period/list` for the window alone, pages it, groups it by `routeId`
@@ -209,6 +221,12 @@ singleRoomDiffCount, storeId?, storeName?, contactName, contactMobile, remark?}`
   nobody, so the 团期 is 待成团 and not 已成团; and 162 rows have a `days` that is not
   `returnDate - departDate + 1`, so a 线路's length is the record's own `days` and is never
   counted off the dates.
+- **The 行程附件 read.** 168 of 274 线路 link a `.docx`. Over 60 of them the file is mostly its
+  photographs: median 1.0 MB, largest 12.4 MB, a third over 5 MB, and the largest download took
+  0.7 s. Of 25 read end to end all 25 yielded days and 22 had exactly the 线路's own `days`; the
+  three that did not are the attachment's own doing — one writes a range row (`第 5 天-第 7 天`)
+  that reads as one day, one writes seven days for a 线路 the catalog calls eight, and one uses
+  a third layout whose day markers `api/itinerary_source.py` does not read.
 - `GET /route/list` applies `departDateStart`/`departDateEnd` loosely: a week's query answers
   with 线路 that have no 团期 inside it at all — five 斯里兰卡 lines for 10-01..10-07, of which
   `period/list` shows two departing in October. The window on a route search is therefore a

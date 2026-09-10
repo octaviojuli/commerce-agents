@@ -134,6 +134,34 @@ PERIOD_DETAIL = {
         "currency": "CNY",
     },
 }
+ITINERARY = {
+    "routeId": 1021,
+    "version": 7,
+    "days": [
+        {
+            "dayNo": 1,
+            "title": "乌鲁木齐集合",
+            "morning": "机场接站",
+            "midday": "送酒店办理入住",
+            "afternoon": "",
+            "evening": "行前说明会",
+            "transport": ["旅游用车"],
+            "hotel": "乌鲁木齐 · 云杉里酒店",
+            "meals": "早：不含 中：不含 晚：不含",
+        },
+        {
+            "dayNo": 2,
+            "title": "乌鲁木齐—赛里木湖",
+            "morning": "前往赛里木湖",
+            "midday": "湖畔午餐",
+            "afternoon": None,
+            "evening": None,
+            "transport": ["旅游用车"],
+            "hotel": "赛里木湖 · 湖畔星野度假酒店",
+            "meals": "早：酒店 中：路餐 晚：湖畔炖鱼",
+        },
+    ],
+}
 CUSTOMER = {
     "customerId": 4101,
     "companyName": "ACME 同业 · 北京营业部",
@@ -427,6 +455,35 @@ async def test_an_unknown_departure_is_no_departure_rather_than_an_error():
     missing = (404, {"code": 404, "message": "团期不存在", "data": None})
     client, _ = erp({"/login": LOGIN, "/period/detail": missing})
     assert await client.get_departure(999) is None
+
+
+async def test_get_itinerary_maps_the_erps_four_periods_into_one_text_a_day():
+    client, seen = erp({"/login": LOGIN, "/route/itinerary": ok(ITINERARY)})
+    itinerary = await client.get_itinerary(1021)
+    assert itinerary is not None
+    assert dict(seen[1].url.params) == {"routeId": "1021"}
+    assert (itinerary.route_id, itinerary.source, itinerary.source_ref) == (1021, "erp", "7")
+    assert [day.day_no for day in itinerary.days] == [1, 2]
+    assert itinerary.days[0].title == "乌鲁木齐集合"
+    # The periods the ERP filled in, in its own order; the empty one is left out entirely.
+    assert itinerary.days[0].text == "机场接站；送酒店办理入住；行前说明会"
+    assert itinerary.days[1].text == "前往赛里木湖；湖畔午餐"
+    assert itinerary.days[0].hotel == "乌鲁木齐 · 云杉里酒店"
+    assert itinerary.days[1].meals == "早：酒店 中：路餐 晚：湖畔炖鱼"
+
+
+@pytest.mark.parametrize("status", [404, 405])
+async def test_a_route_the_erp_writes_no_itinerary_for_is_no_itinerary(status):
+    # 405 is what an ERP that has not built ``route/itinerary`` yet answers, and it reads the
+    # same as a 404: this 线路 has no days here, and the host reads the attachment instead.
+    refused = (status, {"code": status, "message": "接口不存在", "data": None})
+    client, _ = erp({"/login": LOGIN, "/route/itinerary": refused})
+    assert await client.get_itinerary(1021) is None
+
+
+async def test_an_itinerary_with_no_days_is_no_itinerary():
+    client, _ = erp({"/login": LOGIN, "/route/itinerary": ok({"routeId": 1021, "days": []})})
+    assert await client.get_itinerary(1021) is None
 
 
 async def test_search_customers_maps_the_trade_customer_row():

@@ -120,6 +120,7 @@ backend = TourBackend(
     store_name=brand_name() if live else "",
     order_store_name=os.environ.get("TOUR_ERP_STORE_NAME", "").strip(),
     registry=registry,
+    state_dir=STATE_DIR,
 )
 agent = ShoppingAgent(
     backend=backend,
