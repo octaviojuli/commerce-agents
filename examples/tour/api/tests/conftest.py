@@ -3,6 +3,7 @@
 
 import asyncio
 import os
+import tempfile
 from datetime import date
 
 import pytest
@@ -20,8 +21,11 @@ CUSTOMER_ID = 4101
 CONTACT_MOBILE = "13900000001"
 
 # The suite runs on data/, never on an agency's own ERP: examples/tour/.env may name a live
-# one, and ``load_demo_env`` leaves a variable already in the environment alone.
+# one, and ``load_demo_env`` leaves a variable already in the environment alone. The sessions
+# and the memory a test writes go to a temporary state directory for the same reason: the
+# module builds both stores at import time, and a run must not touch a demo's own.
 os.environ["TOUR_ERP_BASE_URL"] = ""
+os.environ["TOUR_STATE_DIR"] = tempfile.mkdtemp(prefix="tour-state-")
 
 
 @pytest.fixture(scope="session")

@@ -45,6 +45,15 @@ def _models() -> tuple[str, str]:
     return model, memory_model
 
 
+def _retention_days() -> int | None:
+    """``TOUR_MEMORY_RETENTION_DAYS``, how long an extracted fact stays readable. Unset,
+    memory has no age limit; the agent's ``MemoryRuntime`` is what applies the window. A
+    value that is not a positive whole number of days fails the boot rather than being
+    read as no limit at all."""
+    raw = os.environ.get("TOUR_MEMORY_RETENTION_DAYS", "").strip()
+    return int(raw) if raw else None
+
+
 # 旅行社 vocabulary added to the policy-grounding lexicon: the rules an advisor is asked
 # to quote rather than paraphrase.
 _POLICY_TERMS = (
@@ -83,6 +92,7 @@ def build_shopping_config(*, live: bool = False) -> ShoppingAgentConfig:
     return ShoppingAgentConfig(
         model=model,
         memory_model=memory_model,
+        memory_retention_days=_retention_days(),
         brand_name=brand_name(),
         assistant_name=assistant_name(),
         brand_voice="像一位资深旅游顾问：直接、懂行、主动说明取舍",
