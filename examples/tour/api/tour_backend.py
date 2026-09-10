@@ -59,6 +59,7 @@ from shopping_agent import (
 )
 from shopping_agent.executor import ShoppingToolExecutor
 
+from .advisors import NEED_LOGIN, AdvisorLogin, AdvisorRegistry
 from .erp_client import (
     ORDER_STATUS,
     DepartureRecord,
@@ -749,9 +750,14 @@ class TourToolExecutor(ShoppingToolExecutor):
 
 class TourBackend(StorefrontBackend):
     """The advisor is the customer here: they search on behalf of the customer in front of
-    them, and the cart is the 预留 orders their conversation wrote. The ERP logs one
-    salesperson in and books for one 同行 customer, so ``customer_id`` and ``contact_mobile``
-    are the deployment's, not the model's."""
+    them, and the cart is the 预留 orders their conversation wrote. The ERP books for one 同行
+    customer, so ``customer_id`` is the deployment's and not the model's.
+
+    Which ERP account a call goes out on is the session's, not the deployment's: every read and
+    the one write run on the client the advisor's own login left in the ``registry``
+    (``advisors.py``), resolved per call by ``_erp_for``. ``erp`` is the deployment's own
+    account and is asked for two things only — the boot snapshot and the 同行 customer's code —
+    because both are the deployment's and neither belongs to a session."""
 
     def __init__(
         self,
@@ -766,6 +772,7 @@ class TourBackend(StorefrontBackend):
         customer_code: str = "",
         store_name: str = "",
         order_store_name: str = "",
+        registry: AdvisorRegistry | None = None,
     ) -> None:
         """``today`` is for a host that runs on its own clock; the default is the real date.
         ``allow_past`` lets the windows reach behind today, for a test environment whose 团期
@@ -776,8 +783,12 @@ class TourBackend(StorefrontBackend):
         ``csCode``, resolved to an id at boot; ``store_name`` is the agency's own name, which
         the fixture does not carry; ``order_store_name`` is the 门店 a 同行 order is written
         through, which the ERP requires and the fixture's profile must never supply; and the
-        advisor's name and department come from the ERP login rather than from users.json."""
+        advisor's name and department come from the ERP login rather than from users.json.
+
+        ``registry`` is where the logged-in advisors are; with none — the tests, and a host
+        that has not built one — every call goes out on ``erp``."""
         self.erp = erp
+        self.registry = registry
         self.today: date = today or _utcnow().date()
         self.live = live
         self.customer_id = customer_id
@@ -874,7 +885,7 @@ class TourBackend(StorefrontBackend):
         return cached
 
     async def _routes_for(
-        self, text: str, window: tuple[date, date], fetched: Fetched | None
+        self, erp: ErpClient, text: str, window: tuple[date, date], fetched: Fetched | None
     ) -> list[RouteRecord]:
         """The ERP's routes for one query text over one window, kept for the rest of the search
         run that asked: the relaxation steps below repeat a query the step before them already
@@ -882,7 +893,7 @@ class TourBackend(StorefrontBackend):
         key = (text, *window)
         cached = fetched.routes.get(key) if fetched is not None else None
         if cached is None:
-            cached = await self.erp.search_routes(
+            cached = await erp.search_routes(
                 RouteQuery(route_name=text, depart_from=window[0], depart_to=window[1])
             )
             self._routes.update({record.route_id: record for record in cached})
@@ -891,7 +902,7 @@ class TourBackend(StorefrontBackend):
         return cached
 
     async def _broad(
-        self, window: tuple[date, date], fetched: Fetched, *, read: bool
+        self, erp: ErpClient, window: tuple[date, date], fetched: Fetched, *, read: bool
     ) -> list[RouteRecord]:
         """Every route the ERP sells inside the window: an empty name is not a filter, so one
         read — paged to exhaustion inside the client — brings back the whole window's catalog,
@@ -902,14 +913,14 @@ class TourBackend(StorefrontBackend):
         departure list that follows. The last relaxation step widens to the whole default
         window, and one route query is all it may cost."""
         if read:
-            return await self._routes_for("", window, fetched)
+            return await self._routes_for(erp, "", window, fetched)
         seen: dict[int, RouteRecord] = {}
         for records in fetched.routes.values():
             seen.update({record.route_id: record for record in records})
         return list(seen.values())
 
     async def _listing_window(
-        self, window: tuple[date, date], fetched: Fetched
+        self, erp: ErpClient, window: tuple[date, date], fetched: Fetched
     ) -> dict[int, list[DepartureRecord]] | None:
         """Every 团期 the window holds, by route id, from one paged read the whole search run
         shares; ``None`` for a client that cannot read a window whole, whose departures are
@@ -921,7 +932,7 @@ class TourBackend(StorefrontBackend):
         relaxation widens by, so that step reads nothing: a window the run has already read
         around answers for any narrower one, filtered by date here. Those pages are the ERP's
         slowest read, so one of them saved is worth more than every other call in the pass."""
-        if not isinstance(self.erp, WindowReader):
+        if not isinstance(erp, WindowReader):
             return None
         grouped = fetched.windows.get(window)
         if grouped is not None:
@@ -933,7 +944,7 @@ class TourBackend(StorefrontBackend):
                 window[1] + timedelta(days=RELAX_WINDOW_DAYS),
             )
             held = {}
-            for row in sorted(await self.erp.list_window(*read), key=lambda row: row.depart_date):
+            for row in sorted(await erp.list_window(*read), key=lambda row: row.depart_date):
                 if row.route_id <= 0:
                     # A 团期 the ERP carries no ``routeId`` on belongs to no 线路 this side can
                     # name, price or book: it is a broken row, not a departure.
@@ -958,17 +969,18 @@ class TourBackend(StorefrontBackend):
         return next(spans, None)
 
     async def _departs(
-        self, record: RouteRecord, window: tuple[date, date], fetched: Fetched
+        self, erp: ErpClient, record: RouteRecord, window: tuple[date, date], fetched: Fetched
     ) -> bool:
         """Whether the route has a 团期 inside the window. ``route/list``'s own date filter is
         loose — it answers with routes that have none (``docs/erp-contract.md``) — and a card
         built from one of those carries no date, no seat count and no price. The window's read
         is what answers this, so no route costs a call of its own and one the read did not name
         simply has no departures; the record this route becomes reads the same rows again."""
-        return bool(await self._list(record, window, fetched))
+        return bool(await self._list(erp, record, window, fetched))
 
     async def _search(
         self,
+        erp: ErpClient,
         stated: Request,
         fetched: Fetched | None = None,
         *,
@@ -990,26 +1002,27 @@ class TourBackend(StorefrontBackend):
         ``fetched`` is one search run's own reads. A caller that passes none — a pasted id, the
         boot snapshot — takes the named query alone and reads no departures."""
         window = self._window(stated.depart_from, stated.depart_to)
-        records = await self._routes_for(stated.text, window, fetched)
+        records = await self._routes_for(erp, stated.text, window, fetched)
         fits = [record for record in records if _fits(record, self._facets(record), stated)]
         if fetched is None:
             return fits
-        found = [record for record in fits if await self._departs(record, window, fetched)]
+        found = [record for record in fits if await self._departs(erp, record, window, fetched)]
         if not stated.text or len(found) >= MIN_RESULTS:
             return found
         seen = {record.route_id for record in found}
-        for record in await self._broad(window, fetched, read=broad_read):
+        for record in await self._broad(erp, window, fetched, read=broad_read):
             if len(found) >= MAX_BROAD_MATCHES:
                 break
             facets = self._facets(record)
             if record.route_id in seen or not _mentions(record, facets, stated.text):
                 continue
-            if _fits(record, facets, stated) and await self._departs(record, window, fetched):
+            if _fits(record, facets, stated) and await self._departs(erp, record, window, fetched):
                 found.append(record)
         return found
 
     async def _list(
         self,
+        erp: ErpClient,
         record: RouteRecord,
         window: tuple[date, date],
         fetched: Fetched | None = None,
@@ -1022,14 +1035,12 @@ class TourBackend(StorefrontBackend):
         if fetched is not None:
             if key in fetched.departures:
                 return fetched.departures[key]
-            grouped = await self._listing_window(window, fetched)
+            grouped = await self._listing_window(erp, window, fetched)
             if grouped is not None:
                 rows = grouped.get(record.route_id, [])
                 fetched.departures[key] = rows
                 return rows
-        rows = await self.erp.list_departures(
-            record.route_id, record.route_name, window[0], window[1]
-        )
+        rows = await erp.list_departures(record.route_id, record.route_name, window[0], window[1])
         for row in rows:
             # A listed row carries no price; a detail read already cached one, so keep it.
             self._departures.setdefault(row.period_id, row)
@@ -1037,7 +1048,7 @@ class TourBackend(StorefrontBackend):
             fetched.departures[key] = rows
         return rows
 
-    async def _route(self, route_id: int) -> RouteRecord | None:
+    async def _route(self, erp: ErpClient, route_id: int) -> RouteRecord | None:
         """The route record, from the search that returned it or, for an id this process has
         not seen, from one broad ERP search over the default window: an empty name is not a
         filter, so it brings back every route selling seats in the next couple of months. The
@@ -1057,10 +1068,10 @@ class TourBackend(StorefrontBackend):
             return None
         default = self._default_context()
         await self._search(
-            Request(text="", depart_from=default.depart_from, depart_to=default.depart_to)
+            erp, Request(text="", depart_from=default.depart_from, depart_to=default.depart_to)
         )
         if route_id not in self._routes:
-            whole = await self.erp.search_routes(RouteQuery())
+            whole = await erp.search_routes(RouteQuery())
             self._routes.update({record.route_id: record for record in whole})
         if route_id not in self._routes:
             self._missing_routes.add(route_id)
@@ -1077,7 +1088,7 @@ class TourBackend(StorefrontBackend):
         cached = self._departures.get(row.period_id)
         return (cached.company_id if cached is not None else 0) or row.company_id
 
-    async def _quote(self, row: DepartureRecord) -> Quote | None:
+    async def _quote(self, erp: ErpClient, row: DepartureRecord) -> Quote | None:
         """This customer's 同业价 for one departure, asked in the departure's own department. A
         团期 the catalog has no price row for answers not-found, which is a gap in the catalog
         and not a failed call. With no customer resolved there is nobody to quote for, and the
@@ -1085,25 +1096,28 @@ class TourBackend(StorefrontBackend):
         if self.customer_id <= 0:
             return None
         try:
-            return await self.erp.quote(row.period_id, self.customer_id, self._department(row))
+            return await erp.quote(row.period_id, self.customer_id, self._department(row))
         except ErpNotFound:
             return None
 
-    async def _price_one(self, row: DepartureRecord, gate: asyncio.Semaphore) -> None:
+    async def _price_one(
+        self, erp: ErpClient, row: DepartureRecord, gate: asyncio.Semaphore
+    ) -> None:
         """One departure's two prices, kept in the caches the records read through: the 市场价
         and the seat counts from its detail, then the 同业价 the order would be booked at. A row
         the ERP cannot detail keeps no 市场价, and one it has no price row for keeps no 同业价;
         the record then says which of the two its numbers are."""
         async with gate:
             if self._priced(row) is None:
-                detailed = await self.erp.get_departure(row.period_id)
+                detailed = await erp.get_departure(row.period_id)
                 if detailed is not None:
                     self._departures[detailed.period_id] = detailed
             if row.period_id not in self._quotes:
-                self._quotes[row.period_id] = await self._quote(row)
+                self._quotes[row.period_id] = await self._quote(erp, row)
 
     async def _prices(
         self,
+        erp: ErpClient,
         rows: list[DepartureRecord],
         middle: date,
         limit: int,
@@ -1117,7 +1131,7 @@ class TourBackend(StorefrontBackend):
         by_distance = sorted(rows, key=lambda row: abs((row.depart_date - middle).days))
         nearest = by_distance[: max(0, limit)]
         gate = gate or asyncio.Semaphore(PRICE_CONCURRENCY)
-        await asyncio.gather(*(self._price_one(row, gate) for row in nearest))
+        await asyncio.gather(*(self._price_one(erp, row, gate) for row in nearest))
 
     # -- catalog records -----------------------------------------------------------------
 
@@ -1198,6 +1212,7 @@ class TourBackend(StorefrontBackend):
 
     async def _families(
         self,
+        erp: ErpClient,
         records: list[RouteRecord],
         stated: Request,
         context: SearchContext,
@@ -1209,11 +1224,11 @@ class TourBackend(StorefrontBackend):
     ) -> list[Product]:
         window = self._window(stated.depart_from, stated.depart_to)
         middle = window[0] + (window[1] - window[0]) / 2
-        listed = [(record, await self._list(record, window, fetched)) for record in records]
+        listed = [(record, await self._list(erp, record, window, fetched)) for record in records]
         # One semaphore for the whole shortlist: a card costs up to ``prices`` × 2 calls, and
         # priced route after route the advisor would wait for their sum.
         gate = asyncio.Semaphore(PRICE_CONCURRENCY)
-        await asyncio.gather(*(self._prices(rows, middle, prices, gate) for _, rows in listed))
+        await asyncio.gather(*(self._prices(erp, rows, middle, prices, gate) for _, rows in listed))
         found = []
         for record, rows in listed:
             dates = [row.depart_date for row in rows]
@@ -1227,6 +1242,7 @@ class TourBackend(StorefrontBackend):
 
     async def _step(
         self,
+        erp: ErpClient,
         relaxed: Request,
         stated: Request,
         context: SearchContext,
@@ -1239,9 +1255,9 @@ class TourBackend(StorefrontBackend):
         """One relaxation step's own records: the routes this pass finds that the passes before
         it did not, each saying what it does not meet against everything the advisor stated."""
         seen = {product.product_id for product in found}
-        records = await self._search(relaxed, fetched, broad_read=broad_read)
+        records = await self._search(erp, relaxed, fetched, broad_read=broad_read)
         fresh = [record for record in records if route_id_of(record) not in seen]
-        return await self._families(fresh, relaxed, context, match, stated, fetched=fetched)
+        return await self._families(erp, fresh, relaxed, context, match, stated, fetched=fetched)
 
     async def search_products(
         self,
@@ -1275,15 +1291,22 @@ class TourBackend(StorefrontBackend):
         # asked for once however many steps repeat them, and so is the window's whole 团期 read;
         # the broad pass costs at most two reads for the whole run, since the window widens once.
         fetched = Fetched()
+        erp = self._erp_for(session)
         found = await self._families(
-            await self._search(stated, fetched), stated, context, "exact", None, fetched=fetched
+            erp,
+            await self._search(erp, stated, fetched),
+            stated,
+            context,
+            "exact",
+            None,
+            fetched=fetched,
         )
         relaxed = stated
         for widen, match in _RELAXATIONS:
             if len(found) >= MIN_RESULTS:
                 break
             relaxed = widen(relaxed)
-            found += await self._step(relaxed, stated, context, match, found, fetched)
+            found += await self._step(erp, relaxed, stated, context, match, found, fetched)
         if len(found) < MIN_RESULTS:
             # The fourth step: the whole default window in place of the advisor's, so a
             # destination whose 团期 all fall outside their dates is still quotable and the note
@@ -1292,7 +1315,7 @@ class TourBackend(StorefrontBackend):
             default = self._default_context()
             relaxed = _whole_window(relaxed, default.depart_from, default.depart_to)
             found += await self._step(
-                relaxed, stated, context, "adjacent_date", found, fetched, broad_read=False
+                erp, relaxed, stated, context, "adjacent_date", found, fetched, broad_read=False
             )
         if stated.family:
             # 亲子 is a preference and not a condition: the lines whose tags claim it come
@@ -1318,45 +1341,50 @@ class TourBackend(StorefrontBackend):
         )
 
     async def _route_details(
-        self, route_id: int, context: SearchContext, *, prices: int = MAX_DETAIL_PRICES
+        self,
+        erp: ErpClient,
+        route_id: int,
+        context: SearchContext,
+        *,
+        prices: int = MAX_DETAIL_PRICES,
     ) -> ProductDetails | None:
-        record = await self._route(route_id)
+        record = await self._route(erp, route_id)
         if record is None:
             return None
         window = self._window(
             context.depart_from - timedelta(days=DETAIL_PAD_DAYS),
             context.depart_to + timedelta(days=DETAIL_PAD_DAYS),
         )
-        rows = await self._list(record, window)
+        rows = await self._list(erp, record, window)
         if not rows:
             # The searched window holds no 团期 of the route the advisor named. Quote the
             # default window instead, once: the dates say the route runs elsewhere, which
             # the advisor can act on, and a family with no variants does not.
             default = self._default_context()
             window = self._window(default.depart_from, default.depart_to)
-            rows = await self._list(record, window)
+            rows = await self._list(erp, record, window)
         middle = window[0] + (window[1] - window[0]) / 2
         if len(rows) > MAX_VARIANTS:
             nearest = sorted(rows, key=lambda row: abs((row.depart_date - middle).days))
             rows = nearest[:MAX_VARIANTS]
         rows = sorted(rows, key=lambda row: row.depart_date)
-        await self._prices(rows, middle, prices)
+        await self._prices(erp, rows, middle, prices)
         details = self._details(record, self._family(record, rows, context, "exact", None))
         details.variants = [self._variant(row, record, context) for row in rows]
         return details
 
     async def _departure_details(
-        self, period_id: int, context: SearchContext
+        self, erp: ErpClient, period_id: int, context: SearchContext
     ) -> ProductDetails | None:
         """The one departure, in the same two calls a route's variants take: its detail for the
         市场价 and the seat counts, and its 同业价 for the customer this deployment books for. A
         departure the ERP has no price row for keeps the 市场价 it carries."""
-        row = await self.erp.get_departure(period_id)
+        row = await erp.get_departure(period_id)
         if row is None:
             return None
         self._departures[row.period_id] = row
-        self._quotes[row.period_id] = await self._quote(row)
-        record = await self._route(row.route_id)
+        self._quotes[row.period_id] = await self._quote(erp, row)
+        record = await self._route(erp, row.route_id)
         variant = self._variant(row, record, context)
         return ProductDetails(
             **variant.model_dump(),
@@ -1370,10 +1398,10 @@ class TourBackend(StorefrontBackend):
         context = self._context(session)
         route_id = _erp_id(product_id, ROUTE_PREFIX)
         if route_id is not None:
-            return await self._route_details(route_id, context)
+            return await self._route_details(self._erp_for(session), route_id, context)
         period_id = _erp_id(product_id, DEPARTURE_PREFIX)
         if period_id is not None:
-            return await self._departure_details(period_id, context)
+            return await self._departure_details(self._erp_for(session), period_id, context)
         return None
 
     # -- what the conversation has shown the advisor ----------------------------------------
@@ -1402,21 +1430,50 @@ class TourBackend(StorefrontBackend):
     def _advisor(self, session: ShoppingSessionContext) -> UserPreferences:
         return preferences_of(self._users, session.user_id)
 
+    def _login_for(self, session: ShoppingSessionContext) -> AdvisorLogin | None:
+        """The session advisor's own ERP login, or ``None`` when they have none: nobody signed
+        in on this process, the token has run out, or there is no registry at all."""
+        return self.registry.get(session.user_id) if self.registry is not None else None
+
+    def _erp_for(self, session: ShoppingSessionContext) -> ErpClient:
+        """The ERP client this session's calls go out on: the advisor's own, on the token their
+        login bought. Against the agency's own ERP, where the host logs each advisor in, that is
+        the only client there is — a session whose advisor has no live login is told to sign in
+        again, and the executor relays that into the conversation. The fixtures hold no tokens,
+        so every session reads through the one client the host built, and so does a backend
+        built with no registry at all."""
+        login = self._login_for(session)
+        if login is not None:
+            return login.client
+        if self.live and self.registry is not None:
+            raise ErpAuth(NEED_LOGIN)
+        return self.erp
+
     async def _identify(self) -> dict[str, Any]:
-        """The salesperson the ERP logged in, from the client that holds the login. It is
-        empty until that client has made its first call, so a client that can log in on
-        demand is asked to; the fixtures log nobody in and answer nothing here."""
+        """The salesperson the deployment's own client logged in, which is who an advisor with
+        no login of their own falls back to. It is empty until that client has made its first
+        call, so a client that can log in on demand is asked to; the fixtures log nobody in and
+        answer nothing here."""
         info = getattr(self.erp, "user_info", None) or {}
         identify = getattr(self.erp, "identify", None)
         if not info and identify is not None:
             info = await identify() or {}
         return dict(info)
 
+    def _contact_mobile(self, session: ShoppingSessionContext) -> str:
+        """The 联系人 mobile on the order: the one this advisor logged in with, and the
+        deployment's own where there is no login to read it off."""
+        login = self._login_for(session)
+        return (login.mobile if login is not None else "") or self.contact_mobile
+
     async def _contact_name(self, session: ShoppingSessionContext) -> str:
-        """Who the ERP writes on the order: the salesperson the client logged in as, or — on
-        the fixtures, which log nobody in — the advisor's own name from the profile. The
-        fixture name is never written onto a real order, so a live client that names nobody
-        refuses the write instead."""
+        """Who the ERP writes on the order: the salesperson whose login this session is, then
+        the account the client itself logged in as, and — on the fixtures, which log nobody in
+        — the advisor's own name from the profile. The fixture name is never written onto a
+        real order, so a live client that names nobody refuses the write instead."""
+        login = self._login_for(session)
+        if login is not None and login.name:
+            return login.name
         logged_in = str((await self._identify()).get("userName") or "")
         if logged_in:
             return logged_in
@@ -1435,10 +1492,10 @@ class TourBackend(StorefrontBackend):
         profile = self._advisor(session)
         return profile.preferences.get("门店", "").split("，")[0] or self.store_name
 
-    async def _line(self, hold: Hold, order: OrderRecord) -> CartItem:
+    async def _line(self, erp: ErpClient, hold: Hold, order: OrderRecord) -> CartItem:
         row = self._departures.get(hold.period_id)
         if row is None:
-            row = await self.erp.get_departure(hold.period_id)
+            row = await erp.get_departure(hold.period_id)
             if row is not None:
                 self._departures[row.period_id] = row
         quantity = max(1, order.adults + order.children + order.elders)
@@ -1456,15 +1513,22 @@ class TourBackend(StorefrontBackend):
         )
 
     async def get_cart(self, session: ShoppingSessionContext) -> Cart:
+        """The conversation's own 预留 orders as they stand in the ERP. A conversation that
+        wrote none costs no call and needs no login: the advisor whose token has run out is
+        told so by the read that needs one, not by an empty cart."""
+        holds = self._live_holds(session.session_id)
+        if not holds:
+            return Cart(items=[], currency=CURRENCY)
+        erp = self._erp_for(session)
         items = []
         standing = []
-        for hold in self._live_holds(session.session_id):
-            order = await self.erp.get_order(hold.order_id)
+        for hold in holds:
+            order = await erp.get_order(hold.order_id)
             if order is None:
                 continue  # written, then removed inside the ERP: it is no longer a line
             hold.order_no = order.order_no
             standing.append(hold)
-            items.append(await self._line(hold, order))
+            items.append(await self._line(erp, hold, order))
         self._holds[session.session_id] = standing
         return Cart(items=items, currency=CURRENCY)
 
@@ -1486,14 +1550,15 @@ class TourBackend(StorefrontBackend):
             raise NotOffered("未配置下单客户（TOUR_ERP_CUSTOMER_CODE）")
         if self.live and not self.order_store_name:
             raise NotOffered("未配置下单门店（TOUR_ERP_STORE_NAME）")
-        row = self._departures.get(period_id) or await self.erp.get_departure(period_id)
+        erp = self._erp_for(session)
+        row = self._departures.get(period_id) or await erp.get_departure(period_id)
         if row is None:
             raise ErpNotFound(f"找不到该团期：{period_id}")
         self._departures[period_id] = row
         context = self._context(session)
         heads = max(1, quantity)
         children = min(context.children, heads - 1)
-        result = await self.erp.create_order(
+        result = await erp.create_order(
             OrderRequest(
                 period_id=period_id,
                 customer_id=self.customer_id,
@@ -1504,7 +1569,7 @@ class TourBackend(StorefrontBackend):
                 rooms=0,
                 single_room_diff_count=0,
                 contact_name=await self._contact_name(session),
-                contact_mobile=self.contact_mobile,
+                contact_mobile=self._contact_mobile(session),
                 store_name=self._store_name(session),
             )
         )
@@ -1533,35 +1598,46 @@ class TourBackend(StorefrontBackend):
     # -- advisor, orders, help content, fulfillment ---------------------------------------
 
     async def get_preferences(self, session: ShoppingSessionContext) -> UserPreferences:
-        """Who the advisor is. Against the agency's own ERP that is the account the host
-        logged in — the salesperson's name and the department the login landed in — and
-        nothing else: the habits in ``users.json`` are this example's own invention, and a
-        real advisor's belong in memory, which they write themselves. The fixtures answer
-        with the profile."""
+        """Who the advisor is. Against the agency's own ERP that is their own login — the
+        salesperson's name and the department it landed in — and nothing else: the habits in
+        ``users.json`` are this example's own invention, and a real advisor's belong in memory,
+        which they write themselves. The fixtures answer with the profile."""
         if not self.live:
             return self._advisor(session)
-        user_info = await self._identify()
-        department = str(user_info.get("companyName") or "")
+        login = self._login_for(session)
+        if login is not None:
+            name, department = login.name, login.department
+        else:
+            user_info = await self._identify()
+            name = str(user_info.get("userName") or "")
+            department = str(user_info.get("companyName") or "")
         return UserPreferences(
             user_id=session.user_id,
-            display_name=str(user_info.get("userName") or "") or None,
+            display_name=name or None,
             loyalty_tier=department or None,
             default_location=department or None,
             preferences={},
         )
 
     async def get_account_context(self, session: ShoppingSessionContext) -> dict[str, Any] | None:
-        """``advisor`` is the salesperson the ERP logged in, ``department`` the one the login
-        landed in and ``departments`` how many the account reads across; a client that logs
-        nobody in — the fixtures — is one department, the store's own. ``customer`` is the
-        同行 customer every quote and order is made for, once the code has resolved to one."""
-        user_info = await self._identify()
-        companies = getattr(self.erp, "companies", None) or ()
+        """``advisor`` is the salesperson whose login this session is, ``department`` the one
+        that login landed in and ``departments`` how many the account reads across; a session
+        with no login behind it — the fixtures — reads the client's own account, and one
+        department, the store's own. ``customer`` is the 同行 customer every quote and order is
+        made for, once the code has resolved to one."""
+        login = self._login_for(session)
+        if login is not None:
+            name, department, departments = login.name, login.department, login.departments
+        else:
+            user_info = await self._identify()
+            name = str(user_info.get("userName") or "")
+            department = str(user_info.get("companyName") or "")
+            departments = len(getattr(self.erp, "companies", None) or ()) or 1
         return {
-            "advisor": str(user_info.get("userName") or "") or session.user_id,
+            "advisor": name or session.user_id,
             "store": self._store_name(session),
-            "department": str(user_info.get("companyName") or "") or self.store_name,
-            "departments": len(companies) or 1,
+            "department": department or self.store_name,
+            "departments": departments,
             "customer": self.customer_label,
             "active_holds": len(self._live_holds(session.session_id)),
         }
@@ -1595,19 +1671,20 @@ class TourBackend(StorefrontBackend):
         )
 
     async def get_orders(self, session: ShoppingSessionContext, limit: int = 5) -> list[Order]:
-        """The salesperson's own orders: the ERP's credentials name one, so there is no id
-        to filter on here."""
-        del session
-        return [self._order(record) for record in await self.erp.list_orders()][:limit]
+        """The salesperson's own orders: the login behind the session names one, so there is no
+        id to filter on here."""
+        return [self._order(record) for record in await self._erp_for(session).list_orders()][
+            :limit
+        ]
 
     async def get_order(self, session: ShoppingSessionContext, order_id: str) -> Order | None:
         """One order by the ERP's own id, or by the 订单号 the advisor reads off a screen."""
-        del session
+        erp = self._erp_for(session)
         numeric = _int_or_none(order_id)
         if numeric is not None:
-            record = await self.erp.get_order(numeric)
+            record = await erp.get_order(numeric)
             return None if record is None else self._order(record)
-        listed = [row for row in await self.erp.list_orders() if row.order_no == order_id]
+        listed = [row for row in await erp.list_orders() if row.order_no == order_id]
         return self._order(listed[0]) if listed else None
 
     async def search_policies(self, session: ShoppingSessionContext, query: str) -> list[Policy]:
@@ -1661,13 +1738,13 @@ class TourBackend(StorefrontBackend):
         try:
             if self.live:
                 fetched = Fetched()
-                for record in await self._search(stated, fetched):
-                    rows = await self._list(record, window, fetched)
+                for record in await self._search(self.erp, stated, fetched):
+                    rows = await self._list(self.erp, record, window, fetched)
                     family = self._family(record, rows, context, "exact", None)
                     listings[family.product_id] = self._details(record, family)
             else:
-                for record in await self._search(stated):
-                    details = await self._route_details(record.route_id, context)
+                for record in await self._search(self.erp, stated):
+                    details = await self._route_details(self.erp, record.route_id, context)
                     if details is None:
                         continue
                     listings[details.product_id] = details

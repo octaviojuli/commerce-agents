@@ -8,6 +8,12 @@ merchant portal in this example.
 
     uvicorn tour.api.main:app --app-dir examples --reload --port 8004
 
+Each advisor signs in with their own ERP mobile and password (``POST /api/login``): the token
+that buys stays in this process, keyed by the ERP employee, and so do their sessions and their
+memory, so two advisors of one deployment share nothing. ``api/advisors.py`` holds the logins;
+the deployment's own account in the environment boots the catalog and resolves the 同行
+customer, and answers no session.
+
 An advisor keeps the workbench open all day, so this example is the one whose sessions and
 memory are on disk: ``TOUR_STATE_DIR`` (``data/.state/`` unset) holds ``sessions.sqlite``,
 which ``api/store.py``'s ``SqliteSessionStore`` writes, and ``memory-store.json``, which
@@ -17,14 +23,16 @@ conversation by sending its id in ``X-Session-Id`` and needs no route to do it.
 
 from __future__ import annotations
 
+import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
+from starlette.responses import JSONResponse
 
 from commerce_common.memory import JsonFileMemoryStore
 from demo_common import (
@@ -37,8 +45,9 @@ from demo_common import (
 )
 from shopping_agent_runtime import ShoppingAgent
 
+from .advisors import NEED_LOGIN, AdvisorLogin, AdvisorRegistry, FixtureAdvisorRegistry
 from .agent_config import brand_name, build_shopping_config
-from .erp_client import ErpClient
+from .erp_client import ErpAuth, ErpClient, ErpError, ErpThrottled
 from .http_erp import HttpErpClient
 from .mock_erp import MockErpClient
 from .shortlist import build_shortlist_extension
@@ -53,8 +62,16 @@ load_demo_env(DATA_DIR.parent)
 STATE_DIR = Path(os.environ.get("TOUR_STATE_DIR", "").strip() or DATA_DIR / ".state")
 STATE_DIR.mkdir(parents=True, exist_ok=True)
 
+log = logging.getLogger(__name__)
+
 # How many conversations the history list carries at most.
 MAX_HISTORY = 50
+
+# What a live deployment answers the demo's own session start with: a session belongs to the
+# ERP employee a login named, and nothing else may name one.
+LOGIN_FIRST = "请通过 /api/login 登录"
+# The status one ERP refusal of a login is answered with; anything else the ERP does is 500.
+_LOGIN_STATUS: dict[type[ErpError], int] = {ErpAuth: 401, ErpThrottled: 429}
 
 # The 同行 customer the fixtures book for; a live deployment names its own by 客户编码.
 MOCK_CUSTOMER_ID = 4101
@@ -62,12 +79,13 @@ MOCK_CUSTOMER_ID = 4101
 
 def build_erp() -> ErpClient:
     """A real 旅行社 ERP when TOUR_ERP_BASE_URL names one, the fixtures in ``data/``
-    otherwise. The login is the advisor's own ERP account, the mobile and the password alone:
-    the ERP picks the department and the client switches into a 团期's own for a write.
-    Neither credential ever reaches the model."""
+    otherwise. The account is the deployment's own, the mobile and the password alone, and it
+    answers no session: it boots the listing snapshot and resolves the 同行 customer, and an
+    advisor's own login is what their conversation reads through. Neither credential ever
+    reaches the model."""
     base_url = os.environ.get("TOUR_ERP_BASE_URL", "").strip()
     if base_url:
-        return HttpErpClient(
+        return HttpErpClient.from_login(
             base_url, os.environ["TOUR_ERP_MOBILE"], os.environ["TOUR_ERP_PASSWORD"]
         )
     return MockErpClient()
@@ -83,6 +101,14 @@ erp = build_erp()
 # because the agency's rules are in a knowledge base this deployment does not read.
 # TOUR_ERP_ALLOW_PAST lists departures that already left, for a beta with no future ones.
 live = isinstance(erp, HttpErpClient)
+# Where the logged-in advisors are. Against the agency's own ERP a login is the advisor's own
+# mobile and password, forwarded once and kept as a token; on the fixtures it is a profile in
+# data/users.json and any password, because a fixture has none to check against.
+registry: AdvisorRegistry = (
+    AdvisorRegistry(os.environ["TOUR_ERP_BASE_URL"].strip())
+    if live
+    else FixtureAdvisorRegistry(erp)
+)
 backend = TourBackend(
     erp,
     customer_id=0 if live else MOCK_CUSTOMER_ID,
@@ -92,6 +118,7 @@ backend = TourBackend(
     live=live,
     store_name=brand_name() if live else "",
     order_store_name=os.environ.get("TOUR_ERP_STORE_NAME", "").strip(),
+    registry=registry,
 )
 agent = ShoppingAgent(
     backend=backend,
@@ -137,6 +164,37 @@ host = build_storefront_host(
 )
 app = host.app
 
+
+def install_login_guard(current: FastAPI) -> None:
+    """The two things a live deployment adds around the login.
+
+    The demo's own session start goes. ``POST /api/session`` binds a session to whatever
+    principal the caller names, which is the demo's stand-in for a credential, and against the
+    agency's own ERP the principal is the employee behind a login. So that one route answers 403
+    and the workbench signs in through ``/api/login`` instead; every other route stands,
+    resuming a session by its id included.
+
+    And a route that runs into a login the ERP no longer accepts answers 401 with the ERP's own
+    words, rather than an outage, so the workbench asks ``/api/advisor`` and shows its sign-in
+    screen. Inside the conversation the same text is what the executor relays."""
+
+    @current.middleware("http")
+    async def require_login(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        if request.method == "POST" and request.url.path == "/api/session":
+            return JSONResponse({"detail": LOGIN_FIRST}, status_code=403)
+        return await call_next(request)
+
+    @current.exception_handler(ErpAuth)
+    async def sign_in_again(request: Request, error: Exception) -> Response:
+        del request
+        return JSONResponse({"detail": str(error)}, status_code=401)
+
+
+if live:
+    install_login_guard(app)
+
 # The listing snapshot has to be there before the first catalog read, and
 # build_storefront_host takes a closed on_startup list, so it is loaded by wrapping the
 # lifespan the app already has.
@@ -151,6 +209,81 @@ async def _lifespan(current: FastAPI) -> AsyncIterator[None]:
 
 
 app.router.lifespan_context = _lifespan
+
+
+class LoginRequest(BaseModel):
+    """The advisor's own ERP account. Neither value is stored: they go to the ERP's own
+    ``POST /login`` once, and this process keeps the token it answers with."""
+
+    mobile: str = Field(min_length=1, max_length=32)
+    password: str = Field(min_length=1, max_length=128)
+
+
+def advisor_payload(login: AdvisorLogin) -> dict:
+    """Who the ERP says the logged-in advisor is: the employee their session is keyed by, their
+    name, the department the login landed in, and how many they read across."""
+    return {
+        "user_id": login.user_id,
+        "name": login.name,
+        "department": login.department,
+        "departments": login.departments,
+    }
+
+
+@app.post("/api/login")
+async def login_advisor(request: LoginRequest) -> dict:
+    """Sign the advisor in against the ERP and open a conversation for them. The session is
+    keyed by the ERP employee, so their earlier conversations and what is remembered about them
+    are theirs and nobody else's. The ERP owns the throttle — ten failures lock the mobile for
+    fifteen minutes — and its refusal is answered with its own status and its own Chinese
+    message; nothing about the attempt but the outcome is logged."""
+    try:
+        advisor = await registry.login(request.mobile, request.password)
+    except ErpError as error:
+        status = next((code for cls, code in _LOGIN_STATUS.items() if isinstance(error, cls)), 500)
+        log.warning("advisor login failed status=%d", status)
+        raise HTTPException(status_code=status, detail=str(error)) from None
+    record = host.sessions.start(advisor.user_id)
+    return {"session_id": record.session_id, "advisor": advisor_payload(advisor)}
+
+
+@app.post("/api/logout")
+async def logout_advisor(record: host.CurrentSession) -> dict:
+    """Drop the advisor's token. The conversation stays where it is — it is on disk, and its
+    own reads say to sign in again — and signing in opens a new one."""
+    registry.logout(record.user_id)
+    return {"ok": True}
+
+
+@app.get("/api/advisor")
+async def current_advisor(record: host.CurrentSession) -> dict:
+    """Whether the session's advisor still holds an ERP token, and who the ERP says they are.
+    ``logged_in`` is false once the token is gone — a restart, its eight hours, a logout — and
+    that is what puts the workbench back on its sign-in screen; the conversation itself is
+    still there to carry on with."""
+    login = registry.get(record.user_id)
+    if login is None:
+        return {
+            "logged_in": False,
+            "user_id": record.user_id,
+            "name": "",
+            "department": "",
+            "departments": 0,
+        }
+    return {"logged_in": True, **advisor_payload(login)}
+
+
+@app.post("/api/sessions/new")
+async def new_session(record: host.CurrentSession) -> dict:
+    """Another conversation for the advisor already signed in. The credentials are not in the
+    browser to start one with, and the demo's own start route names a principal, so a 新会话
+    is asked for on the session the advisor holds and opened under the same ERP employee. A
+    login that is gone — a restart, its eight hours, a logout — is a 401 in the same words the
+    conversation uses, and the workbench goes back to its sign-in screen."""
+    if registry.get(record.user_id) is None:
+        raise HTTPException(status_code=401, detail=NEED_LOGIN)
+    fresh = host.sessions.start(record.user_id)
+    return {"session_id": fresh.session_id}
 
 
 @app.get("/api/sessions")

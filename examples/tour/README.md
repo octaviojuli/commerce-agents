@@ -4,8 +4,8 @@ The tour example runs the shopping agent for a travel agency's store advisor (�
 sells 散拼团 to the customer sitting in front of them: the advisor states the need in
 Chinese, the agent searches 线路 (routes), opens a 线路's dated 团期 (departures) priced for
 that party, and writes a 预留 order in the agency's ERP while the customer decides. The
-advisor is the user, not the traveler, and the advisor is also the ERP's salesperson: the
-deployment logs in with their account, so the reads span every department that account is
+advisor is the user, not the traveler, and the advisor is also the ERP's salesperson: they
+sign in with their own ERP account, so the reads span every department that account is
 authorised for and a quote or an order is written in the 团期's own. A 团期 has two prices —
 the 市场价 it lists, which the customer's share page shows, and the 同业价 the ERP quotes this
 customer — and what the advisor is quoted, and what an order is booked at, is the 同业价.
@@ -43,8 +43,8 @@ The same file carries the ERP block, which decides what is behind the seam:
 | Variable | What it names |
 |---|---|
 | `TOUR_ERP_BASE_URL` | the ERP's `/aicli` root, HTTPS in production; setting it is what puts the example in live mode |
-| `TOUR_ERP_MOBILE` | the advisor's ERP login, a mainland mobile number; also the contact written on every order |
-| `TOUR_ERP_PASSWORD` | its password; ten failed logins lock the account for fifteen minutes |
+| `TOUR_ERP_MOBILE` | the deployment's own ERP account, a mainland mobile number; it boots the catalog snapshot and resolves the 同行 customer, and answers no advisor's session |
+| `TOUR_ERP_PASSWORD` | its password; ten failed logins lock an account for fifteen minutes |
 | `TOUR_ERP_CUSTOMER_CODE` | the 同行 customer's 客户编码 (the ERP's `csCode`), resolved to one customer at boot |
 | `TOUR_ERP_STORE_NAME` | the 门店 a 同行 order is written through, which the ERP requires |
 | `TOUR_ERP_ALLOW_PAST` | `1` lists departures that already left, for a beta with no future ones |
@@ -54,11 +54,54 @@ The same file carries the ERP block, which decides what is behind the seam:
 | `TOUR_MEMORY_RETENTION_DAYS` | how many days a remembered fact stays readable; unset, no age limit |
 
 Unset `TOUR_ERP_BASE_URL` and `api/main.py` builds `MockErpClient` over `data/`, which is
-what the demo runs on. Set it and `api/main.py` builds `HttpErpClient` and logs in with
-those credentials, and the example is then talking to a live ERP: the third smoke turn
-below writes a real 预留 order on it, for the customer `TOUR_ERP_CUSTOMER_CODE` names. There
-is no call that takes an order back, so the advisor deletes it in the ERP's backstage. The
-login, the password and the token they buy stay with the host and never reach the model.
+what the demo runs on. Set it and `api/main.py` builds `HttpErpClient` on those credentials,
+and the example is then talking to a live ERP: the third smoke turn below writes a real 预留
+order on it, for the customer `TOUR_ERP_CUSTOMER_CODE` names. There is no call that takes an
+order back, so the advisor deletes it in the ERP's backstage. Every credential and every token
+stays with the host and never reaches the model.
+
+## Login
+
+Each advisor signs in with their own ERP mobile and password. The pair goes once to the ERP's
+own `POST /login` and nothing here keeps it: what stays is the token the ERP answered with, in
+`api/advisors.py`'s `AdvisorRegistry`, keyed by the ERP employee behind the login
+(`erp-{userId}`). A password is not stored, not logged and never reaches the model; a login
+writes one line — `advisor login ok user=erp-6`, or `advisor login failed status=401`.
+
+    POST /api/login    {mobile, password} → {session_id, advisor{user_id, name, department, departments}}
+    GET  /api/advisor   whether that advisor still holds a token, and who the ERP says they are
+    POST /api/logout    drop the token; the conversation stays
+    POST /api/sessions/new  another conversation for the same advisor → {session_id}; 401 once the token is gone
+
+A refusal is the ERP's own: 401 with its Chinese message for a wrong password, 429 for the
+throttle it owns — ten failures per mobile and IP lock the account for fifteen minutes, so
+nothing here counts attempts — and 500 for an ERP that cannot be reached.
+
+A token lives the eight hours the ERP gives it, which it does not renew, and lives in this
+process alone, so a restart ends every login. `GET /api/advisor` answers `logged_in: false`
+from then on, which is what puts the workbench back on its sign-in screen. A session with no
+live login behind it reads nothing: `search_products`, `get_product_details` and `add_to_cart`
+come back with `请先登录 ERP 账号`, and a token that ran out mid-conversation with
+`登录已过期，请重新登录`, both relayed into the conversation the way every other ERP rule is;
+a route that runs into either answers 401 with the same words rather than reporting an outage.
+The session itself survives all of it — it is on disk under the same advisor — so signing in
+again picks up the history.
+
+Sessions and memory are keyed by that ERP employee, so two advisors of one deployment share
+neither: their conversations, the facts remembered about them, and the ERP account their reads
+and their orders go out on are their own, and an order is signed with the name and the mobile
+they signed in with. What they do share is the process's own catalog reads — the boot snapshot
+and the 线路 and 团期 records cached beside it — which are the agency's own records and carry
+no token.
+
+The deployment's own account answers no session. It has two jobs left, both the deployment's:
+the boot listing snapshot the workbench's home page reads, and resolving
+`TOUR_ERP_CUSTOMER_CODE` to the 同行 customer. So in live mode the demo's own
+`POST /api/session`, which binds a session to whatever principal the caller names, answers 403
+`请通过 /api/login 登录` (a middleware in `api/main.py`); on the fixtures it stays, because the
+smoke script and the suite start their sessions with it. The fixtures hold no passwords at all:
+`FixtureAdvisorRegistry` signs in any advisor `data/users.json` names, whatever password the
+workbench sent, so the sign-in flow is the same on both.
 
 ## Live mode
 
@@ -68,10 +111,10 @@ number or a rule the advisor cannot tell from the agency's own.
 
 | What | On the fixtures | Live |
 |---|---|---|
-| the advisor | the profile in `data/users.json` — name, 门店, 客群, quoting habits | the ERP login alone: `userName` as the display name and the department the login landed in as the location; no habits at all, and the profile is not read |
+| the advisor | the profile in `data/users.json` — name, 门店, 客群, quoting habits — signed in with any password | their own ERP login alone: `userName` as the display name and the department that login landed in as the location; no habits at all, and the profile is not read |
 | the 同行 customer | `customer_id=4101` from `data/customers.json` | `TOUR_ERP_CUSTOMER_CODE` resolved through `customer/list` at boot to exactly one `CustomerRecord`; an unset, unknown, shared or unreadable code logs an error and leaves the deployment with no customer |
 | a 团期's 同业价 | quoted for that customer | quoted for it; with no customer, `quote_source=list` and the record carries the 市场价 alone |
-| a 占位 order | written through the 门店 the profile names, signed with the profile's 联系人 | written through `TOUR_ERP_STORE_NAME` and signed with the ERP login's own `userName`; unset, `add_to_cart` refuses with `未配置下单门店（TOUR_ERP_STORE_NAME）`, with no customer with `未配置下单客户（TOUR_ERP_CUSTOMER_CODE）`, and with no salesperson named rather than signing with the fixture's |
+| a 占位 order | written through the 门店 the profile names, signed with the profile's 联系人 | written through `TOUR_ERP_STORE_NAME` and signed with the name and the mobile the advisor signed in with; unset, `add_to_cart` refuses with `未配置下单门店（TOUR_ERP_STORE_NAME）`, with no customer with `未配置下单客户（TOUR_ERP_CUSTOMER_CODE）`, and with no salesperson named rather than signing with the fixture's |
 | memory | `data/memory-seed.json` seeds the advisor's habits | `data/memory-seed-empty.json`: nothing is seeded, and the advisor's own facts are what the conversation extracts |
 | 政策 | `search_policies` over `data/policies.json` | `enable_policies=False`, so the tool is not registered on any path; the agency's rules are in its own knowledge base, which is not connected, and the search notes tell the model to say so and never state a rule from memory |
 | the store's name | `data/routes.json`'s `store_name` | `TOUR_BRAND_NAME` |
@@ -128,12 +171,15 @@ Single prompts worth trying after those turns:
   审批中, 候补. Every `ErpError` message is advisor-facing Chinese, because the executor
   relays it into the conversation unchanged.
 - `api/http_erp.py`: `HttpErpClient`, the same Protocol over the agency's own HTTP API
-  (`docs/erp-contract.md`). It logs in with the mobile and the password alone — the ERP takes
-  no department and puts the account in its first authorised one — and caches that bearer for
-  its eight hours. The reads run on it and span every department; `quote` and `create_order`
-  are department-bound, so the client buys a `switch-company` token for the 团期's department
-  once and keeps it, and a 401 on either buys exactly one fresh login or switch before giving
-  up. `list_orders` and `get_order` run on the login token, so an order written in another
+  (`docs/erp-contract.md`). `from_login` builds one on a mobile and a password alone — the ERP
+  takes no department and puts the account in its first authorised one — and caches that bearer
+  for its eight hours; `with_token` builds one on a token a login already bought and no
+  password, which is the client an advisor's session reads through, and past that token's own
+  expiry it raises `登录已过期，请重新登录` rather than logging in again behind the advisor. The
+  reads run on whichever token the client holds and span every department; `quote` and
+  `create_order` are department-bound, so the client buys a `switch-company` token for the 团期's
+  department once and keeps it, and a 401 on either buys exactly one fresh login or switch
+  before giving up. `list_orders` and `get_order` run on the login token, so an order written in another
   department is not listed — a known gap. Field mapping and error mapping and nothing else:
   no seat arithmetic, no ranking, no status derivation. The ERP's status is the exception
   (`400 → ErpRefused`, `401/403 → ErpAuth`, `404 → ErpNotFound`, `429 → ErpThrottled`, `5xx`,
@@ -150,6 +196,15 @@ Single prompts worth trying after those turns:
   names any department but the 团期's own is refused with 部门不匹配, which is the guard the
   real ERP enforces with a bare 404. Nothing expires here, because the ERP's own 预留 runs on
   the departure's `reserveHours`.
+- `api/advisors.py`: `AdvisorRegistry`, the logins this process holds — `AdvisorLogin` per ERP
+  employee, carrying the `with_token` client their calls go out on, their name, their mobile,
+  the department the login landed in and the moment the token dies. `login` forwards the mobile
+  and the password to the ERP once through a client built for that one call, keeps the token
+  and closes the client that held the password; `get` stops naming an advisor whose token has
+  run out, and `logout` drops one. `FixtureAdvisorRegistry` beside it is the demo's: the
+  advisors `data/users.json` names, all reading through the one `MockErpClient`, and any
+  password, because a fixture has none to check against. The section above is what a login is
+  and what it is not.
 - `api/tags.py`: `normalize`, the ERP's free-text 行程标签 as the attributes an advisor filters
   on — `destinations`, `shopping` (`none` / `some` / `unknown`), `hotel_grade`, `family`,
   `departure_cities`, `direct_flight`, `inclusions`, `budget`. A 线路 carries some fifty tags
@@ -165,7 +220,10 @@ Single prompts worth trying after those turns:
   which is what makes 无购物 beat 购物 on a line whose extractor listed a market as an
   attraction. `api/tests/test_tags.py` holds the rule families, and its coverage test runs
   them over a live `route/list` snapshot named by `TOUR_TAG_SNAPSHOT`.
-- `api/tour_backend.py`: `TourBackend`, the `StorefrontBackend`. A 线路 is a family and its
+- `api/tour_backend.py`: `TourBackend`, the `StorefrontBackend`. `_erp_for` is what every read
+  and the one write go out on: the client the session advisor's own login left in the registry,
+  resolved per call, with `请先登录 ERP 账号` where there is no live login and the deployment's
+  own account lent to nobody. A 线路 is a family and its
   团期 are that family's variants, so search stays a shortlist of lines and the seats and
   quotes come from one details call. The advisor's destination is matched against 线路 names
   and against the attributes `api/tags.py` normalises a line's tags into, because the ERP
@@ -258,7 +316,10 @@ Single prompts worth trying after those turns:
   the 客户编码, the 门店, the brand and the advisor's mobile, picks the empty memory seed, and
   builds the config with `live=live`. It creates `TOUR_STATE_DIR` and builds the two stores
   in it — the sessions and the memory — and holds the two history routes over the session
-  one. It also puts the conversation's 预留 on every cart payload with what is left of each
+  one. It builds the registry the advisors sign in to, holds `POST /api/login`,
+  `POST /api/logout` and `GET /api/advisor` over it, and in live mode installs
+  `install_login_guard`, the middleware that answers the demo's own `POST /api/session` with a
+  403. It also puts the conversation's 预留 on every cart payload with what is left of each
   thirty-minute window. A 候补 order is not a hold and carries no countdown.
 
 `storefront-web/` is the advisor's workbench, Chinese throughout: 线路 cards read the
@@ -272,10 +333,19 @@ the party needs is 未发布 and there is no total), the bag counts each 预留
 down and flips to 已过期 at zero, and `present_shortlist`, `present_guide` and `checkout`
 each have a card. Its `showcase` page renders every card from a snapshot of one advisor
 search, which `api/tests/test_showcase.py` holds to the live records.
+The page before it is the login (`components/LoginView.tsx`, `lib/auth.ts`): the advisor's own
+ERP 手机号 and 密码, which `POST /api/login` signs in and answers with the session it started.
+The browser remembers that session id and nothing else, so a reload asks `GET /api/advisor`
+whether it is still an advisor's before it resumes anything; a `logged_in: false`, or a 401 from
+any other request, drops the id and puts the login screen back up with 登录已过期 on it. 退出登录
+in the app bar is `POST /api/logout`. The app bar carries the advisor's name and the 门店 the
+ERP gave them, which is where the greeting's eyebrow used to say it.
 Its 历史会话 drawer (`components/SessionPanel.tsx`, `lib/sessions.ts`) lists the advisor's
 earlier conversations from `GET /api/sessions`, reopens one by sending that session's id
 with the stored transcript replayed above the live one, and remembers the last session per
-browser, reopening it when the advisor's own list still carries it.
+browser, reopening it when the advisor's own list still carries it. 新会话 asks
+`POST /api/sessions/new` for another conversation for the advisor already signed in; a 401
+from it is a login that is over, and puts the sign-in screen back up.
 
 The filter keys the model writes into `filters.attributes` on every search:
 
@@ -392,12 +462,11 @@ conversations beside it alone. The fixture seed in `data/memory-seed.json` is lo
 boot, so on the fixtures a seeded fact the advisor retracted is back after a restart; live
 mode seeds nothing and only the advisor's own extracted facts are in the file.
 
-The memory subject and a session's owner are both the storefront's `user_id`, which is
-`demo-user` for everyone until the advisor login lands: today every advisor of one deployment
-shares one history and one set of facts. Per-advisor isolation is that login's to make — the
-ERP already authenticates the advisor, and the session's principal is the one value the
-routes read — and nothing here has to change for it besides what `POST /api/session` is
-handed.
+The memory subject and a session's owner are both the storefront's `user_id`, and that is the
+ERP employee behind the advisor's own login (`erp-{userId}`, or their `data/users.json` id on
+the fixtures). So the isolation is the login's: one advisor's conversations and remembered
+facts are theirs, another advisor of the same deployment sees neither, and no route reads an
+identity from a request — the session id in the header is the only thing that names anybody.
 
 ## Diagrams
 
