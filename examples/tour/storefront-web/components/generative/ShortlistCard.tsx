@@ -10,15 +10,22 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { dateLabel, groupProgress, marketAdultYuan, partyQuote, routeSpecs } from "@/lib/format";
+import {
+  dateLabel,
+  groupProgress,
+  marketAdultYuan,
+  partyQuote,
+  routeSpecs,
+  tradePriceLabel,
+} from "@/lib/format";
 import type { Product, ShortlistPayload } from "@/lib/types";
 import { SeatsPill, StatusPill } from "./shared";
 
 const COPIED_MS = 2000;
 
 /**
- * The 线路 on one line, in the order `routeSpecs` states it: "8 天 · 乌鲁木齐出发". The city
- * keeps 出发 after it, because a place name alone does not say what it is.
+ * The 线路 on one line, in the order `routeSpecs` states it: how many days, then the city it
+ * leaves from with 出发 after it, because a place name alone does not say what it is.
  */
 function tradeOffs(route: Product): string {
   return routeSpecs(route)
@@ -27,9 +34,9 @@ function tradeOffs(route: Product): string {
 }
 
 /**
- * One 团期: when it leaves, what it is, what is left of it, and both prices — the 同业价 this
- * party's total is made at, and the 市场价 for one adult, which is the figure the customer
- * reads on the page this card is sent to.
+ * One 团期: when it leaves, what it is, what is left of it, and both prices — the one this
+ * party's total is made at, named for which of the two it is, and the 市场价 for one adult,
+ * which is the figure the customer reads on the page this card is sent to.
  */
 function Row({ departure, route }: { departure: Product; route: Product }) {
   const attrs = departure.attributes ?? {};
@@ -58,7 +65,7 @@ function Row({ departure, route }: { departure: Product; route: Product }) {
         <div className="shrink-0 text-right">
           {quote ? (
             <div className="tg-num text-[15px] font-bold text-(--accent)">
-              <span className="tg-label mr-1">同业价</span>
+              <span className="tg-label mr-1">{tradePriceLabel(departure)}</span>
               {quote}
             </div>
           ) : null}

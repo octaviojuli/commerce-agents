@@ -26,7 +26,7 @@ import logging
 import os
 import re
 import secrets
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -478,11 +478,21 @@ def _drop_preferences(stated: Request) -> Request:
     return replace(stated, hotel_level=None, no_shopping=False)
 
 
+def _whole_window(stated: Request, earliest: date, latest: date) -> Request:
+    """The advisor's dates dropped for the whole default window. The destination, the party and
+    whatever the steps before it relaxed still stand, so this step answers with the nearest 团期
+    the ERP sells at all; the note on a record it admits names the window the advisor stated and
+    that nearest date."""
+    return replace(stated, depart_from=earliest, depart_to=latest)
+
+
 # How close a record came to what the advisor stated, for an ordering that keeps the exact
 # matches ahead of the relaxed ones whatever else is sorted on.
 _MATCH_ORDER = {"exact": 0, "adjacent_date": 1, "similar_route": 2}
 # Each step keeps the one before it, so a route found late is measured against everything
-# the advisor stated, whichever step first found it.
+# the advisor stated, whichever step first found it. The fourth step is ``_whole_window`` and
+# is not listed here: the default window is the backend's own and not a function of the
+# request, so ``search_products`` runs it after these three.
 _RELAXATIONS = (
     (_widen_window, "adjacent_date"),
     (_widen_days, "similar_route"),
@@ -563,6 +573,19 @@ def _mismatch(record: RouteRecord, facets: RouteFacets, stated: Request, dates: 
     that step alone relaxed, and a note that named only that step would understate it."""
     notes = [note for note in (_date_note(stated, dates), _days_note(record, stated)) if note]
     return "；".join(notes + _preference_notes(record, facets, stated)) or "与所提条件略有出入"
+
+
+@dataclass
+class Fetched:
+    """What one search run has already read from the ERP, so its passes share it: the routes a
+    query text and a window came back with — the broad read of a window's whole catalog is that
+    query with no name — and each route's departures inside a pass's window. The steps repeat a
+    query more often than they change it, since dropping the day count or the preferences
+    changes nothing the ERP filters on, and a route's departures are read by the pass that keeps
+    it and again by the record it becomes."""
+
+    routes: dict[tuple[str, date, date], list[RouteRecord]] = field(default_factory=dict)
+    departures: dict[tuple[int, date, date], list[DepartureRecord]] = field(default_factory=dict)
 
 
 @dataclass
@@ -781,62 +804,108 @@ class TourBackend(StorefrontBackend):
             self._route_facets[record.route_id] = cached
         return cached
 
-    async def _broad(
-        self, window: tuple[date, date], cache: dict[tuple[date, date], list[RouteRecord]]
+    async def _routes_for(
+        self, text: str, window: tuple[date, date], fetched: Fetched | None
     ) -> list[RouteRecord]:
-        """Every route the ERP sells inside the window: an empty name is not a filter, so one
-        call (the client caps its paging) brings back the whole window's catalog. ``cache`` is
-        the one search's own, so the three relaxation steps share what the first of them
-        fetched and a widened window costs exactly one further call."""
-        cached = cache.get(window)
+        """The ERP's routes for one query text over one window, kept for the rest of the search
+        run that asked: the relaxation steps below repeat a query the step before them already
+        made, and the broad read is the same call with no name."""
+        key = (text, *window)
+        cached = fetched.routes.get(key) if fetched is not None else None
         if cached is None:
             cached = await self.erp.search_routes(
-                RouteQuery(route_name="", depart_from=window[0], depart_to=window[1])
+                RouteQuery(route_name=text, depart_from=window[0], depart_to=window[1])
             )
-            cache[window] = cached
             self._routes.update({record.route_id: record for record in cached})
+            if fetched is not None:
+                fetched.routes[key] = cached
         return cached
+
+    async def _broad(
+        self, window: tuple[date, date], fetched: Fetched, *, read: bool
+    ) -> list[RouteRecord]:
+        """Every route the ERP sells inside the window: an empty name is not a filter, so one
+        call (the client caps its paging) brings back the whole window's catalog, and the run's
+        cache holds it, so a widened window costs exactly one further call.
+
+        ``read=False`` spends no call at all and takes the routes the run has already read,
+        whichever window each was read for; the pass's own window is then applied by the
+        departure list that follows. The last relaxation step widens to the whole default
+        window, and one route query is all it may cost."""
+        if read:
+            return await self._routes_for("", window, fetched)
+        seen: dict[int, RouteRecord] = {}
+        for records in fetched.routes.values():
+            seen.update({record.route_id: record for record in records})
+        return list(seen.values())
+
+    async def _departs(
+        self, record: RouteRecord, window: tuple[date, date], fetched: Fetched
+    ) -> bool:
+        """Whether the route has a 团期 inside the window. ``route/list``'s own date filter is
+        loose — it answers with routes that have none (``docs/erp-contract.md``) — and a card
+        built from one of those carries no date, no seat count and no price. The departures are
+        kept in the run's cache, so the record this route becomes costs no second call."""
+        return bool(await self._list(record, window, fetched))
 
     async def _search(
         self,
         stated: Request,
-        broad: dict[tuple[date, date], list[RouteRecord]] | None = None,
+        fetched: Fetched | None = None,
+        *,
+        broad_read: bool = True,
     ) -> list[RouteRecord]:
         """The ERP's routes for the text and the window, minus the ones the day count, 纯玩
-        or the hotel standard rules out: the ERP has no field for any of those three.
+        or the hotel standard rules out — the ERP has no field for any of those three — and
+        minus the ones with no 团期 inside the window at all, which its loose date filter
+        returns as matches. A route dropped for that is not what the advisor asked for; it
+        comes back through a relaxation step, with a note naming its nearest date.
 
         The ERP's own search is fuzzy on the 线路 name, and a destination its editors never
         wrote into a name matches nothing there however far the window is relaxed. So when the
-        named query is not a shortlist, ``broad`` reads the window's whole catalog once and
-        every route that carries the destination anywhere else it is written is kept. Those
+        named query is not a shortlist, the broad read brings back the window's whole catalog
+        and every route that carries the destination anywhere else it is written is kept. Those
         routes do meet what the advisor asked for, so they are exact matches, not relaxed
-        ones, and the day count, 纯玩 and the hotel standard filter them the same way."""
+        ones, and the day count, 纯玩 and the hotel standard filter them the same way.
+
+        ``fetched`` is one search run's own reads. A caller that passes none — a pasted id, the
+        boot snapshot — takes the named query alone and reads no departures."""
         window = self._window(stated.depart_from, stated.depart_to)
-        records = await self.erp.search_routes(
-            RouteQuery(route_name=stated.text, depart_from=window[0], depart_to=window[1])
-        )
-        self._routes.update({record.route_id: record for record in records})
-        found = [record for record in records if _fits(record, self._facets(record), stated)]
-        if broad is None or not stated.text or len(found) >= MIN_RESULTS:
+        records = await self._routes_for(stated.text, window, fetched)
+        fits = [record for record in records if _fits(record, self._facets(record), stated)]
+        if fetched is None:
+            return fits
+        found = [record for record in fits if await self._departs(record, window, fetched)]
+        if not stated.text or len(found) >= MIN_RESULTS:
             return found
         seen = {record.route_id for record in found}
-        for record in await self._broad(window, broad):
+        for record in await self._broad(window, fetched, read=broad_read):
             if len(found) >= MAX_BROAD_MATCHES:
                 break
             facets = self._facets(record)
             if record.route_id in seen or not _mentions(record, facets, stated.text):
                 continue
-            if _fits(record, facets, stated):
+            if _fits(record, facets, stated) and await self._departs(record, window, fetched):
                 found.append(record)
         return found
 
-    async def _list(self, record: RouteRecord, window: tuple[date, date]) -> list[DepartureRecord]:
+    async def _list(
+        self,
+        record: RouteRecord,
+        window: tuple[date, date],
+        fetched: Fetched | None = None,
+    ) -> list[DepartureRecord]:
+        key = (record.route_id, *window)
+        if fetched is not None and key in fetched.departures:
+            return fetched.departures[key]
         rows = await self.erp.list_departures(
             record.route_id, record.route_name, window[0], window[1]
         )
         for row in rows:
             # A listed row carries no price; a detail read already cached one, so keep it.
             self._departures.setdefault(row.period_id, row)
+        if fetched is not None:
+            fetched.departures[key] = rows
         return rows
 
     async def _route(self, route_id: int) -> RouteRecord | None:
@@ -972,13 +1041,14 @@ class TourBackend(StorefrontBackend):
         match: str,
         original: Request | None,
         *,
+        fetched: Fetched | None = None,
         prices: int = MAX_LISTING_PRICES,
     ) -> list[Product]:
         window = self._window(stated.depart_from, stated.depart_to)
         middle = window[0] + (window[1] - window[0]) / 2
         found = []
         for record in records:
-            rows = await self._list(record, window)
+            rows = await self._list(record, window, fetched)
             await self._prices(rows, middle, prices)
             dates = [row.depart_date for row in rows]
             mismatch = (
@@ -988,6 +1058,24 @@ class TourBackend(StorefrontBackend):
             )
             found.append(self._family(record, rows, context, match, mismatch))
         return found
+
+    async def _step(
+        self,
+        relaxed: Request,
+        stated: Request,
+        context: SearchContext,
+        match: str,
+        found: list[Product],
+        fetched: Fetched,
+        *,
+        broad_read: bool = True,
+    ) -> list[Product]:
+        """One relaxation step's own records: the routes this pass finds that the passes before
+        it did not, each saying what it does not meet against everything the advisor stated."""
+        seen = {product.product_id for product in found}
+        records = await self._search(relaxed, fetched, broad_read=broad_read)
+        fresh = [record for record in records if route_id_of(record) not in seen]
+        return await self._families(fresh, relaxed, context, match, stated, fetched=fetched)
 
     async def search_products(
         self,
@@ -1017,20 +1105,29 @@ class TourBackend(StorefrontBackend):
             departure_city=(attributes.get("departure_city") or "").strip() or None,
             family=attributes.get("family", "").strip().lower() == "yes",
         )
-        # This search's broad pass, shared by the steps below: the window widens once, so the
-        # whole run costs at most two calls for it however many steps it takes.
-        broad: dict[tuple[date, date], list[RouteRecord]] = {}
+        # This search's own reads, shared by the steps below: a query text and a window are
+        # asked for once however many steps repeat them, and the broad pass costs at most two
+        # calls for the whole run, since the window widens once.
+        fetched = Fetched()
         found = await self._families(
-            await self._search(stated, broad), stated, context, "exact", None
+            await self._search(stated, fetched), stated, context, "exact", None, fetched=fetched
         )
         relaxed = stated
         for widen, match in _RELAXATIONS:
             if len(found) >= MIN_RESULTS:
                 break
             relaxed = widen(relaxed)
-            seen = {product.product_id for product in found}
-            fresh = [r for r in await self._search(relaxed, broad) if route_id_of(r) not in seen]
-            found += await self._families(fresh, relaxed, context, match, stated)
+            found += await self._step(relaxed, stated, context, match, found, fetched)
+        if len(found) < MIN_RESULTS:
+            # The fourth step: the whole default window in place of the advisor's, so a
+            # destination whose 团期 all fall outside their dates is still quotable and the note
+            # names the nearest one. It spends no second route query, so its broad pass is
+            # whatever the steps above already read.
+            default = self._default_context()
+            relaxed = _whole_window(relaxed, default.depart_from, default.depart_to)
+            found += await self._step(
+                relaxed, stated, context, "adjacent_date", found, fetched, broad_read=False
+            )
         if stated.family:
             # 亲子 is a preference and not a condition: the lines whose tags claim it come
             # first inside each match class, and the rest are still on the shortlist.

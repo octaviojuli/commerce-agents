@@ -3,18 +3,25 @@
 
 "use client";
 
-/** Renders from fixtures; no API needed. */
+/**
+ * Renders from fixtures; no API needed. It is a development page: `NEXT_PUBLIC_TOUR_SHOWCASE=1`
+ * is what turns it on, which the `dev` script sets and `build` and `start` do not, so a
+ * deployment of the workbench answers this path with nothing.
+ */
 
 import type { ReactNode } from "react";
 import { CopyProvider, mergeCopy, type UISlotStatus } from "web-shared";
 import GenerativeBlock from "@/components/generative";
 import HoldBar from "@/components/HoldBar";
 import HoldPanel from "@/components/HoldPanel";
+import { BRAND } from "@/lib/brand";
 import { TOUR_COPY } from "@/lib/copy";
 import { SHOWCASE, SHOWCASE_PRODUCT_INDEX } from "@/lib/showcase-fixtures";
 
 // The page mounts the panels without a StoreShell, so it carries the copy itself.
 const COPY = mergeCopy(TOUR_COPY);
+
+const ENABLED = process.env.NEXT_PUBLIC_TOUR_SHOWCASE === "1";
 
 /** `id` sets the data-component when a component repeats. */
 const SECTIONS: { component: string; id?: string; payload: unknown; status?: UISlotStatus }[] = [
@@ -54,10 +61,17 @@ function Section({ name, children }: { name: string; children: ReactNode }) {
 }
 
 export default function ShowcasePage() {
+  if (!ENABLED) {
+    return (
+      <main className="mx-auto max-w-3xl px-6 py-12">
+        <p className="tg-label">404 · 页面不存在</p>
+      </main>
+    );
+  }
   return (
     <CopyProvider value={COPY}>
       <main className="mx-auto max-w-3xl px-6 py-12">
-        <p className="tg-label">ACME 旅行社 组件预览（固定数据）</p>
+        <p className="tg-label">{BRAND} 组件预览（固定数据）</p>
         <Section name="hold-bar">
           <div className="overflow-hidden rounded-(--radius) border border-(--line)">
             <HoldBar cart={SHOWCASE.cart} />
