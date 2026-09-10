@@ -48,6 +48,7 @@ def test_the_rules_file_names_every_attribute_the_facets_carry():
         "shopping",
         "family",
         "direct_flight",
+        "region",
     }
     for name, attribute in rules.items():
         assert attribute.rules, name
@@ -309,3 +310,28 @@ def test_the_rules_cover_the_agencys_own_catalog():
     named = {value for attribute in load_rules().values() for value, _ in attribute.rules}
     placed = [f.destinations[0] for f in facets if f.destinations]
     assert sum(1 for value in placed if value in named) >= 50
+
+
+@pytest.mark.parametrize(
+    ("name", "tags", "region"),
+    [
+        # The name files the line, and the tags of the same line would file it wrongly.
+        (
+            "MU1改--德法意瑞+五渔村+比萨+少女峰12天10晚",
+            ["意大利", "法国", "瑞士", "五渔村"],
+            "德法意瑞",
+        ),
+        # The more specific walk wins over the one its name also contains.
+        ("HU16-B线-经典西欧法意瑞+欧洲花园奥地利+比利时王国", [], "西欧多国"),
+        ("MU5-法瑞德新欧洲金三角8晚11天3-4星", [], "德法意瑞"),
+        ("E6-【轻奢臻品】爱尔兰+英格兰英伦双岛巡游", [], "英爱"),
+        ("MU9-MU-【欧洲壹号】伊比利亚狂曲+西葡深度", [], "西葡"),
+        # A name that says nothing falls back to the tags.
+        ("HO4-海航大裸", ["北欧", "极光", "挪威"], "北欧"),
+        ("伊犁北疆环线 8 日纯玩小团", ["伊犁", "乌鲁木齐出发"], "伊犁"),
+        # Neither says: no 线路系.
+        ("HO4-海航大裸", ["四钻酒店"], ""),
+    ],
+)
+def test_the_region_is_read_off_the_name_first_and_the_tags_after(name, tags, region):
+    assert normalize(tags, name=name).region == region
