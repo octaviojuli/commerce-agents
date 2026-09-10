@@ -249,6 +249,107 @@ async def test_the_erps_sale_type_is_read_ahead_of_the_name(backend, erp, sessio
     assert "RT-1023" in ids(products)
 
 
+async def test_the_cut_is_ranked_not_the_catalogs_order(backend, erp, session, monkeypatch):
+    """A 团期 the party fits into comes first, then the nearest to the middle of the window,
+    then 已成团 before 待成团; the ERP's own order, which is the newest 线路 first, decides
+    nothing. And a cut smaller than the matches takes at most two lines of one 线路系."""
+    products = await search(
+        backend,
+        session,
+        "新疆",
+        destination="新疆",
+        depart_from="2026-10-11",
+        depart_to="2026-10-20",
+        adults="2",
+    )
+    assert len(products) >= 4
+    # Hand every 团期 of RT-1032 the party cannot fit into: it ranks last however near.
+    for row in erp._departures.values():
+        if row["routeId"] == 1032:
+            row["availableSeats"] = 1
+    products = await search(
+        backend,
+        session,
+        "新疆",
+        destination="新疆",
+        depart_from="2026-10-11",
+        depart_to="2026-10-20",
+        adults="2",
+    )
+    assert ids(products)[-1] == "RT-1032"
+    # Cut to three of the seven, 伊犁's four lines take at most two seats in it.
+    monkeypatch.setattr(tour_backend, "MAX_BROAD_MATCHES", 3)
+    cut = await search(
+        backend,
+        session,
+        "新疆",
+        destination="新疆",
+        depart_from="2026-10-11",
+        depart_to="2026-10-20",
+        adults="2",
+    )
+    regions = [p.attributes["region"] for p in cut]
+    assert len(cut) == 3 and regions.count("伊犁") <= 2, regions
+    assert all(p.attributes["catalog_matches"] == "7" for p in cut)
+
+
+async def test_a_region_narrows_the_shortlist_and_a_price_ceiling_too(backend, session):
+    """The 线路系 an overview offered goes back as ``region`` and holds; ``price_max`` is a
+    ceiling on the 起价, and a 起价 the ERP has not published (0) is not over it."""
+    products = await search(
+        backend,
+        session,
+        "新疆",
+        destination="新疆",
+        depart_from="2026-10-11",
+        depart_to="2026-10-20",
+        region="喀纳斯",
+    )
+    assert ids(products) and all(p.attributes["region"] == "喀纳斯" for p in products)
+    cheap = await search(
+        backend,
+        session,
+        "新疆",
+        destination="新疆",
+        depart_from="2026-10-11",
+        depart_to="2026-10-20",
+        price_max="4000",
+    )
+    # The ceiling is on the ERP's 起价, which the fixtures put under 4000 on one 新疆 line.
+    assert ids(cheap) == ["RT-1032"]
+
+
+async def test_too_many_matches_hand_the_model_an_overview_not_a_shortlist(backend, session):
+    """Above ``OVERVIEW_ABOVE`` matches the executor appends the 目录概览 to the search
+    result: the total, the groups by 线路系, 出发城市, 天数, 起价 and 成团, each value one the
+    model sends back as a filter, and the instruction to ask one narrowing question. A search
+    that fits carries none."""
+    tour = executor(backend, session)
+    filters = {
+        "attributes": {
+            "destination": "新疆",
+            "depart_from": "2026-10-11",
+            "depart_to": "2026-10-20",
+        }
+    }
+    outcome = await tour.dispatch(
+        "search_products", {"query": "新疆", "filters": filters, "limit": 2}
+    )
+    text = outcome.result_text
+    assert "目录概览" in text and "上面只是其中 2 条的样本" in text
+    assert "按线路系（filter region）" in text and "伊犁 4" in text
+    assert "按出发城市（filter departure_city）" in text
+    assert "按天数（filter days_min/days_max）" in text
+    assert "ask ONE narrowing question" in text
+    overview = backend.overview(session.session_id)
+    assert overview is not None and overview.total > overview.shown == 2
+    # Narrowed to one 线路系, the search fits and the overview is gone.
+    narrowed = {"attributes": {**filters["attributes"], "region": "伊犁"}}
+    outcome = await tour.dispatch("search_products", {"query": "新疆", "filters": narrowed})
+    assert "目录概览" not in outcome.result_text
+    assert backend.overview(session.session_id) is None
+
+
 async def test_the_named_matches_are_never_the_whole_shortlist(backend, erp, session):
     """On the agency's catalog, 欧洲 names three of the thirty-odd lines the 欧洲部 departs
     in a month. So two name matches do not close the search: the broad pass runs whenever a

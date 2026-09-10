@@ -50,6 +50,9 @@ class RouteFacets:
     direct_flight: bool = False
     inclusions: tuple[str, ...] = ()
     budget: tuple[str, ...] = ()
+    # The 线路系 the trade files a line under — 德法意瑞, 英爱, 西葡, 北欧, 伊犁 … — read off the
+    # 线路 name first, and off the tags only when the name says nothing; "" when neither does.
+    region: str = ""
 
 
 @dataclass(frozen=True)
@@ -104,17 +107,25 @@ def _every(hits: list[tuple[int, str]]) -> tuple[str, ...]:
 
 
 def normalize(
-    tags: Sequence[str], price_tags: Sequence[str] = (), data_dir: Path = DATA_DIR
+    tags: Sequence[str],
+    price_tags: Sequence[str] = (),
+    data_dir: Path = DATA_DIR,
+    *,
+    name: str = "",
 ) -> RouteFacets:
     """One 线路's tags as ``RouteFacets``. ``price_tags`` is the ERP's own ``periodPriceTags``
     — 预算约9999—1万元 — which is a band and not a number, so it is carried through as written.
     A line whose tags name no destination the rules know keeps its first tag as one: the
     extractor writes the destination first often enough that it beats saying nothing, and the
-    advisor's own text is matched against the line's raw tags as well."""
+    advisor's own text is matched against the line's raw tags as well. ``name`` is the 线路
+    name, which is what the ``region`` rules read first: the editors write the walk into the
+    name (德法意瑞+五渔村), and the tags of that line list every country on it."""
     rules = load_rules(data_dir)
     clean = tuple(text for tag in tags if (text := str(tag).strip()))
-    hits = {name: _hits(clean, rules.get(name, _EMPTY)) for name in rules}
+    hits = {name_: _hits(clean, rules.get(name_, _EMPTY)) for name_ in rules}
     destinations = _every(hits.get("destination", [])) or (clean[:1] if clean else ())
+    region_rules = rules.get("region", _EMPTY)
+    region = _one(_hits((name.strip(),), region_rules)) or _one(hits.get("region", [])) or ""
     return RouteFacets(
         destinations=destinations,
         shopping=_one(hits.get("shopping", [])) or UNKNOWN,
@@ -126,4 +137,5 @@ def normalize(
             :MAX_INCLUSIONS
         ],
         budget=tuple(text for tag in price_tags if (text := str(tag).strip())),
+        region=region,
     )

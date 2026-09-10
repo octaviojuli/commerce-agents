@@ -26,6 +26,7 @@ import logging
 import os
 import re
 import secrets
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -118,6 +119,15 @@ RELAX_DAYS_SPAN = 2
 # ``MAX_LISTING_PRICES`` priced 团期, and the model is handed a shortlist either way; the
 # count of what it was cut from travels with it as ``catalog_matches``.
 MAX_BROAD_MATCHES = 8
+# The cut is ranked, not the catalog's order: a 团期 the party fits into first, then the ones
+# nearest the advisor's dates in buckets of this many days, then 已成团 before 待成团.
+RANK_DATE_BUCKET_DAYS = 3
+# At most this many lines of one 线路系 in the cut, so eight 德法意瑞 walks are not the whole
+# answer to 欧洲; the rest of the cut is filled from the ranking once every 线路系 has had its
+# turn.
+MAX_PER_REGION = 2
+# Above this many matches the search is an overview and a question, not a shortlist.
+OVERVIEW_ABOVE = 6
 # Our own hold window on a 预留 order, whatever the departure's ``reserve_hours`` says: the
 # advisor is told the seats are theirs for half an hour, and the line drops after that.
 HOLD_TTL_MINUTES = 30
@@ -312,6 +322,7 @@ def _route_attributes(
         "departure_cities": "|".join(facets.departure_cities),
         "inclusions": "|".join(facets.inclusions),
         "budget": "|".join(facets.budget),
+        "region": facets.region,
         "tags": "|".join(_raw_tags(record)[:MAX_RAW_TAGS]),
         "features": "|".join(record.features),
         "match": match,
@@ -339,6 +350,28 @@ def _specs(record: RouteRecord, facets: RouteFacets) -> dict[str, str]:
     if record.attachment_name:
         specs["行程附件"] = record.attachment_name
     return specs
+
+
+_DAYS_BANDS = ("7 天以内", "8–10 天", "11–13 天", "14 天以上")
+_PRICE_BANDS = ("1万以内", "1–1.5万", "1.5–2万", "2–2.5万", "2.5万以上", "起价未知")
+
+
+def _days_band(days: int) -> str:
+    if days <= 7:
+        return _DAYS_BANDS[0]
+    if days <= 10:
+        return _DAYS_BANDS[1]
+    if days <= 13:
+        return _DAYS_BANDS[2]
+    return _DAYS_BANDS[3]
+
+
+def _price_band(price: float) -> str:
+    """The 起价 as the band an advisor quotes in; a 0 is a 起价 the ERP has not published."""
+    if price <= 0:
+        return _PRICE_BANDS[5]
+    edges = (10000, 15000, 20000, 25000)
+    return _PRICE_BANDS[next((i for i, edge in enumerate(edges) if price <= edge), 4)]
 
 
 def _group_status(row: DepartureRecord) -> str:
@@ -484,6 +517,11 @@ class Request:
     hotel_level: str | None = None
     departure_city: str | None = None
     family: bool = False
+    # The 线路系 the advisor narrowed to (``tag-rules.json``'s region values), a ceiling on the
+    # 起价, and how many travel — the last ranks a 团期 the party fits into first.
+    region: str | None = None
+    price_max: int | None = None
+    party: int = 0
 
 
 def _widen_window(stated: Request) -> Request:
@@ -551,7 +589,19 @@ def _fits(record: RouteRecord, facets: RouteFacets, stated: Request) -> bool:
         return False
     if stated.departure_city and not _fits_city(record, facets, stated.departure_city):
         return False
+    if stated.region and not _fits_region(facets, stated.region):
+        return False
+    if stated.price_max and record.from_price > stated.price_max:
+        return False
     return not (stated.hotel_level and not _has_hotel_level(record, facets, stated.hotel_level))
+
+
+def _fits_region(facets: RouteFacets, region: str) -> bool:
+    """The 线路系 the advisor narrowed to, either way round: 法意瑞 finds a 德法意瑞 line and
+    德法意瑞 a 法意瑞 one, because the trade says both for the same walk. A line whose name and
+    tags file it nowhere is not admitted — the advisor just asked for one 线路系."""
+    wanted = region.strip()
+    return bool(facets.region) and (wanted in facets.region or facets.region in wanted)
 
 
 def _inside(
@@ -638,6 +688,49 @@ class Fetched:
     # How many routes the last pass found meeting the stated request inside its window, the
     # ones past ``MAX_BROAD_MATCHES`` included: what the shortlist was cut from.
     matched: int = 0
+    # The same routes grouped, for the turn that has too many of them to show.
+    overview: Overview | None = None
+
+
+@dataclass
+class Overview:
+    """What a request that is too broad matched, grouped the way an advisor narrows it: by
+    线路系, by the city the group leaves from, by length, by 起价 and by 成团 state. Each group
+    value is one the model can send straight back as a filter, which is what the text says.
+    ``shown`` is how many of the ``total`` the shortlist beside it carries."""
+
+    total: int
+    shown: int
+    groups: dict[str, list[tuple[str, int]]]
+
+    # The filter each group's values go back through.
+    FILTERS = {
+        "线路系": "region",
+        "出发城市": "departure_city",
+        "天数": "days_min/days_max",
+        "起价": "price_max",
+        "成团": "",
+    }
+
+    def text(self) -> str:
+        lines = [
+            f"目录概览：共 {self.total} 条线路符合，上面只是其中 {self.shown} 条的样本，不是结论。"
+        ]
+        for label, counts in self.groups.items():
+            if counts:
+                cells = "、".join(f"{value} {count}" for value, count in counts)
+                how = f"filter {key}" if (key := self.FILTERS[label]) else "无过滤，仅供说明"
+                lines.append(f"按{label}（{how}）：{cells}")
+        lines.append(
+            "Too many lines to shortlist: do not present these as the answer. State the total, "
+            "give the groups above in one or two sentences, and ask ONE narrowing question with "
+            "present_suggestions whose chips are the group values that split this set best "
+            "(the 线路系 when it has several values, else the departure city, else the length). "
+            "When the advisor answers, search again with that filter and present cards. Between "
+            "7 and 12 matches you may show up to three cards beside the question; above 12, "
+            "none. Do not ask twice in a row: after one narrowing, present what is left."
+        )
+        return "\n".join(lines)
 
 
 @dataclass
@@ -734,6 +827,12 @@ class TourToolExecutor(ShoppingToolExecutor):
         outcome = await super().dispatch(name, tool_input)
         if name == "present_products" and not outcome.refused:
             self._backend.note_presented(self._session.session_id, _picked_ids(tool_input))
+        if name == "search_products" and not outcome.is_error:
+            overview = self._backend.overview(self._session.session_id)
+            if overview is not None:
+                outcome = replace(
+                    outcome, result_text=f"{outcome.result_text}\n\n{overview.text()}"
+                )
         return outcome
 
     def _route_first(self, tool_input: dict[str, Any]) -> ToolOutcome | None:
@@ -813,6 +912,7 @@ class TourBackend(StorefrontBackend):
         self._private = load_private_line_rules(data_dir)
         self._policies = load_policies(data_dir)
         self._contexts: dict[str, SearchContext] = {}
+        self._overviews: dict[str, Overview] = {}
         # What the ERP has already returned this process: a route is looked up by id long
         # after the search that found it, and a cart line names a departure by id alone. A
         # departure's 同业价 is cached beside it, ``None`` where the ERP has no price row for
@@ -887,7 +987,7 @@ class TourBackend(StorefrontBackend):
         """One 线路's tags as the attributes the advisor filters on (``api/tags.py``)."""
         cached = self._route_facets.get(record.route_id)
         if cached is None:
-            cached = normalize(_raw_tags(record), record.price_tags)
+            cached = normalize(_raw_tags(record), record.price_tags, name=record.route_name)
             self._route_facets[record.route_id] = cached
         return cached
 
@@ -1032,7 +1132,7 @@ class TourBackend(StorefrontBackend):
         if not stated.text:
             return found
         seen = {record.route_id for record in found}
-        matched = len(found)
+        matched = list(found)
         for record in await self._broad(erp, window, fetched, read=broad_read):
             facets = self._facets(record)
             if record.route_id in seen or not _mentions(record, facets, stated.text):
@@ -1040,11 +1140,97 @@ class TourBackend(StorefrontBackend):
             if not self._sellable(record, stated):
                 continue
             if _fits(record, facets, stated) and await self._departs(erp, record, window, fetched):
-                matched += 1
-                if len(found) < MAX_BROAD_MATCHES:
-                    found.append(record)
-        fetched.matched = matched
-        return found
+                matched.append(record)
+        fetched.matched = len(matched)
+        rows = {
+            record.route_id: fetched.departures.get((record.route_id, *window), [])
+            for record in matched
+        }
+        fetched.overview = self._overview(matched, rows)
+        ranked = sorted(
+            matched, key=lambda record: self._rank(record, rows[record.route_id], stated, window)
+        )
+        return self._spread(ranked, MAX_BROAD_MATCHES)
+
+    def _rank(
+        self,
+        record: RouteRecord,
+        rows: list[DepartureRecord],
+        stated: Request,
+        window: tuple[date, date],
+    ) -> tuple:
+        """Smaller is better. A 团期 the party fits into, then the nearest 团期 to the middle
+        of the advisor's window in ``RANK_DATE_BUCKET_DAYS`` buckets, then 已成团, then the
+        destination written in the name, then a published 起价, then the cheaper."""
+        middle = window[0] + (window[1] - window[0]) / 2
+        nearest = min((abs((row.depart_date - middle).days) for row in rows), default=999)
+        party = max(stated.party, 1)
+        seats_ok = any(row.available_seats >= party for row in rows)
+        confirmed = any(_group_status(row) == "confirmed" for row in rows)
+        named = bool(stated.text) and stated.text.strip() in record.route_name
+        return (
+            not seats_ok,
+            nearest // RANK_DATE_BUCKET_DAYS,
+            not confirmed,
+            not named,
+            record.from_price <= 0,
+            record.from_price,
+        )
+
+    def _spread(self, ranked: list[RouteRecord], cap: int) -> list[RouteRecord]:
+        """The ``cap`` of the ranking that keeps at most ``MAX_PER_REGION`` per 线路系, in rank
+        order. A ranking that fits the cap is returned whole; over it, a line no rule files
+        anywhere is not held back, and once every 线路系 has had its turn the rest of the
+        ranking fills what is left."""
+        if len(ranked) <= cap:
+            return ranked
+        chosen: set[int] = set()
+        per_region: Counter[str] = Counter()
+        for record in ranked:
+            region = self._facets(record).region
+            if region and per_region[region] >= MAX_PER_REGION:
+                continue
+            per_region[region] += 1
+            chosen.add(record.route_id)
+            if len(chosen) == cap:
+                break
+        for record in ranked:
+            if len(chosen) == cap:
+                break
+            chosen.add(record.route_id)
+        return [record for record in ranked if record.route_id in chosen]
+
+    def _overview(
+        self, matched: list[RouteRecord], rows: dict[int, list[DepartureRecord]]
+    ) -> Overview:
+        """The matched lines grouped, counts descending inside each group; ``shown`` is set
+        by the caller that knows its limit."""
+        regions: Counter[str] = Counter()
+        cities: Counter[str] = Counter()
+        lengths: Counter[str] = Counter()
+        prices: Counter[str] = Counter()
+        states: Counter[str] = Counter()
+        for record in matched:
+            facets = self._facets(record)
+            regions[facets.region or "未归类"] += 1
+            cities[(facets.departure_cities or (record.depart_city,))[0] or "未标注"] += 1
+            lengths[_days_band(record.days)] += 1
+            prices[_price_band(record.from_price)] += 1
+            confirmed = any(
+                _group_status(row) == "confirmed" for row in rows.get(record.route_id, [])
+            )
+            states["已成团" if confirmed else "待成团"] += 1
+        return Overview(
+            total=len(matched),
+            shown=0,
+            groups={
+                "线路系": regions.most_common(),
+                "出发城市": cities.most_common(),
+                "天数": sorted(lengths.items(), key=lambda item: _DAYS_BANDS.index(item[0])),
+                "起价": sorted(prices.items(), key=lambda item: _PRICE_BANDS.index(item[0])),
+                "成团": states.most_common(),
+            },
+        )
 
     async def _list(
         self,
@@ -1315,6 +1501,9 @@ class TourBackend(StorefrontBackend):
             hotel_level=attributes.get("hotel_level") or None,
             departure_city=(attributes.get("departure_city") or "").strip() or None,
             family=attributes.get("family", "").strip().lower() == "yes",
+            region=(attributes.get("region") or "").strip() or None,
+            price_max=_int_or_none(attributes.get("price_max")),
+            party=context.adults + context.children,
         )
         # This search's own reads, shared by the steps below: a query text and a window are
         # asked for once however many steps repeat them, and so is the window's whole 团期 read;
@@ -1334,6 +1523,7 @@ class TourBackend(StorefrontBackend):
         # is more than eight lines; the relaxation steps below count nothing, since they
         # run only when this number is short of a shortlist.
         matched = max(fetched.matched, len(found))
+        overview = fetched.overview
         relaxed = stated
         for widen, match in _RELAXATIONS:
             if len(found) >= MIN_RESULTS:
@@ -1361,7 +1551,17 @@ class TourBackend(StorefrontBackend):
             )
         for product in found[:limit]:
             product.attributes["catalog_matches"] = str(matched)
+        # A request too broad to shortlist keeps its overview for the executor to hand the
+        # model beside the sample; one that fits keeps none.
+        if overview is not None and matched > OVERVIEW_ABOVE and matched > len(found[:limit]):
+            self._overviews[session.session_id] = replace(overview, shown=len(found[:limit]))
+        else:
+            self._overviews.pop(session.session_id, None)
         return found[:limit]
+
+    def overview(self, session_id: str) -> Overview | None:
+        """The last search's overview, when that search matched more than it could show."""
+        return self._overviews.get(session_id)
 
     # -- details -------------------------------------------------------------------------
 
