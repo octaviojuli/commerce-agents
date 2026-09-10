@@ -25,10 +25,10 @@ ADVISOR_MEMORY_EXTRACTION_PROMPT = MEMORY_EXTRACTION_TEMPLATE.format(
     occasions="conversations",
     speaker="the advisor",
     qualifies=(
-        "a standing habit or rule of the advisor's own work, stated by themselves: the city "
-        "their customers usually depart from, a hotel standard or a 纯玩 rule they always ask "
-        "for, how they want a quote laid out (per person or 合计, with or without 单房差), the "
-        "department they usually book with."
+        "a standing habit or rule of the advisor's own work, stated by themselves in so many "
+        "words: the city their customers usually depart from, a hotel standard or a 纯玩 rule "
+        "they always ask for, how they want a quote laid out (per person or 合计, with or "
+        "without 单房差). Write the value in Chinese, the advisor's own language."
     ),
     standalone_example=(
         '"成都出发" tells a future reader nothing, while "the advisor\'s customers usually '
@@ -41,9 +41,10 @@ ADVISOR_MEMORY_EXTRACTION_PROMPT = MEMORY_EXTRACTION_TEMPLATE.format(
     ),
     excluded=(
         "any customer's trip or request (destination, dates, party, budget, the 线路 or 团期 "
-        "discussed); anything that came from listings, results, or the ERP's own records; the "
-        "mechanics of this conversation (what was searched or held); your own guesses; and "
-        "health, financial, or identity details of anyone."
+        "discussed); the advisor's own name, department and account, which their login already "
+        "states; anything that came from listings, results, or the ERP's own records; the "
+        "mechanics of this conversation (what was searched or held); anything inferred rather "
+        "than said; and health, financial, or identity details of anyone."
     ),
 )
 

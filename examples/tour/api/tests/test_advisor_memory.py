@@ -49,6 +49,9 @@ def test_the_prompt_is_the_advisors():
     assert "the advisor" in ADVISOR_MEMORY_EXTRACTION_PROMPT
     assert "current_project" not in ADVISOR_MEMORY_EXTRACTION_PROMPT
     assert "any customer's trip" in ADVISOR_MEMORY_EXTRACTION_PROMPT
+    # The login states who the advisor is; the memory is for what they said about their work.
+    assert "which their login already states" in ADVISOR_MEMORY_EXTRACTION_PROMPT
+    assert "Write the value in Chinese" in ADVISOR_MEMORY_EXTRACTION_PROMPT
 
 
 def test_the_agents_memory_runs_under_the_advisors_prompt_and_filter(main):
