@@ -372,6 +372,9 @@ def _route_attributes(
         "features": "|".join(record.features),
         "match": match,
         **({"mismatch": mismatch} if mismatch else {}),
+        # The 行程附件's own file name, when the 线路 links one: the workbench's card offers it
+        # as a download, and the model says it is there rather than that it cannot send files.
+        **({"attachment": record.attachment_name} if record.attachment_name else {}),
     }
 
 
@@ -1818,6 +1821,25 @@ class TourBackend(StorefrontBackend):
         if period_id is not None:
             return await self._departure_details(self._erp_for(session), period_id, context)
         return None
+
+    async def attachment(
+        self, session: ShoppingSessionContext, product_id: str
+    ) -> tuple[str, str] | None:
+        """The 行程附件 behind a 线路 or one of its 团期, as the name the agency gave the file and
+        the store's URL; None for an id that is neither, or a 线路 with no attachment. Read on the
+        session advisor's own client, like every other record."""
+        erp = self._erp_for(session)
+        route_id = _erp_id(product_id, ROUTE_PREFIX)
+        if route_id is None:
+            period_id = _erp_id(product_id, DEPARTURE_PREFIX)
+            if period_id is None:
+                return None
+            route_id = (await erp.get_departure(period_id)).route_id
+        record = await self._route(erp, route_id)
+        if record is None or not record.attachment_url:
+            return None
+        name = record.attachment_name or record.attachment_url.rsplit("/", 1)[-1]
+        return name, record.attachment_url
 
     # -- what the conversation has shown the advisor ----------------------------------------
 

@@ -48,6 +48,7 @@ from demo_common import (
 )
 from shopping_agent_runtime import ShoppingAgent
 
+from . import attachments
 from .advisor_memory import advisor_memory, advisor_write_filter
 from .advisors import NEED_LOGIN, AdvisorLogin, AdvisorRegistry, FixtureAdvisorRegistry
 from .agent_config import brand_name, build_shopping_config
@@ -308,6 +309,40 @@ async def new_session(record: host.CurrentSession) -> dict:
         raise HTTPException(status_code=401, detail=NEED_LOGIN)
     fresh = host.sessions.start(record.user_id)
     return {"session_id": fresh.session_id}
+
+
+# The tests' mock wire to the attachment store; None is the real one.
+attachment_transport = None
+
+NO_ATTACHMENT = "该线路没有行程附件"
+ATTACHMENT_UNAVAILABLE = "附件暂时取不到，请稍后再试或到 ERP 后台下载"
+ATTACHMENT_TOO_LARGE = "附件超过 30 MB，请到 ERP 后台下载"
+
+
+@app.get("/api/attachments/{product_id}")
+async def download_attachment(product_id: str, record: host.CurrentSession) -> Response:
+    """The 行程附件 of a 线路 (RT-…) or of one of its 团期 (DP-…), as a download under the
+    name the agency gave the file. The store's own link is a hashed name on a public bucket;
+    this route reads it on the advisor's session and names it, and nothing about the file
+    passes through the model."""
+    found = await backend.attachment(host.context(record), product_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail=NO_ATTACHMENT)
+    name, url = found
+    try:
+        data, stated = await attachments.fetch(url, transport=attachment_transport)
+    except attachments.AttachmentTooLarge:
+        raise HTTPException(status_code=413, detail=ATTACHMENT_TOO_LARGE) from None
+    except attachments.AttachmentUnavailable:
+        raise HTTPException(status_code=502, detail=ATTACHMENT_UNAVAILABLE) from None
+    return Response(
+        content=data,
+        media_type=attachments.media_type(name, stated),
+        headers={
+            "Content-Disposition": attachments.content_disposition(name),
+            "Cache-Control": "private, max-age=300",
+        },
+    )
 
 
 @app.get("/api/sessions")

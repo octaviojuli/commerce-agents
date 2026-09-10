@@ -343,6 +343,12 @@ Single prompts worth trying after those turns:
   `days` and never counted off the dates, that the advisor works in the ERP's own backstage
   and there is no App to send them to, and — in live mode — that a 政策 question is answered
   by saying the rule has to come from the 门店 or the ERP.
+- `api/attachments.py`: the 行程附件 as a download. The catalog links each 线路's itinerary
+  document on a public object store under a hashed file name and carries the agency's own name
+  beside it, so the workbench asks `GET /api/attachments/{product_id}` (a 线路 or one of its
+  团期) on the advisor's session and this host reads the file and answers it under that name,
+  with a 30 MB ceiling; the route record's `attachment` attribute is what tells the card the
+  file exists, and the model is told to point at the card rather than send a file.
 - `api/focus.py`: `present_focus`, the 聚焦卡. A search that matched more 线路 than it may
   show leaves an overview on the backend; the model writes one narrowing question and names
   the dimension, and the card's chips are that overview's groups with their counts, each tap
