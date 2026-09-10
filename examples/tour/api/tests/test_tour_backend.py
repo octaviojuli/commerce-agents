@@ -981,7 +981,7 @@ async def test_the_account_context_names_the_advisor_the_store_and_the_customer(
         # The fixtures log nobody in, so the one department is the store's own.
         "department": "ACME 旅行社",
         "departments": 1,
-        "customer_id": CUSTOMER_ID,
+        "customer": str(CUSTOMER_ID),
         "active_holds": 0,
     }
     await search_yili(backend, session)

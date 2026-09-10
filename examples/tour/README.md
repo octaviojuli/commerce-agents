@@ -42,18 +42,44 @@ The same file carries the ERP block, which decides what is behind the seam:
 
 | Variable | What it names |
 |---|---|
-| `TOUR_ERP_BASE_URL` | the ERP's `/aicli` root, HTTPS in production |
+| `TOUR_ERP_BASE_URL` | the ERP's `/aicli` root, HTTPS in production; setting it is what puts the example in live mode |
 | `TOUR_ERP_MOBILE` | the advisor's ERP login, a mainland mobile number; also the contact written on every order |
 | `TOUR_ERP_PASSWORD` | its password; ten failed logins lock the account for fifteen minutes |
-| `TOUR_ERP_CUSTOMER_ID` | the 同行 customer every quote and order is made for |
+| `TOUR_ERP_CUSTOMER_CODE` | the 同行 customer's 客户编码 (the ERP's `csCode`), resolved to one customer at boot |
+| `TOUR_ERP_STORE_NAME` | the 门店 a 同行 order is written through, which the ERP requires |
 | `TOUR_ERP_ALLOW_PAST` | `1` lists departures that already left, for a beta with no future ones |
+| `TOUR_BRAND_NAME` | the agency's own name, `ACME 旅行社` unset |
+| `TOUR_ASSISTANT_NAME` | what the advisor calls the assistant, `选团助手` unset |
 
 Unset `TOUR_ERP_BASE_URL` and `api/main.py` builds `MockErpClient` over `data/`, which is
 what the demo runs on. Set it and `api/main.py` builds `HttpErpClient` and logs in with
 those credentials, and the example is then talking to a live ERP: the third smoke turn
-below writes a real 预留 order on it, for the customer `TOUR_ERP_CUSTOMER_ID` names. There
+below writes a real 预留 order on it, for the customer `TOUR_ERP_CUSTOMER_CODE` names. There
 is no call that takes an order back, so the advisor deletes it in the ERP's backstage. The
 login, the password and the token they buy stay with the host and never reach the model.
+
+## Live mode
+
+`live = isinstance(erp, HttpErpClient)` in `api/main.py` is one line and everything the
+fixtures stand in for hangs off it, because a fixture that leaks into a real deployment is a
+number or a rule the advisor cannot tell from the agency's own.
+
+| What | On the fixtures | Live |
+|---|---|---|
+| the advisor | the profile in `data/users.json` — name, 门店, 客群, quoting habits | the ERP login alone: `userName` as the display name and the department the login landed in as the location; no habits at all, and the profile is not read |
+| the 同行 customer | `customer_id=4101` from `data/customers.json` | `TOUR_ERP_CUSTOMER_CODE` resolved through `customer/list` at boot to exactly one `CustomerRecord`; an unset, unknown, shared or unreadable code logs an error and leaves the deployment with no customer |
+| a 团期's 同业价 | quoted for that customer | quoted for it; with no customer, `quote_source=list` and the record carries the 市场价 alone |
+| a 占位 order | written through the 门店 the profile names, signed with the profile's 联系人 | written through `TOUR_ERP_STORE_NAME` and signed with the ERP login's own `userName`; unset, `add_to_cart` refuses with `未配置下单门店（TOUR_ERP_STORE_NAME）`, with no customer with `未配置下单客户（TOUR_ERP_CUSTOMER_CODE）`, and with no salesperson named rather than signing with the fixture's |
+| memory | `data/memory-seed.json` seeds the advisor's habits | `data/memory-seed-empty.json`: nothing is seeded, and the advisor's own facts are what the conversation extracts |
+| 政策 | `search_policies` over `data/policies.json` | `enable_policies=False`, so the tool is not registered on any path; the agency's rules are in its own knowledge base, which is not connected, and the search notes tell the model to say so and never state a rule from memory |
+| the store's name | `data/routes.json`'s `store_name` | `TOUR_BRAND_NAME` |
+
+A live catalog is also a beta catalog, so three of its shapes are guarded rather than
+believed: a `minGroupSize` of 0 states no 最低成团人数, so a 团期 nobody has signed up for is
+待成团 and not 已成团; a 团期 the ERP carries no `routeId` on belongs to no 线路 that can be
+named, priced or booked, so it is dropped from a window read and id 0 is not looked up; and a
+0 fare is 未发布 and not free, so a party with a child and no 儿童价 is `quote_source=partial`
+with no total and a card that says `儿童价未发布，合计待定`.
 
 ## Try
 
@@ -90,7 +116,10 @@ Single prompts worth trying after those turns:
 
 - `api/erp_client.py`: the `ErpClient` Protocol — eight calls: `search_routes`,
   `list_departures`, `get_departure`, `search_customers`, `quote`, `create_order`,
-  `list_orders`, `get_order` — and the records they exchange (`RouteQuery`, `RouteRecord`,
+  `list_orders`, `get_order` — with `WindowReader` beside it, the one further call a client
+  offers by having it: `list_window` reads a whole date window's 团期 across every 线路 and
+  department, which is how a search weighs many candidates against the window when
+  `period/list` takes no route id. And the records they exchange (`RouteQuery`, `RouteRecord`,
   `DepartureRecord`, `PriceInfo`, `CustomerRecord`, `Quote`, `OrderRequest`, `OrderResult`,
   `OrderRecord`) as frozen dataclasses of plain types, so a real ERP maps onto them without
   importing this example. `ORDER_STATUS` is the ERP's own six: 预留, 占位, 确认, 取消,
@@ -191,13 +220,19 @@ Single prompts worth trying after those turns:
   before it, and the note is measured against everything the advisor stated. The last step
   spends one route query and the departure lists behind it: its broad pass is what the steps
   above already read.
-- `api/agent_config.py`: the shopping config. `enable_fulfillment=False`, because the
-  customer joins the group at its 集合地点; `product_id_patterns` replaced with the two id
+- `api/agent_config.py`: the shopping config, and the one reader of `TOUR_BRAND_NAME` and
+  `TOUR_ASSISTANT_NAME`. `enable_fulfillment=False`, because the
+  customer joins the group at its 集合地点; `enable_policies=not live`, because the agency's
+  rules are in a knowledge base this deployment does not read; `product_id_patterns` replaced
+  with the two id
   shapes this catalog has, `RT-\d+` and `DP-\d+`; the cart capped at three lines of up to
   twenty people, because every line is a real order in the ERP; 旅行社 terms added to the
   policy and order lexicons; and `domain_search_notes` stating how a Chinese date phrase
-  becomes a window, that a booking takes a 团期 id, and that the advisor is quoted the 同业价
-  while the 市场价 belongs to the customer's share page.
+  becomes a window, that a booking takes a 团期 id, that the advisor is quoted the 同业价
+  while the 市场价 belongs to the customer's share page, that a 线路's length is the record's
+  `days` and never counted off the dates, that the advisor works in the ERP's own backstage
+  and there is no App to send them to, and — in live mode — that a 政策 question is answered
+  by saying the rule has to come from the 门店 or the ERP.
 - `api/shortlist.py`: `present_shortlist`, the one presentation extension. The model names
   one to five 团期 it has seen and writes the title; the server joins each to its 线路, names
   in Chinese the ids it dropped for want of provenance, refuses the call when nothing is
@@ -210,8 +245,10 @@ Single prompts worth trying after those turns:
   chose becomes an app event on the advisor's conversation, or on their other live sessions
   when that one has ended. `TOUR_SHARE_BASE_URL` is the origin the link points at,
   `http://localhost:3004` by default; the page itself is not part of this example.
-- `api/main.py`: the host. It builds the ERP client from the environment, hands the backend
-  the one customer id and the advisor's mobile, and puts the conversation's 预留 on every
+- `api/main.py`: the host. It builds the ERP client from the environment, and `live =
+  isinstance(erp, HttpErpClient)` is the switch the table above hangs off: it hands the backend
+  the 客户编码, the 门店, the brand and the advisor's mobile, picks the empty memory seed, and
+  builds the config with `live=live`. It also puts the conversation's 预留 on every
   cart payload with what is left of each thirty-minute window. A 候补 order is not a hold and
   carries no countdown.
 
@@ -221,7 +258,8 @@ trade-offs an advisor reads out off a family's attributes (`days`, `depart_city`
 `seats_total`, `group_status`, `party_quote_total`, `quote_party`) and name both of its prices
 per head, the 同业价 an order is booked at (`adult_price`, `child_price`) above the 市场价 the
 customer is shown (`market_adult_price`, `market_child_price`), with the party's total on the
-同业价 and `quote_source` saying which of the two it was made at, the bag counts each 预留
+同业价 and `quote_source` saying which of the two it was made at (or `partial`, where a fare
+the party needs is 未发布 and there is no total), the bag counts each 预留
 down and flips to 已过期 at zero, and `present_shortlist`, `present_guide` and `checkout`
 each have a card. Its `showcase` page renders every card from a snapshot of one advisor
 search, which `api/tests/test_showcase.py` holds to the live records.
@@ -250,19 +288,26 @@ The filter keys the model writes into `filters.attributes` on every search:
   destination, hotel, vehicle, shopping or child-age *field*, because the ERP has none; those
   are tags, and `api/tags.py` is what reads them.
 - `data/tag-rules.json`: the controlled vocabulary those tags are normalised with, one list
-  of rules per attribute. The agency's product staff extend it without a code change.
+  of rules per attribute. The destinations are the agency's own catalog — Europe country by
+  country off the attractions the extraction writes down (埃菲尔铁塔, 罗马, 琉森, 新天鹅堡,
+  圣家堂), then 土耳其, 摩洛哥, 埃及, 迪拜, 斯里兰卡, 马尔代夫, 印度, 日本, 澳新, 邮轮 and the
+  four 新疆 and 青海 values the fixtures use. A rule matches by substring, so a place name
+  inside another place's name goes to whichever rule is listed first (马拉喀什 above 喀什,
+  布加勒斯特 above 加勒, 都柏林 above 柏林), and a tag naming a dish or a square is a negative.
+  The agency's product staff extend it without a code change.
 - `data/departures.json`: sixty-six 团期, six to twelve per 线路, in the ERP's period row
   shape — `periodId`, `periodCode`, `planGuests`, `availableSeats`, `minGroupSize`,
   `confirmCount`, `reserveHours`, the route's own `companyId`, and the `priceInfo` block
   (`adultPrice`, `childPrice`, `elderPrice`, `singleRoomDiff`) the ERP carries only on a
   departure's detail, which is the 市场价.
-- `data/customers.json`: three 同行 customers in the ERP's customer row shape;
-  `TOUR_ERP_CUSTOMER_ID` names the one this deployment books for.
+- `data/customers.json`: three 同行 customers in the ERP's customer row shape; the demo books
+  for the first, and a live deployment for the one `TOUR_ERP_CUSTOMER_CODE` resolves to.
 - `data/policies.json`: 退改政策, 儿童价规则, 成团规则, 定金规则 — what `search_policies`
   answers from.
 - `data/users.json`: two advisor profiles — the ERP `mobile` the deployment falls back to as
   an order's contact, the 门店 they work in, the 客群 they see, and how they quote and hold.
-  `data/memory-seed.json` carries the same habits as memory.
+  `data/memory-seed.json` carries the same habits as memory, and
+  `data/memory-seed-empty.json` is what live mode seeds instead: nothing.
 - `data/orders.json`: empty, and no longer read. Orders live in the ERP now, and
   `get_orders` reads them back from it.
 

@@ -250,6 +250,15 @@ class HttpErpClient:
             self.companies = list(data.get("companies") or ())
             return self._token
 
+    async def identify(self) -> dict[str, Any]:
+        """The logged-in salesperson — userId, userName, companyId, companyName — logging in
+        first when this client has not yet. Only the login carries it, so a caller that wants
+        the advisor's own name before any catalog read (the workbench asks on its first turn)
+        asks here rather than waiting for one."""
+        if not self.user_info:
+            await self._login()
+        return self.user_info
+
     async def _token_for(self, company_id: int | None) -> str:
         """The bearer one call goes out under: the login token for a read and for its own
         department, and for any other department its own, switched into once and kept. The

@@ -8,9 +8,10 @@ a hotel standard, 购物, 亲子, 含-inclusions, a budget band — and the prec
 
 The coverage test runs the rules over a snapshot of the agency's own catalog, which is not in
 this repo: it holds the agency's real 线路 names. Point ``TOUR_TAG_SNAPSHOT`` at a JSON array
-of ``route/list`` rows to run it; without it, it skips. It last measured 62 rows as 59 with a
-destination, 48 with a hotel standard, 32 with a departure city, 38 直飞, 35 纯玩, 2 selling
-购物, 10 亲子, 31 with an inclusion and 7 with a budget band."""
+of ``route/list`` rows to run it; without it, it skips. It last measured a whole production
+``route/list`` — 269 线路, 232 of them carrying the itinerary extraction at all — as 231 rows
+placed at a destination the rules name, 168 with a hotel standard, 71 with a departure city,
+108 直飞, 54 纯玩, 44 selling 购物, 14 亲子, 94 with an inclusion and 83 with a budget band."""
 
 import json
 import os
@@ -88,10 +89,82 @@ def test_destinations_are_the_values_the_tags_name_in_the_order_they_name_them(t
     assert normalize(tags).destinations == expected
 
 
+@pytest.mark.parametrize(
+    ("tags", "expected"),
+    [
+        (["埃菲尔铁塔", "塞纳河游船"], ("法国",)),
+        (["罗马斗兽场", "叹息桥"], ("意大利",)),
+        (["少女峰", "卡佩尔桥"], ("瑞士",)),
+        (["新天鹅堡外观"], ("德国",)),
+        (["圣家堂官导", "巴塞罗那兰布拉斯大街"], ("西班牙",)),
+        (["贝伦塔", "莱罗书店"], ("葡萄牙",)),
+        (["布鲁塞尔大广场"], ("比利时",)),
+        (["卢森堡大公国"], ("卢森堡",)),
+        (["瓦杜茨小火车"], ("列支敦士登",)),
+        (["雅典卫城", "圣托里尼岛"], ("希腊",)),
+        (["大英博物馆", "爱丁堡"], ("英国",)),
+        (["马拉喀什不眠广场", "卡萨布兰卡"], ("摩洛哥",)),
+        (["伊斯坦布尔", "棉花堡"], ("土耳其",)),
+        (["富士山"], ("日本",)),
+        (["悉尼歌剧院入内"], ("澳大利亚",)),
+        (["地中海邮轮"], ("邮轮",)),
+        # A European multi-country line names every country its attractions are in, in tag
+        # order, which is what an advisor searching 法国 or 瑞士 has to find it by.
+        (
+            ["埃菲尔铁塔", "罗马", "琉森", "新天鹅堡", "维也纳"],
+            ("法国", "意大利", "瑞士", "德国", "奥地利"),
+        ),
+    ],
+)
+def test_the_agencys_own_catalog_places_a_line_by_its_attractions(tags, expected):
+    """The extraction writes down attractions, not countries, so the attractions are the
+    evidence: no 线路 name in this catalog says 法国 and every 法国 line says 埃菲尔铁塔."""
+    assert normalize(tags).destinations == expected
+
+
+@pytest.mark.parametrize(
+    ("tag", "expected"),
+    [
+        # A place name that sits inside another place's name goes to the rule listed first.
+        ("马拉喀什", ("摩洛哥",)),
+        ("喀什古城", ("南疆",)),
+        ("布加勒斯特", ("东欧",)),
+        ("加勒古堡", ("斯里兰卡",)),
+        ("罗马尼亚", ("东欧",)),
+        ("古罗马废墟", ("意大利",)),
+        ("都柏林尖塔", ("爱尔兰",)),
+        ("柏林墙", ("德国",)),
+        ("菲斯特雪山", ("瑞士",)),
+        ("菲斯老城", ("摩洛哥",)),
+        ("水城威尼斯", ("意大利",)),
+    ],
+)
+def test_a_place_name_inside_another_place_name_goes_to_the_more_specific_rule(tag, expected):
+    assert normalize([tag]).destinations == expected
+
+
 def test_a_destination_a_negative_rules_out_is_not_one():
     """印度教寺庙 and 印度洋海景 are on half the 斯里兰卡 lines and neither is a trip to 印度."""
     facets = normalize(["斯里兰卡", "印度教寺庙", "印度洋海景", "印度文化"])
     assert facets.destinations == ("斯里兰卡",)
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        # A meal on a European line, on 65 线路 of the production catalog.
+        "土耳其烤肉卷",
+        "升级土耳其烤肉卷",
+        # Two squares in Rome, which the 意大利 rule already places by 罗马.
+        "西班牙广场",
+        "西班牙阶梯",
+        # The Dutch fort in 加勒, which is a 斯里兰卡 line.
+        "荷兰殖民古城",
+        "荷兰遗风",
+    ],
+)
+def test_a_tag_naming_a_dish_or_a_square_is_not_a_destination(tag):
+    assert normalize(["斯里兰卡", tag]).destinations == ("斯里兰卡",)
 
 
 def test_a_line_the_rules_place_nowhere_keeps_its_first_tag_as_its_destination():
@@ -206,7 +279,22 @@ def test_the_rules_cover_the_agencys_own_catalog():
     facets = [
         normalize(row.get("itineraryTags") or (), row.get("periodPriceTags") or ()) for row in rows
     ]
+    values = {value for value, _ in load_rules()["destination"].rules}
+    extracted = [f for row, f in zip(rows, facets, strict=True) if row.get("itineraryTags")]
+    placed = [f for f in extracted if any(name in values for name in f.destinations)]
     assert len(rows) >= 60
+    # A 线路 the ERP extracted an itinerary for is placed at a destination the rules name; a
+    # line with no attachment carries no extraction and cannot be.
+    assert len(placed) >= 0.9 * len(extracted), (len(placed), len(extracted))
+    # No line is in 新疆 and in Europe at once, which is what a place name matched inside
+    # another one looks like (喀什 inside 马拉喀什, 加勒 inside 布加勒斯特).
+    domestic, abroad = {"伊犁", "喀纳斯", "南疆", "青海"}, {"法国", "意大利", "西班牙", "摩洛哥"}
+    mixed = [
+        f.destinations
+        for f in facets
+        if domestic & set(f.destinations) and abroad & set(f.destinations)
+    ]
+    assert not mixed, mixed
     assert sum(1 for f in facets if f.destinations) >= 50
     assert sum(1 for f in facets if f.shopping == "none") >= 20
     # Almost nothing admits to selling 购物 in a tag, which is why 未知 is not a no.

@@ -342,14 +342,29 @@ def _specs(record: RouteRecord, facets: RouteFacets) -> dict[str, str]:
 
 def _group_status(row: DepartureRecord) -> str:
     """成团 against the ERP's own two counts, and 候补 once the seats are gone and someone
-    is already waiting for them."""
+    is already waiting for them. A 团期 whose ``min_group_size`` is 0 states no 最低成团人数
+    rather than needing nobody, so with no one signed up it is 待成团 and not 已成团."""
     if row.available_seats <= 0 and (row.waitlist_count or 0) > 0:
         return "waitlist"
+    if row.min_group_size <= 0 and row.confirm_count <= 0:
+        return "pending"
     return "confirmed" if row.confirm_count >= row.min_group_size else "pending"
 
 
-def _party_total(price: PriceInfo | None, adults: int, children: int) -> float | None:
+def _unpublished(price: PriceInfo | None, adults: int, children: int) -> tuple[str, ...]:
+    """The fares this party needs that the price row leaves at 0, in the advisor's words. A 0
+    in this ERP is 未发布 and not free — the catalog carries 0 for a 儿童价, an 老人价 or a
+    单房差 the department has not published — so a party with a child and no 儿童价 has no
+    total, while an adults-only party is unaffected by the same row."""
     if price is None:
+        return ()
+    named = (("成人价", adults, price.adult), ("儿童价", children, price.child))
+    return tuple(label for label, heads, fare in named if heads > 0 and fare <= 0)
+
+
+def _party_total(price: PriceInfo | None, adults: int, children: int) -> float | None:
+    """What the party costs, or ``None`` when a fare it needs is 未发布."""
+    if price is None or _unpublished(price, adults, children):
         return None
     return adults * price.adult + children * price.child
 
@@ -366,11 +381,15 @@ def _variant_attributes(
     source: str,
     adults: int,
     children: int,
+    price_type: str = "",
 ) -> dict[str, str]:
     """``price`` is what the advisor quotes and books at — the 同业价, or the 市场价 while only
     that is known — and ``market`` is the departure's own 市场价, which the customer's share
-    page shows. ``quote_source`` says which of the two the priced keys hold."""
+    page shows. ``quote_source`` says which of the two the priced keys hold, or ``partial``
+    where a fare the party needs is 未发布 and there is no total. ``price_type`` is the ERP's
+    own label on the quote (同行价, 直客价)."""
     total = _party_total(price, adults, children)
+    missing = _unpublished(price, adults, children)
     return {
         "period_code": row.period_code,
         "depart_date": row.depart_date.isoformat(),
@@ -389,7 +408,9 @@ def _variant_attributes(
         "market_child_price": _number(market.child if market else 0),
         "party_quote_total": _number(total or 0),
         "quote_party": _party_label(adults, children),
-        "quote_source": source,
+        "quote_source": "partial" if missing else source,
+        "price_type": price_type,
+        **({"unpublished_fares": "|".join(missing)} if missing else {}),
     }
 
 
@@ -404,11 +425,16 @@ def _variant_summary(
     """The 团期 in one line, on both of its prices: a total the 同业价 made is the advisor's own
     and names the 市场价 beside it, so the sentence says what the order is booked at and what
     the customer is shown; one the 市场价 made says so, because that is the customer's price and
-    not what the order would be booked at."""
+    not what the order would be booked at. A fare the party needs that the ERP leaves at 0 is
+    未发布, so the sentence names it and says the total is 待定."""
     status = _STATUS_TEXT.get(_group_status(row), _group_status(row))
     party = _party_label(adults, children)
     seats = f"余位 {row.available_seats}/{row.plan_guests}，{status}"
     total = _party_total(price, adults, children)
+    if missing := _unpublished(price, adults, children):
+        label = "市场价" if source == "list" else "同业价"
+        adult = f"，{label}成人 {_number(price.adult)} 元" if price and price.adult > 0 else ""
+        return f"{seats}{adult}，{'、'.join(missing)}未发布，合计待定"
     if total is None:
         return f"{seats}，{party}报价待查"
     if source == "list":
@@ -738,16 +764,36 @@ class TourBackend(StorefrontBackend):
         customer_id: int,
         contact_mobile: str,
         allow_past: bool = False,
+        live: bool = False,
+        customer_code: str = "",
+        store_name: str = "",
+        order_store_name: str = "",
     ) -> None:
         """``today`` is for a host that runs on its own clock; the default is the real date.
         ``allow_past`` lets the windows reach behind today, for a test environment whose 团期
-        have all departed; it is off in production."""
+        have all departed; it is off in production.
+
+        ``live`` says the ERP is the agency's own, and the four values that are the fixtures'
+        in a demo are then the deployment's: ``customer_code`` is the 同行 customer's own
+        ``csCode``, resolved to an id at boot; ``store_name`` is the agency's own name, which
+        the fixture does not carry; ``order_store_name`` is the 门店 a 同行 order is written
+        through, which the ERP requires and the fixture's profile must never supply; and the
+        advisor's name and department come from the ERP login rather than from users.json."""
         self.erp = erp
         self.today: date = today or _utcnow().date()
+        self.live = live
         self.customer_id = customer_id
+        self.customer_code = customer_code
+        # The customer the deployment books for as the account context names it: the id the
+        # fixtures book for, ``csCode 名称`` once ``load_listings`` has resolved the code
+        # against the agency's own customer book, and empty while there is no customer at all.
+        self.customer_label = str(customer_id) if customer_id > 0 else ""
         self.contact_mobile = contact_mobile
         self.allow_past = allow_past
-        self.store_name: str = load_json(data_dir, "routes.json").get("store_name", STORE_NAME)
+        self.order_store_name = order_store_name
+        self.store_name: str = store_name or load_json(data_dir, "routes.json").get(
+            "store_name", STORE_NAME
+        )
         self._users = load_users(data_dir)
         self._policies = load_policies(data_dir)
         self._contexts: dict[str, SearchContext] = {}
@@ -890,6 +936,10 @@ class TourBackend(StorefrontBackend):
             )
             held = {}
             for row in sorted(await self.erp.list_window(*read), key=lambda row: row.depart_date):
+                if row.route_id <= 0:
+                    # A 团期 the ERP carries no ``routeId`` on belongs to no 线路 this side can
+                    # name, price or book: it is a broken row, not a departure.
+                    continue
                 held.setdefault(row.route_id, []).append(row)
                 # A listed row carries no price; a detail read already cached one, so keep it.
                 self._departures.setdefault(row.period_id, row)
@@ -999,7 +1049,10 @@ class TourBackend(StorefrontBackend):
 
         An id neither read names is remembered as missing, so the next read of it costs no
         further scan: nothing in a conversation adds a 线路 to the ERP, and a boot reload
-        (``load_listings``) is what forgets that."""
+        (``load_listings``) is what forgets that. Id 0 is not an id: a 团期 row that carries no
+        ``routeId`` would otherwise cost the whole catalog on every read."""
+        if route_id <= 0:
+            return None
         if route_id in self._routes:
             return self._routes[route_id]
         if route_id in self._missing_routes:
@@ -1029,7 +1082,10 @@ class TourBackend(StorefrontBackend):
     async def _quote(self, row: DepartureRecord) -> Quote | None:
         """This customer's 同业价 for one departure, asked in the departure's own department. A
         团期 the catalog has no price row for answers not-found, which is a gap in the catalog
-        and not a failed call."""
+        and not a failed call. With no customer resolved there is nobody to quote for, and the
+        records fall back to the departure's 市场价 (``quote_source=list``)."""
+        if self.customer_id <= 0:
+            return None
         try:
             return await self.erp.quote(row.period_id, self.customer_id, self._department(row))
         except ErpNotFound:
@@ -1126,7 +1182,13 @@ class TourBackend(StorefrontBackend):
             image_url=record.image_url if record else None,
             category=CATEGORY,
             attributes=_variant_attributes(
-                row, price, market, source, context.adults, context.children
+                row,
+                price,
+                market,
+                source,
+                context.adults,
+                context.children,
+                quote.price_type if quote is not None else "",
             ),
             in_stock=row.available_seats >= party,
             short_description=_variant_summary(
@@ -1337,19 +1399,36 @@ class TourBackend(StorefrontBackend):
     def _advisor(self, session: ShoppingSessionContext) -> UserPreferences:
         return preferences_of(self._users, session.user_id)
 
-    def _contact_name(self, session: ShoppingSessionContext) -> str:
-        """Who the ERP writes on the order: the salesperson the client logged in as, or the
-        advisor's own name from the profile when the client names nobody."""
-        user_info = getattr(self.erp, "user_info", None) or {}
-        logged_in = str(user_info.get("userName") or "")
+    async def _identify(self) -> dict[str, Any]:
+        """The salesperson the ERP logged in, from the client that holds the login. It is
+        empty until that client has made its first call, so a client that can log in on
+        demand is asked to; the fixtures log nobody in and answer nothing here."""
+        info = getattr(self.erp, "user_info", None) or {}
+        identify = getattr(self.erp, "identify", None)
+        if not info and identify is not None:
+            info = await identify() or {}
+        return dict(info)
+
+    async def _contact_name(self, session: ShoppingSessionContext) -> str:
+        """Who the ERP writes on the order: the salesperson the client logged in as, or — on
+        the fixtures, which log nobody in — the advisor's own name from the profile. The
+        fixture name is never written onto a real order, so a live client that names nobody
+        refuses the write instead."""
+        logged_in = str((await self._identify()).get("userName") or "")
         if logged_in:
             return logged_in
+        if self.live:
+            raise NotOffered("未取到 ERP 登录人姓名，暂时无法写入订单联系人")
         display = self._advisor(session).display_name or session.user_id
         return display.split("（")[0]
 
     def _store_name(self, session: ShoppingSessionContext) -> str:
-        """The 门店 a 同行 order is written through. The profile states the 门店 and then what
-        it sells; the store is the first clause."""
+        """The 门店 a 同行 order is written through. Against the agency's own ERP it is
+        ``TOUR_ERP_STORE_NAME`` and nothing else: the fixture profile's 门店 is one this
+        example invented, and an order must not be written through it. On the fixtures the
+        profile states the 门店 and then what it sells, and the store is the first clause."""
+        if self.live:
+            return self.order_store_name
         profile = self._advisor(session)
         return profile.preferences.get("门店", "").split("，")[0] or self.store_name
 
@@ -1400,6 +1479,10 @@ class TourBackend(StorefrontBackend):
             # The executor's gate already holds an add of a family; this is the second layer,
             # and it also catches an id that is neither a route nor a departure.
             raise Unavailable(product_id)
+        if self.customer_id <= 0:
+            raise NotOffered("未配置下单客户（TOUR_ERP_CUSTOMER_CODE）")
+        if self.live and not self.order_store_name:
+            raise NotOffered("未配置下单门店（TOUR_ERP_STORE_NAME）")
         row = self._departures.get(period_id) or await self.erp.get_departure(period_id)
         if row is None:
             raise ErpNotFound(f"找不到该团期：{period_id}")
@@ -1417,7 +1500,7 @@ class TourBackend(StorefrontBackend):
                 elders=0,
                 rooms=0,
                 single_room_diff_count=0,
-                contact_name=self._contact_name(session),
+                contact_name=await self._contact_name(session),
                 contact_mobile=self.contact_mobile,
                 store_name=self._store_name(session),
             )
@@ -1447,20 +1530,36 @@ class TourBackend(StorefrontBackend):
     # -- advisor, orders, help content, fulfillment ---------------------------------------
 
     async def get_preferences(self, session: ShoppingSessionContext) -> UserPreferences:
-        return self._advisor(session)
+        """Who the advisor is. Against the agency's own ERP that is the account the host
+        logged in — the salesperson's name and the department the login landed in — and
+        nothing else: the habits in ``users.json`` are this example's own invention, and a
+        real advisor's belong in memory, which they write themselves. The fixtures answer
+        with the profile."""
+        if not self.live:
+            return self._advisor(session)
+        user_info = await self._identify()
+        department = str(user_info.get("companyName") or "")
+        return UserPreferences(
+            user_id=session.user_id,
+            display_name=str(user_info.get("userName") or "") or None,
+            loyalty_tier=department or None,
+            default_location=department or None,
+            preferences={},
+        )
 
     async def get_account_context(self, session: ShoppingSessionContext) -> dict[str, Any] | None:
-        """``department`` is the one the ERP logged this account into and ``departments`` how
-        many it reads across; a client that logs nobody in — the fixtures — is one department,
-        the store's own."""
-        user_info = getattr(self.erp, "user_info", None) or {}
+        """``advisor`` is the salesperson the ERP logged in, ``department`` the one the login
+        landed in and ``departments`` how many the account reads across; a client that logs
+        nobody in — the fixtures — is one department, the store's own. ``customer`` is the
+        同行 customer every quote and order is made for, once the code has resolved to one."""
+        user_info = await self._identify()
         companies = getattr(self.erp, "companies", None) or ()
         return {
-            "advisor": session.user_id,
+            "advisor": str(user_info.get("userName") or "") or session.user_id,
             "store": self._store_name(session),
             "department": str(user_info.get("companyName") or "") or self.store_name,
             "departments": len(companies) or 1,
-            "customer_id": self.customer_id,
+            "customer": self.customer_label,
             "active_holds": len(self._live_holds(session.session_id)),
         }
 
@@ -1538,9 +1637,11 @@ class TourBackend(StorefrontBackend):
         prices, and party quotes in the conversation are live and these are not. Against a
         live ERP every route is a round trip, so the snapshot takes the first few routes and
         no list prices; an ERP that refuses or is down leaves the snapshot empty rather than
-        stopping the host from booting."""
+        stopping the host from booting. This is also where the deployment's 同行 customer is
+        resolved, because that costs one ERP call too."""
         context = self._default_context()
         stated = Request(text="", depart_from=context.depart_from, depart_to=context.depart_to)
+        await self._resolve_customer()
         # A reload reads the catalog again, so a route the last read did not carry is worth
         # looking for again.
         self._missing_routes.clear()
@@ -1548,10 +1649,9 @@ class TourBackend(StorefrontBackend):
         variants: dict[str, ProductDetails] = {}
         try:
             records = await self._search(stated)
-            live = self._live_erp()
-            for record in records[: MAX_BOOT_ROUTES if live else len(records)]:
+            for record in records[: MAX_BOOT_ROUTES if self.live else len(records)]:
                 details = await self._route_details(
-                    record.route_id, context, prices=0 if live else MAX_DETAIL_PRICES
+                    record.route_id, context, prices=0 if self.live else MAX_DETAIL_PRICES
                 )
                 if details is None:
                     continue
@@ -1563,10 +1663,35 @@ class TourBackend(StorefrontBackend):
             listings, variants = {}, {}
         self.products, self._variants = listings, variants
 
-    def _live_erp(self) -> bool:
-        """A client that logs a salesperson in is the agency's own ERP over HTTP; the
-        fixtures answer in memory and cost nothing to page through."""
-        return hasattr(self.erp, "user_info")
+    async def _resolve_customer(self) -> None:
+        """The 同行 customer this deployment books for, by the ``csCode`` the environment
+        names. Only a code resolving to exactly one customer is one: an unset code, a code the
+        book does not hold and a code several customers share all leave the backend with no
+        customer, which is an error in the deployment and not in the conversation — the reads
+        all still work, quotes fall back to the 市场价, and ``add_to_cart`` says which variable
+        is missing. The fixtures book for the id they were built with and resolve nothing."""
+        if not self.live:
+            return
+        code = self.customer_code.strip()
+        if not code:
+            log.error(
+                "tour: TOUR_ERP_CUSTOMER_CODE is unset; no 同行 customer to quote or book for"
+            )
+            self.customer_id, self.customer_label = 0, ""
+            return
+        try:
+            found = [row for row in await self.erp.search_customers(code) if row.code == code]
+        except ErpError as error:
+            log.error("tour: customer %s not resolved: %s: %s", code, type(error).__name__, error)
+            found = []
+        if len(found) != 1:
+            log.error(
+                "tour: TOUR_ERP_CUSTOMER_CODE=%s matched %d customers, not one", code, len(found)
+            )
+            self.customer_id, self.customer_label = 0, ""
+            return
+        self.customer_id = found[0].customer_id
+        self.customer_label = f"{found[0].code} {found[0].name}".strip()
 
     def product(self, product_id: str) -> ProductDetails | None:
         """A loaded route or one of its departures by id, from the snapshot ``load_listings``
