@@ -10,16 +10,18 @@ executor relays it into the conversation unchanged.
 
 Three shapes of the ERP show through the seam and cannot be hidden. Departures are listed by
 route *name*, because the ERP's period list has no ``routeId`` filter, and the caller keeps
-the rows whose ``route_id`` matches. An order is the only write there is: the ERP has no
-cancel, release, or amend call, so nothing here can take an order back. And a department
-(``company_id``) rides on every departure, because the account reads across all the
-departments it is authorised for while a quote and an order are written in one of them."""
+the rows whose ``route_id`` matches — which is why a client that reads a whole window at once
+says so through ``WindowReader``, and why a search asks for the window instead of for every
+route in it. An order is the only write there is: the ERP has no cancel, release, or amend
+call, so nothing here can take an order back. And a department (``company_id``) rides on every
+departure, because the account reads across all the departments it is authorised for while a
+quote and an order are written in one of them."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 # The ERP's own order statuses; a fresh order is 预留 (0) or, over the seats left, 候补 (5).
 ORDER_STATUS = {0: "预留", 1: "占位", 2: "确认", 3: "取消", 4: "审批中", 5: "候补"}
@@ -272,4 +274,21 @@ class ErpClient(Protocol):
     async def get_order(self, order_id: int) -> OrderRecord | None:
         """One order with its party, contact and 预留 expiry, or ``None`` when there is no
         such id."""
+        ...
+
+
+@runtime_checkable
+class WindowReader(Protocol):
+    """A client that can read a whole date window's 团期 in one call. The ERP's period list
+    filters on the route *name* and carries no ``routeId``, so learning many 线路's departures
+    otherwise costs a call per 线路 — a fan-out a search over a live catalog cannot afford. A
+    client that offers this says so by having the method; ``TourBackend`` asks for the window
+    once per search and reads each route's departures out of it, and falls back to
+    ``list_departures`` per route for a client that does not, where a call costs nothing."""
+
+    async def list_window(
+        self, depart_from: date | None, depart_to: date | None
+    ) -> list[DepartureRecord]:
+        """Every departure inside the window, across every 线路 and every department this
+        salesperson reads, however many pages the ERP holds them in."""
         ...
