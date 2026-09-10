@@ -29,14 +29,20 @@ decisions that shape Phase 4. Fictional example values throughout.
   parameter or business refusal (the message is advisor-facing Chinese), 401 credentials,
   403 department, 404 unknown or invisible, 405 method, 429 login throttle, 500 fault.
 - Paging: `pageNum ≥ 1`, `pageSize 1–50`; responses carry `list, total, pageNum, pageSize,
-  totalPages`. Dates are `YYYY-MM-DD`; money is 元; ids are integers.
+  totalPages`. Dates are `YYYY-MM-DD`; money is 元; ids are integers. `route/list`,
+  `period/list` and `customer/list` are read to the last page the answer names — the catalog
+  is larger than one page and a read that stopped early would hide 线路 and 团期 the advisor
+  asked for — with a ceiling of 20 pages against a runaway `totalPages`. The first page names
+  `totalPages` and the rest are fetched four at a time.
+- Timeouts: 8 s on a paged listing read, with one retry when the page times out; 3 s on every
+  other read; 5 s on the login and on an order.
 
 ## Reads
 
 | Call | Endpoint | Filters | Row |
 |---|---|---|---|
 | routes | `GET /route/list` | `routeName~`, `routeCode~`, `departDateStart/End` | `routeId, routeCode, routeName, days, departCityId, departCityName, companyId, companyName, groupId, fromPrice, tags[], itineraryTags[], itineraryTagsStatus, periodTags[], periodPriceTags[], periodHolidayTags[], features[], firstImageUrl, posterUrls[], routeAttachmentName, routeAttachmentUrl` |
-| departures | `GET /period/list` | `periodCode~`, `routeName~`, `departDateStart/End` — **no `routeId`**, so a route's departures are fetched by name and kept by `routeId` | `periodId, periodCode, routeId, routeName, departDate, returnDate, days, planGuests, minGroupSize, confirmCount, availableSeats, reserveHours, companyId, companyName, departCityName, groupId` |
+| departures | `GET /period/list` | `periodCode~`, `routeName~`, `departDateStart/End` — **no `routeId`**, so a route's departures are fetched by name and kept by `routeId`, or the whole window is read once and grouped by `routeId`, which is what a search does | `periodId, periodCode, routeId, routeName, departDate, returnDate, days, planGuests, minGroupSize, confirmCount, availableSeats, reserveHours, companyId, companyName, departCityName, groupId` |
 | departure | `GET /period/detail?periodId=` | | the row above (`companyId` included) plus `reserveCount, placeholderCount, waitlistCount, flightInfo[], priceInfo{adultPrice, childPrice, elderPrice, singleRoomDiff, currency}` (the 市场价) |
 | customers | `GET /customer/list` | `keyword~` | `customerId, companyName, csCode, companyType` (1 = 同行) |
 | quote | `GET /order/price?periodId=&customerId=` | needs a token in the period's `companyId` | `isExternalOrder, priceType, priceInfo{...}` — the customer's 同业价 |
@@ -79,6 +85,12 @@ singleRoomDiffCount, storeId?, storeName?, contactName, contactMobile, remark?}`
   ERP.
 - **One customer per deployment for now.** `TOUR_ERP_CUSTOMER_ID` names the 同行 customer
   every quote and order is made for; picking a customer in conversation comes later.
+- **The customer book is one department's, and not always the login one's.** `customer/list`
+  answers for the token's department alone, and in production the department the login lands
+  in keeps no customers at all. So `search_customers` asks on the login token first and, while
+  the answer is empty, asks each other authorised department in turn on its own switched token
+  until one answers. The keyword is what keeps that bounded: a department holds thousands of
+  customers, and the pages of a match are read to the end.
 - **A hold is a 预留 order** the session created, shown in the cart with a 30-minute
   countdown of our own. Removing or resizing a hold is not offered: the ERP has no such
   call, and the advisor is told to handle it in the ERP.
@@ -93,6 +105,15 @@ singleRoomDiffCount, storeId?, storeName?, contactName, contactMobile, remark?}`
   `periodPriceTags` carry a budget band on a few routes (预算约9999—1万元) and
   `periodHolidayTags` is empty; `RouteRecord` keeps `itineraryTags` as `itinerary_tags` and
   `periodPriceTags` as `price_tags`, and a row without either maps to an empty tuple.
+- **A search reads the window's 团期 once, not each route's.** `period/list` takes no route
+  id, so weighing every candidate 线路 against the window would cost a call apiece — and the
+  candidates are the window's whole catalog whenever the destination is written only in the
+  tags. The backend reads `period/list` for the window alone, pages it, groups it by `routeId`
+  and keeps it for the search run: a 线路 the read does not name has no 团期 inside the window,
+  and there is nothing to ask again. `list_departures` stays for the route the advisor opened,
+  where the name query plus the window fallback is one route's freshest seat counts; the client
+  holds a window's read for a couple of minutes, so that fallback — a 线路 renamed since its
+  团期 were made — costs nothing after a search.
 - **Search is still name-based on the ERP's side.** The ERP carries no destination, hotel,
   vehicle, shopping or child-age *field* and no tag filter, so `destination` becomes a
   `routeName` fuzzy match, and `days`, 纯玩, the hotel standard and the departure city are
@@ -116,6 +137,17 @@ singleRoomDiffCount, storeId?, storeName?, contactName, contactMobile, remark?}`
 
 ## Production observations
 
+- The shape of it: 11 departments on the account, some 270 线路 in the catalog and 160 of
+  them inside a plain 60-day window, 190 团期 in that window across a third of those 线路 and
+  six departments, and several thousand customers in each department that keeps any. Six pages
+  of 线路 with no window, four with one, four of 团期 for the window.
+- `period/list` with the window alone is the slow read — 1.3–1.9 s a page against 0.1–0.6 s for
+  everything else — so a window is read once and around: a week past each end, which is what
+  the first relaxation widens by, so that step reads nothing further. The whole of a 60-day
+  window's 团期 comes back in about three seconds that way.
+- The department the login lands in keeps no customers and sells no 团期 inside the window. A
+  keyword the advisor searches customers by is therefore answered by another department, and a
+  quote is always a switch away.
 - `GET /route/list` applies `departDateStart`/`departDateEnd` loosely: a week's query answers
   with 线路 that have no 团期 inside it at all — five 斯里兰卡 lines for 10-01..10-07, of which
   `period/list` shows two departing in October. The window on a route search is therefore a

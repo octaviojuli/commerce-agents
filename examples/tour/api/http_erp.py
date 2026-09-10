@@ -2,17 +2,21 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """``ErpClient`` over the B2B 旅行社 ERP's own HTTP API (``docs/erp-contract.md``): the eight
-calls as requests, the ERP's JSON as the records in ``erp_client.py``, and its HTTP statuses as
-the exceptions the executor relays. Field mapping and error mapping only — no seat arithmetic,
-no ranking, no status derivation; those belong to the ERP or to the backend above it.
+calls as requests — and the window read that spares a search a call per 线路 — the ERP's JSON
+as the records in ``erp_client.py``, and its HTTP statuses as the exceptions the executor
+relays. Field mapping and error mapping only — no seat arithmetic, no ranking, no status
+derivation; those belong to the ERP or to the backend above it.
 
 A login takes the mobile and the password alone and lands in the account's first authorised
 department; the reads span all of them. The two write-side calls are department-bound, so the
 client holds one token per department: the login token for its own, and a switched one, kept
-until it expires, for each other. No password or token is logged, or ever reaches the model."""
+until it expires, for each other. One lock guards the login and one guards each department's
+switch, so a fan-out of concurrent calls on a cold client buys one token apiece instead of one
+per caller. No password or token is logged, or ever reaches the model."""
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import fields
 from datetime import UTC, date, datetime
@@ -23,9 +27,22 @@ import httpx
 from . import erp_client as erp
 
 READ_TIMEOUT = 3.0
+# A paged listing read: ``period/list`` over a window alone answers in seconds per page where
+# every other read answers in well under one, and a page that times out is retried once.
+LIST_TIMEOUT = 8.0
 WRITE_TIMEOUT = 5.0
 PAGE_SIZE = 50
-MAX_PAGES = 3
+# The catalog is paged to exhaustion — production carries some 270 线路, 160 of them inside a
+# plain 60-day window, and 190 团期 in that window — with a ceiling that keeps a runaway
+# ``totalPages`` from paging for ever.
+MAX_PAGES = 20
+# How many pages after the first are read at once: the first names ``totalPages``, and the
+# rest are one round trip each and independent of one another.
+PAGE_CONCURRENCY = 4
+# How long one window's whole 团期 read is reused, so a search's fan-out and the details read
+# that follows it share one call. Seat counts on a listed row age within it; a quoted
+# departure's own detail call is what the numbers the advisor reads come from.
+WINDOW_TTL = 120.0
 TOKEN_SKEW = 60.0
 
 UNAVAILABLE = "旅行社 ERP 暂时无法连接，请稍后再试。"
@@ -153,8 +170,10 @@ def _record(cls: type[R], row: dict[str, Any]) -> R:
 
 class HttpErpClient:
     """The eight ``ErpClient`` calls against ``base_url`` (the ERP's ``/aicli`` root), as the
-    salesperson ``mobile`` names. The ERP picks the department the login lands in, and a
-    write-side call switches into the 团期's. ``transport`` is the tests' mock hook."""
+    salesperson ``mobile`` names, and the ``WindowReader`` call beside them. The ERP picks the
+    department the login lands in, and a write-side call switches into the 团期's. Every listing
+    read is paged to exhaustion, and one window's 团期 are read once and held for a moment.
+    ``transport`` is the tests' mock hook."""
 
     def __init__(
         self,
@@ -177,43 +196,76 @@ class HttpErpClient:
         self._switched: dict[int, tuple[str, float]] = {}
         self.user_info: dict[str, Any] = {}
         self.companies: list[dict[str, Any]] = []
+        # A search fans out over one cold client: without these every caller would log in, and
+        # every caller wanting the same department would switch into it. The login lock guards
+        # the login token, one lock per department guards that department's switch, and the
+        # caller that waited reads the token the first one wrote instead of buying another.
+        # Ten failed logins lock the mobile, so a repeated login is not merely wasteful.
+        self._login_lock = asyncio.Lock()
+        self._switch_locks: dict[int, asyncio.Lock] = {}
+        # One window's whole 团期 read, by window, with the moment it was read: the backend's
+        # search fan-out and the details read after it ask for the same window.
+        self._windows: dict[
+            tuple[date | None, date | None], tuple[float, list[erp.DepartureRecord]]
+        ] = {}
 
     async def _send(
-        self, method: str, path: str, data: dict[str, Any], timeout: float, token: str
+        self,
+        method: str,
+        path: str,
+        data: dict[str, Any],
+        timeout: float,
+        token: str,
+        *,
+        retry_timeout: bool = False,
     ) -> httpx.Response:
-        """A GET sends ``data`` as the query, a POST as the body; a dead wire is an outage."""
+        """A GET sends ``data`` as the query, a POST as the body; a dead wire is an outage. A
+        paged listing read is slow enough to time out on a busy ERP, so it gets one more try;
+        every other call is one attempt, because a read that hangs is better reported."""
         sent = {"params": data} if method == "GET" else {"json": data}
         headers = {"Authorization": f"Bearer {token}"} if token else {}
-        try:
-            return await self._client.request(
-                method, path, timeout=timeout, headers=headers, **sent
-            )
-        except httpx.TransportError as exc:
-            raise erp.ErpUnavailable(UNAVAILABLE) from exc
+        for attempt in (1, 2):
+            try:
+                return await self._client.request(
+                    method, path, timeout=timeout, headers=headers, **sent
+                )
+            except httpx.TimeoutException as exc:
+                if not (retry_timeout and attempt == 1):
+                    raise erp.ErpUnavailable(UNAVAILABLE) from exc
+            except httpx.TransportError as exc:
+                raise erp.ErpUnavailable(UNAVAILABLE) from exc
+        raise erp.ErpUnavailable(UNAVAILABLE)
 
     async def _login(self) -> str:
-        """Mobile and password alone; the ERP names the department it chose and all of them."""
-        response = await self._send("POST", "/login", self._credentials, WRITE_TIMEOUT, "")
-        data = _data(response, credentials=True) or {}
-        self._token, self._expires_at = _bearer(data)
-        self.user_info = dict(data.get("userInfo") or {})
-        self.companies = list(data.get("companies") or ())
-        return self._token
+        """Mobile and password alone; the ERP names the department it chose and all of them.
+        The lock makes a concurrent fan-out cost one login: whoever waited for it finds the
+        token already there and takes it."""
+        async with self._login_lock:
+            if self._token and time.time() < self._expires_at - TOKEN_SKEW:
+                return self._token
+            response = await self._send("POST", "/login", self._credentials, WRITE_TIMEOUT, "")
+            data = _data(response, credentials=True) or {}
+            self._token, self._expires_at = _bearer(data)
+            self.user_info = dict(data.get("userInfo") or {})
+            self.companies = list(data.get("companies") or ())
+            return self._token
 
     async def _token_for(self, company_id: int | None) -> str:
         """The bearer one call goes out under: the login token for a read and for its own
-        department, and for any other department its own, switched into once and kept."""
+        department, and for any other department its own, switched into once and kept. The
+        department's own lock is what keeps a fan-out to one switch apiece."""
         token = self._token
         if not token or time.time() >= self._expires_at - TOKEN_SKEW:
             token = await self._login()
         if not company_id or company_id == int(self.user_info.get("companyId") or 0):
             return token
-        held = self._switched.get(company_id)
-        if held and time.time() < held[1] - TOKEN_SKEW:
-            return held[0]
-        switched = await self._request("POST", "/switch-company", {"companyId": company_id}) or {}
-        self._switched[company_id] = _bearer(switched)
-        return self._switched[company_id][0]
+        async with self._switch_locks.setdefault(company_id, asyncio.Lock()):
+            held = self._switched.get(company_id)
+            if held and time.time() < held[1] - TOKEN_SKEW:
+                return held[0]
+            switch = await self._request("POST", "/switch-company", {"companyId": company_id})
+            self._switched[company_id] = _bearer(switch or {})
+            return self._switched[company_id][0]
 
     async def _request(
         self,
@@ -222,12 +274,16 @@ class HttpErpClient:
         data: dict[str, Any],
         timeout: float = READ_TIMEOUT,
         company_id: int | None = None,
+        *,
+        retry_timeout: bool = False,
     ) -> Any:
         """One call under the token ``company_id`` picks. A stale token buys one fresh login or
         switch and one retry; a 401 after that is the account's problem, not the session's."""
         for attempt in (1, 2):
             token = await self._token_for(company_id)
-            response = await self._send(method, path, data, timeout, token)
+            response = await self._send(
+                method, path, data, timeout, token, retry_timeout=retry_timeout
+            )
             if response.status_code == 401 and attempt == 1:
                 # The token it came back to is spent: a switched one is dropped, anything else
                 # was the login token; either way the next attempt buys a fresh one.
@@ -240,15 +296,40 @@ class HttpErpClient:
                 _raise(404, "")
             return _data(response)
 
-    async def _pages(self, path: str, params: dict[str, Any], size: int) -> list[dict[str, Any]]:
-        """At most ``MAX_PAGES``: deeper than that is a search to narrow, not to page."""
-        rows: list[dict[str, Any]] = []
-        for page in range(1, MAX_PAGES + 1):
-            paged = {**params, "pageNum": page, "pageSize": size}
-            data = await self._request("GET", path, paged) or {}
-            rows.extend(data.get("list") or [])
-            if page >= int(data.get("totalPages") or 1):
-                break
+    async def _page(
+        self, path: str, params: dict[str, Any], size: int, page: int, company_id: int | None
+    ) -> dict[str, Any]:
+        paged = {**params, "pageNum": page, "pageSize": size}
+        return (
+            await self._request("GET", path, paged, LIST_TIMEOUT, company_id, retry_timeout=True)
+            or {}
+        )
+
+    async def _pages(
+        self,
+        path: str,
+        params: dict[str, Any],
+        size: int,
+        company_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Every page the answer says there is, to ``MAX_PAGES``: the catalog is larger than any
+        one page, and a listing read that stopped early would hide 线路 and 团期 the advisor
+        asked for. The first page names ``totalPages`` and the rest are read a few at a time,
+        because each is its own round trip and the ERP's slowest read is this one."""
+        first = await self._page(path, params, size, 1, company_id)
+        rows: list[dict[str, Any]] = list(first.get("list") or [])
+        total = min(int(first.get("totalPages") or 1), MAX_PAGES)
+        gate = asyncio.Semaphore(PAGE_CONCURRENCY)
+
+        async def read(page: int) -> list[dict[str, Any]]:
+            async with gate:
+                return list(
+                    (await self._page(path, params, size, page, company_id)).get("list") or []
+                )
+
+        rest = await asyncio.gather(*(read(page) for page in range(2, total + 1)))
+        for page_rows in rest:
+            rows.extend(page_rows)
         return rows
 
     async def _optional(self, cls: type[R], path: str, params: dict[str, Any]) -> R | None:
@@ -272,24 +353,59 @@ class HttpErpClient:
         """The period list has no ``routeId`` filter, so the name fetches and the id keeps:
         another route whose name shares a word comes back too, and only this one stays. A period
         carries the route name it was made under, so a renamed route finds nothing by name; the
-        window alone is fetched then."""
+        window's whole read answers for it then, and that read is the one ``list_window``
+        holds, so a search that already made it costs nothing here."""
         window = {"departDateStart": _iso(depart_from), "departDateEnd": _iso(depart_to)}
         rows = await self._pages(
             "/period/list", _clean({"routeName": route_name, **window}), PAGE_SIZE
         )
-        mine = [row for row in rows if int(row.get("routeId") or 0) == route_id]
+        listed = (_record(erp.DepartureRecord, row) for row in rows)
+        mine = [row for row in listed if row.route_id == route_id]
         if not mine and route_name:
-            rows = await self._pages("/period/list", _clean(window), PAGE_SIZE)
-            mine = [row for row in rows if int(row.get("routeId") or 0) == route_id]
-        return [_record(erp.DepartureRecord, row) for row in mine]
+            whole = await self.list_window(depart_from, depart_to)
+            mine = [row for row in whole if row.route_id == route_id]
+        return mine
+
+    async def list_window(
+        self, depart_from: date | None, depart_to: date | None
+    ) -> list[erp.DepartureRecord]:
+        """Every 团期 the window holds, across every 线路 and every department the account
+        reads: one paged call in place of a call per route, which is the only way to learn many
+        routes' departures from an endpoint that filters on the route *name* and not on an id.
+        The answer is kept for ``WINDOW_TTL`` seconds, because a search's fan-out and the
+        details read that follows it ask for the same window."""
+        key = (depart_from, depart_to)
+        held = self._windows.get(key)
+        if held and time.time() - held[0] < WINDOW_TTL:
+            return held[1]
+        params = _clean({"departDateStart": _iso(depart_from), "departDateEnd": _iso(depart_to)})
+        rows = await self._pages("/period/list", params, PAGE_SIZE)
+        records = [_record(erp.DepartureRecord, row) for row in rows]
+        self._windows[key] = (time.time(), records)
+        return records
 
     async def get_departure(self, period_id: int) -> erp.DepartureRecord | None:
         return await self._optional(erp.DepartureRecord, "/period/detail", {"periodId": period_id})
 
     async def search_customers(self, keyword: str) -> list[erp.CustomerRecord]:
-        params = _clean({"keyword": keyword, "pageNum": 1, "pageSize": PAGE_SIZE})
-        data = await self._request("GET", "/customer/list", params) or {}
-        return [_record(erp.CustomerRecord, row) for row in data.get("list") or ()]
+        """The customer book is the one read that does *not* span every department: a
+        department that keeps no customers of its own — the login lands in one such in
+        production — answers nothing whatever the keyword is. So the login token asks first,
+        and while the answer is empty each other authorised department is asked in turn, on its
+        own switched token, until one answers. The keyword is what narrows this: the pages are
+        read to exhaustion, and a department holds thousands of customers."""
+        params = _clean({"keyword": keyword})
+        rows = await self._pages("/customer/list", params, PAGE_SIZE)
+        login_company = int(self.user_info.get("companyId") or 0)
+        if not rows:
+            for company in self.companies:
+                company_id = int(company.get("companyId") or 0)
+                if not company_id or company_id == login_company:
+                    continue
+                rows = await self._pages("/customer/list", params, PAGE_SIZE, company_id)
+                if rows:
+                    break
+        return [_record(erp.CustomerRecord, row) for row in rows]
 
     async def quote(self, period_id: int, customer_id: int, company_id: int) -> erp.Quote:
         """The 同业价, department-bound: under any department but the 团期's own the ERP answers

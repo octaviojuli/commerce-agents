@@ -1,11 +1,12 @@
 # Copyright 2026 Anthropic PBC
 # SPDX-License-Identifier: Apache-2.0
 
-"""``HttpErpClient`` against an ``httpx.MockTransport``: what each call puts on the wire and
-what each answer, refusal, and outage maps back to. The canned bodies are the beta
+"""``HttpErpClient`` against a mock wire: what each call puts on the wire and what each
+answer, refusal, and outage maps back to. The canned bodies are the beta
 environment's own envelopes and keys with ACME's fictional catalog in them, so these tests
 hold the client to the ERP's contract without a server."""
 
+import asyncio
 import json
 import time
 from datetime import date, datetime
@@ -23,7 +24,13 @@ from tour.api.erp_client import (
     OrderRequest,
     RouteQuery,
 )
-from tour.api.http_erp import HttpErpClient
+from tour.api.http_erp import (
+    LIST_TIMEOUT,
+    MAX_PAGES,
+    READ_TIMEOUT,
+    WRITE_TIMEOUT,
+    HttpErpClient,
+)
 
 BASE_URL = "https://erp.acme-tour.example/aicli"
 PREFIX = "/aicli"
@@ -33,10 +40,12 @@ COMPANY_ID = 2
 TOKEN = "erp-token-abc"
 
 OTHER_COMPANY_ID = 5
+THIRD_COMPANY_ID = 7
 SWITCHED = "erp-token-qinghai"
 COMPANIES = [
     {"companyId": COMPANY_ID, "companyName": "ACME 旅行社 新疆部"},
     {"companyId": OTHER_COMPANY_ID, "companyName": "ACME 旅行社 青海部"},
+    {"companyId": THIRD_COMPANY_ID, "companyName": "ACME 旅行社 甘肃部"},
 ]
 USER_INFO = {"userId": 6, "userName": "柯海水", "companyId": 2, "companyName": "ACME 旅行社 新疆部"}
 LOGIN = {
@@ -179,16 +188,16 @@ ORDER_DETAIL = {
 }
 
 
-def page(rows: list[dict]) -> dict:
+def page(rows: list[dict], *, page_num: int = 1, total_pages: int = 1) -> dict:
     return {
         "code": 200,
         "message": "获取成功",
         "data": {
             "list": rows,
-            "total": len(rows),
-            "pageNum": 1,
+            "total": len(rows) * total_pages,
+            "pageNum": page_num,
             "pageSize": 50,
-            "totalPages": 1,
+            "totalPages": total_pages,
         },
     }
 
@@ -197,14 +206,43 @@ def ok(data: dict) -> dict:
     return {"code": 200, "message": "操作成功", "data": data}
 
 
-def erp(replies: dict) -> tuple[HttpErpClient, list[httpx.Request]]:
-    """A client whose transport answers each path from ``replies``: a JSON body, a
-    ``(status, body)`` pair, raw text, an exception to raise, or a list of those in turn."""
-    seen: list[httpx.Request] = []
+def paged(by_page: list[list[dict]]):
+    """A reply that answers whichever page the request's ``pageNum`` asks for, and names how
+    many there are, the way the ERP's own envelope does."""
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request)
-        reply = replies[request.url.path.removeprefix(PREFIX)]
+    def reply(request: httpx.Request) -> dict:
+        number = int(dict(request.url.params).get("pageNum") or 1)
+        rows = by_page[number - 1] if number <= len(by_page) else []
+        return page(rows, page_num=number, total_pages=len(by_page))
+
+    return reply
+
+
+def switched(request: httpx.Request) -> dict:
+    """A switch answered with that department's own token, so a call can be traced to it."""
+    company = body_of(request)["companyId"]
+    return ok({"token": f"erp-token-{company}", "expiresIn": 28800, "companies": COMPANIES})
+
+
+class Wire(httpx.AsyncBaseTransport):
+    """A transport that answers each path from ``replies`` and suspends on every request the
+    way a real wire does. ``httpx.MockTransport`` answers without ever yielding to the event
+    loop, so concurrent callers would run one after another and the client's locks would look
+    like they were doing something they are not.
+
+    A reply is a JSON body, a ``(status, body)`` pair, raw text, an exception to raise, or a
+    list of those in turn; a callable is passed the request and answers whatever it likes."""
+
+    def __init__(self, replies: dict) -> None:
+        self.replies = replies
+        self.seen: list[httpx.Request] = []
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        self.seen.append(request)
+        await asyncio.sleep(0)
+        reply = self.replies[request.url.path.removeprefix(PREFIX)]
+        if callable(reply):
+            reply = reply(request)
         if isinstance(reply, list):
             reply = reply.pop(0)
         status, body = reply if isinstance(reply, tuple) else (200, reply)
@@ -214,9 +252,21 @@ def erp(replies: dict) -> tuple[HttpErpClient, list[httpx.Request]]:
             return httpx.Response(status, text=body)
         return httpx.Response(status, json=body)
 
-    transport = httpx.MockTransport(handler)
+
+def erp(replies: dict) -> tuple[HttpErpClient, list[httpx.Request]]:
+    """A client on a ``Wire`` over ``replies``, and the requests it puts on that wire."""
+    transport = Wire(replies)
     client = HttpErpClient(BASE_URL, MOBILE, SECRET, transport=transport)
-    return client, seen
+    return client, transport.seen
+
+
+def paths(seen: list[httpx.Request]) -> list[str]:
+    return [request.url.path.removeprefix(PREFIX) for request in seen]
+
+
+def read_timeout(request: httpx.Request) -> float:
+    """The read timeout the client set on one call, as httpx carries it on the request."""
+    return request.extensions["timeout"]["read"]
 
 
 def body_of(request: httpx.Request) -> dict:
@@ -570,6 +620,168 @@ async def test_an_outage_is_never_relayed_as_the_erps_own_words(reply):
     client, _ = erp({"/login": LOGIN, "/route/list": reply})
     with pytest.raises(ErpUnavailable, match="暂时无法连接"):
         await client.search_routes(RouteQuery())
+
+
+# -- paging, timeouts, and the tokens a fan-out shares --------------------------------------
+
+
+async def test_a_listing_read_pages_to_exhaustion_and_keeps_every_row():
+    """Production's catalog is six pages of 线路 and a plain 60-day window four pages of 团期, so
+    a read that stopped at the first page would hide most of both from the advisor."""
+    by_page = [[{**ROUTE, "routeId": 1000 + number}] for number in range(3)]
+    client, seen = erp({"/login": LOGIN, "/route/list": paged(by_page)})
+    routes = await client.search_routes(RouteQuery())
+    assert [route.route_id for route in routes] == [1000, 1001, 1002]
+    assert [int(dict(r.url.params)["pageNum"]) for r in seen[1:]] == [1, 2, 3]
+    assert {int(dict(r.url.params)["pageSize"]) for r in seen[1:]} == {50}
+
+
+async def test_a_listing_read_stops_at_the_page_ceiling():
+    """An answer that claims more pages than the catalog could hold is still bounded: the read
+    is a page count and not a promise, and a client that trusted it would never finish."""
+    absurd = lambda request: page([ROUTE], page_num=1, total_pages=500)  # noqa: E731
+    client, seen = erp({"/login": LOGIN, "/route/list": absurd})
+    await client.search_routes(RouteQuery())
+    assert paths(seen).count("/route/list") == MAX_PAGES
+
+
+async def test_a_paged_listing_read_waits_longer_than_every_other_call():
+    """``period/list`` over a window alone takes seconds a page where every other read answers
+    in a fraction of one, and a login or an order is worth waiting a moment longer for."""
+    client, seen = erp(
+        {"/login": LOGIN, "/route/list": page([ROUTE]), "/period/detail": ok(PERIOD_DETAIL)}
+    )
+    await client.search_routes(RouteQuery())
+    await client.get_departure(3001)
+    login, listing, detail = seen
+    assert read_timeout(login) == WRITE_TIMEOUT
+    assert read_timeout(listing) == LIST_TIMEOUT
+    assert read_timeout(detail) == READ_TIMEOUT
+
+
+async def test_a_listing_page_that_times_out_is_asked_once_more():
+    client, seen = erp({"/login": LOGIN, "/route/list": [httpx.ReadTimeout("slow"), page([ROUTE])]})
+    routes = await client.search_routes(RouteQuery())
+    assert [route.route_id for route in routes] == [1021]
+    assert paths(seen).count("/route/list") == 2
+
+
+async def test_a_read_that_is_not_a_listing_page_is_not_retried():
+    """One attempt: a detail read that hangs is reported as an outage rather than doubled."""
+    client, seen = erp(
+        {"/login": LOGIN, "/period/detail": [httpx.ReadTimeout("slow"), ok(PERIOD_DETAIL)]}
+    )
+    with pytest.raises(ErpUnavailable, match="暂时无法连接"):
+        await client.get_departure(3001)
+    assert paths(seen).count("/period/detail") == 1
+
+
+async def test_a_cold_fan_out_logs_in_once_and_switches_once_per_department():
+    """Six quotes at once on a client that holds no token yet. Every one of them needs the login
+    and two of them need each department's switch, and without the locks each caller would buy
+    its own: the ERP locks a mobile after ten failed logins, so that is not merely wasteful."""
+    client, seen = erp({"/login": LOGIN, "/switch-company": switched, "/order/price": PRICE})
+    departments = [OTHER_COMPANY_ID, THIRD_COMPANY_ID] * 3
+    await asyncio.gather(
+        *(client.quote(3060 + n, 4101, company) for n, company in enumerate(departments))
+    )
+    assert paths(seen).count("/login") == 1
+    assert paths(seen).count("/switch-company") == 2
+    assert paths(seen).count("/order/price") == 6
+    assert {body_of(r)["companyId"] for r in seen if r.url.path.endswith("switch-company")} == {
+        OTHER_COMPANY_ID,
+        THIRD_COMPANY_ID,
+    }
+    quotes = [r for r in seen if r.url.path.endswith("order/price")]
+    assert {r.headers["Authorization"] for r in quotes} == {
+        f"Bearer erp-token-{OTHER_COMPANY_ID}",
+        f"Bearer erp-token-{THIRD_COMPANY_ID}",
+    }
+
+
+async def test_a_401_in_the_middle_of_a_fan_out_buys_one_login_for_all_of_them():
+    """The token expired between two turns, so every caller in the fan-out comes back to a 401.
+    One login refreshes it and each caller retries once, on the token that login bought."""
+    fresh = {"code": 200, "message": "登录成功", "data": {**LOGIN["data"], "token": "erp-token-2"}}
+    unauthorized = (401, {"code": 401, "message": "登录状态已失效", "data": None})
+
+    def routes(request: httpx.Request) -> dict | tuple:
+        stale = request.headers["Authorization"] == f"Bearer {TOKEN}"
+        return unauthorized if stale else page([ROUTE])
+
+    client, seen = erp({"/login": [LOGIN, fresh], "/route/list": routes})
+    answers = await asyncio.gather(*(client.search_routes(RouteQuery()) for _ in range(6)))
+    assert [[route.route_id for route in answer] for answer in answers] == [[1021]] * 6
+    assert paths(seen).count("/login") == 2
+
+
+async def test_the_window_read_pages_the_whole_window_once_and_holds_it():
+    """The one call a search makes in place of a call per 线路: no name on the query, every page
+    of it, and every 团期 it brought back kept for the reads that follow inside the same
+    moment."""
+    client, seen = erp({"/login": LOGIN, "/period/list": paged([[PERIOD], [OTHER_PERIOD]])})
+    window = (date(2026, 10, 1), date(2026, 10, 31))
+    rows = await client.list_window(*window)
+    assert [row.period_id for row in rows] == [3001, 3099]
+    assert "routeName" not in dict(seen[1].url.params)
+    assert dict(seen[1].url.params)["departDateStart"] == "2026-10-01"
+    assert [int(dict(r.url.params)["pageNum"]) for r in seen[1:]] == [1, 2]
+    again = await client.list_window(*window)
+    assert [row.period_id for row in again] == [3001, 3099]
+    assert paths(seen).count("/period/list") == 2
+
+
+async def test_a_renamed_routes_departures_come_out_of_the_window_read_already_made():
+    """A period carries the route name it was made under, so a renamed 线路 finds nothing by
+    name; the window's whole read answers for it, and a search that already made that read
+    pays nothing for this one."""
+
+    def periods(request: httpx.Request) -> dict:
+        if "routeName" in dict(request.url.params):
+            return page([])
+        return paged([[PERIOD], [OTHER_PERIOD]])(request)
+
+    client, seen = erp({"/login": LOGIN, "/period/list": periods})
+    window = (date(2026, 10, 1), date(2026, 10, 31))
+    await client.list_window(*window)
+    rows = await client.list_departures(1021, "伊犁北疆环线 8 日纯玩小团（新版）", *window)
+    assert [row.period_id for row in rows] == [3001]
+    # Two pages of the window read and the one named query that came back empty: nothing else.
+    assert paths(seen).count("/period/list") == 3
+
+
+async def test_a_keyword_the_login_department_has_no_customer_for_asks_the_others():
+    """The customer book is one department's own, and in production the login lands in a
+    department that keeps none: an empty answer there says nothing about the agency's book, so
+    each other authorised department is asked in turn until one answers."""
+
+    def customers(request: httpx.Request) -> dict:
+        theirs = request.headers["Authorization"] == f"Bearer erp-token-{OTHER_COMPANY_ID}"
+        return page([CUSTOMER]) if theirs else page([])
+
+    client, seen = erp({"/login": LOGIN, "/switch-company": switched, "/customer/list": customers})
+    (customer,) = await client.search_customers("北京")
+    assert customer.customer_id == 4101
+    # The login department, then the first other one, and no further: 甘肃部 is never asked.
+    assert paths(seen) == ["/login", "/customer/list", "/switch-company", "/customer/list"]
+    assert body_of(seen[2]) == {"companyId": OTHER_COMPANY_ID}
+    assert dict(seen[3].url.params)["keyword"] == "北京"
+
+
+async def test_the_customer_book_is_paged_to_exhaustion_under_one_token():
+    """Thousands of customers a department, so a keyword that matches past the first page is
+    read to the end of the answer — and one department answering is the end of the search."""
+    second = {**CUSTOMER, "customerId": 4102, "csCode": "TX-BJ-0002"}
+    client, seen = erp(
+        {
+            "/login": LOGIN,
+            "/switch-company": switched,
+            "/customer/list": paged([[CUSTOMER], [second]]),
+        }
+    )
+    found = await client.search_customers("北京")
+    assert [row.customer_id for row in found] == [4101, 4102]
+    assert paths(seen) == ["/login", "/customer/list", "/customer/list"]
 
 
 def test_the_http_client_is_an_erp_client():

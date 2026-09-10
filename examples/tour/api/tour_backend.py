@@ -74,6 +74,7 @@ from .erp_client import (
     Quote,
     RouteQuery,
     RouteRecord,
+    WindowReader,
 )
 from .tags import UNKNOWN, RouteFacets, normalize
 
@@ -526,6 +527,19 @@ def _fits(record: RouteRecord, facets: RouteFacets, stated: Request) -> bool:
     return not (stated.hotel_level and not _has_hotel_level(record, facets, stated.hotel_level))
 
 
+def _inside(
+    grouped: dict[int, list[DepartureRecord]], window: tuple[date, date]
+) -> dict[int, list[DepartureRecord]]:
+    """One window's own view of a wider read: each route's 团期 whose date the window holds,
+    and no entry for a route left with none — a route with no departure inside the window is
+    not a match, whatever the read around it carried."""
+    inside = {
+        route_id: [row for row in rows if window[0] <= row.depart_date <= window[1]]
+        for route_id, rows in grouped.items()
+    }
+    return {route_id: rows for route_id, rows in inside.items() if rows}
+
+
 def _distance(day: date, start: date, end: date) -> int:
     if start <= day <= end:
         return 0
@@ -582,10 +596,18 @@ class Fetched:
     query with no name — and each route's departures inside a pass's window. The steps repeat a
     query more often than they change it, since dropping the day count or the preferences
     changes nothing the ERP filters on, and a route's departures are read by the pass that keeps
-    it and again by the record it becomes."""
+    it and again by the record it becomes.
+
+    A window's 团期 are read whole and once: the ERP's period list carries no ``routeId``, so
+    asking it per route costs a call per candidate, and asking it for the window alone costs
+    one paged read the whole run shares. ``windows`` holds that read and each pass's own view
+    of it, both grouped by route id and keyed by the dates they cover, so a pass inside a
+    window already read costs nothing; a route no view names has no departures inside that
+    pass's window, and there is nothing to ask again."""
 
     routes: dict[tuple[str, date, date], list[RouteRecord]] = field(default_factory=dict)
     departures: dict[tuple[int, date, date], list[DepartureRecord]] = field(default_factory=dict)
+    windows: dict[tuple[date, date], dict[int, list[DepartureRecord]]] = field(default_factory=dict)
 
 
 @dataclass
@@ -734,6 +756,9 @@ class TourBackend(StorefrontBackend):
         # departure's 同业价 is cached beside it, ``None`` where the ERP has no price row for
         # it, so a second read of the same 团期 costs no further call.
         self._routes: dict[int, RouteRecord] = {}
+        # The route ids a whole-catalog read did not carry, so a second read of one costs no
+        # second scan; ``load_listings`` clears it.
+        self._missing_routes: set[int] = set()
         # Each route's tags as attributes, normalised once: a search runs the filters over
         # every route in the window, and a card, its specs and its notes read them again.
         self._route_facets: dict[int, RouteFacets] = {}
@@ -825,10 +850,10 @@ class TourBackend(StorefrontBackend):
         self, window: tuple[date, date], fetched: Fetched, *, read: bool
     ) -> list[RouteRecord]:
         """Every route the ERP sells inside the window: an empty name is not a filter, so one
-        call (the client caps its paging) brings back the whole window's catalog, and the run's
-        cache holds it, so a widened window costs exactly one further call.
+        read — paged to exhaustion inside the client — brings back the whole window's catalog,
+        and the run's cache holds it, so a widened window costs exactly one further read.
 
-        ``read=False`` spends no call at all and takes the routes the run has already read,
+        ``read=False`` spends no read at all and takes the routes the run has already read,
         whichever window each was read for; the pass's own window is then applied by the
         departure list that follows. The last relaxation step widens to the whole default
         window, and one route query is all it may cost."""
@@ -839,13 +864,59 @@ class TourBackend(StorefrontBackend):
             seen.update({record.route_id: record for record in records})
         return list(seen.values())
 
+    async def _listing_window(
+        self, window: tuple[date, date], fetched: Fetched
+    ) -> dict[int, list[DepartureRecord]] | None:
+        """Every 团期 the window holds, by route id, from one paged read the whole search run
+        shares; ``None`` for a client that cannot read a window whole, whose departures are
+        then read a route at a time. A search over a live catalog weighs a candidate against the
+        window, and the ERP's period list takes no route id, so a call per candidate is a
+        fan-out the run cannot afford: this is the one call it makes instead.
+
+        The read reaches a week past the window on each side, which is what the first
+        relaxation widens by, so that step reads nothing: a window the run has already read
+        around answers for any narrower one, filtered by date here. Those pages are the ERP's
+        slowest read, so one of them saved is worth more than every other call in the pass."""
+        if not isinstance(self.erp, WindowReader):
+            return None
+        grouped = fetched.windows.get(window)
+        if grouped is not None:
+            return grouped
+        held = self._read_around(window, fetched)
+        if held is None:
+            read = self._window(
+                window[0] - timedelta(days=RELAX_WINDOW_DAYS),
+                window[1] + timedelta(days=RELAX_WINDOW_DAYS),
+            )
+            held = {}
+            for row in sorted(await self.erp.list_window(*read), key=lambda row: row.depart_date):
+                held.setdefault(row.route_id, []).append(row)
+                # A listed row carries no price; a detail read already cached one, so keep it.
+                self._departures.setdefault(row.period_id, row)
+            fetched.windows[read] = held
+        grouped = _inside(held, window)
+        fetched.windows[window] = grouped
+        return grouped
+
+    def _read_around(
+        self, window: tuple[date, date], fetched: Fetched
+    ) -> dict[int, list[DepartureRecord]] | None:
+        """A read this run already made that spans the whole of ``window``, if it made one."""
+        spans = (
+            rows
+            for read, rows in fetched.windows.items()
+            if read[0] <= window[0] and window[1] <= read[1]
+        )
+        return next(spans, None)
+
     async def _departs(
         self, record: RouteRecord, window: tuple[date, date], fetched: Fetched
     ) -> bool:
         """Whether the route has a 团期 inside the window. ``route/list``'s own date filter is
         loose — it answers with routes that have none (``docs/erp-contract.md``) — and a card
-        built from one of those carries no date, no seat count and no price. The departures are
-        kept in the run's cache, so the record this route becomes costs no second call."""
+        built from one of those carries no date, no seat count and no price. The window's read
+        is what answers this, so no route costs a call of its own and one the read did not name
+        simply has no departures; the record this route becomes reads the same rows again."""
         return bool(await self._list(record, window, fetched))
 
     async def _search(
@@ -895,9 +966,19 @@ class TourBackend(StorefrontBackend):
         window: tuple[date, date],
         fetched: Fetched | None = None,
     ) -> list[DepartureRecord]:
+        """One route's 团期 inside the window. Inside a search run they come out of the window's
+        own read, which every route in the run shares; a caller with no run behind it — a route
+        the advisor opened, a pasted id — asks the ERP for this route alone, which is the read
+        whose seat counts are the freshest the process has."""
         key = (record.route_id, *window)
-        if fetched is not None and key in fetched.departures:
-            return fetched.departures[key]
+        if fetched is not None:
+            if key in fetched.departures:
+                return fetched.departures[key]
+            grouped = await self._listing_window(window, fetched)
+            if grouped is not None:
+                rows = grouped.get(record.route_id, [])
+                fetched.departures[key] = rows
+                return rows
         rows = await self.erp.list_departures(
             record.route_id, record.route_name, window[0], window[1]
         )
@@ -911,13 +992,27 @@ class TourBackend(StorefrontBackend):
     async def _route(self, route_id: int) -> RouteRecord | None:
         """The route record, from the search that returned it or, for an id this process has
         not seen, from one broad ERP search over the default window: an empty name is not a
-        filter, so it brings back every route selling seats in the next couple of months."""
+        filter, so it brings back every route selling seats in the next couple of months. The
+        window on ``route/list`` is a hint and not a filter both ways, so an id the windowed
+        read still does not name is looked for once in the catalog with no window at all — a
+        线路 the advisor pasted may sell nothing for months and is a record all the same.
+
+        An id neither read names is remembered as missing, so the next read of it costs no
+        further scan: nothing in a conversation adds a 线路 to the ERP, and a boot reload
+        (``load_listings``) is what forgets that."""
         if route_id in self._routes:
             return self._routes[route_id]
+        if route_id in self._missing_routes:
+            return None
         default = self._default_context()
         await self._search(
             Request(text="", depart_from=default.depart_from, depart_to=default.depart_to)
         )
+        if route_id not in self._routes:
+            whole = await self.erp.search_routes(RouteQuery())
+            self._routes.update({record.route_id: record for record in whole})
+        if route_id not in self._routes:
+            self._missing_routes.add(route_id)
         return self._routes.get(route_id)
 
     def _priced(self, row: DepartureRecord) -> PriceInfo | None:
@@ -953,13 +1048,21 @@ class TourBackend(StorefrontBackend):
             if row.period_id not in self._quotes:
                 self._quotes[row.period_id] = await self._quote(row)
 
-    async def _prices(self, rows: list[DepartureRecord], middle: date, limit: int) -> None:
+    async def _prices(
+        self,
+        rows: list[DepartureRecord],
+        middle: date,
+        limit: int,
+        gate: asyncio.Semaphore | None = None,
+    ) -> None:
         """Both prices for at most ``limit`` of the departures, nearest the middle of the
         window first, since that is where the advisor is working. The ERP prices one departure
-        per call, so the calls run a few at a time rather than one after another."""
+        per call, so the calls run a few at a time rather than one after another. ``gate`` is a
+        caller's own semaphore: a shortlist prices every route's departures under one, so the
+        routes are not priced one route after another."""
         by_distance = sorted(rows, key=lambda row: abs((row.depart_date - middle).days))
         nearest = by_distance[: max(0, limit)]
-        gate = asyncio.Semaphore(PRICE_CONCURRENCY)
+        gate = gate or asyncio.Semaphore(PRICE_CONCURRENCY)
         await asyncio.gather(*(self._price_one(row, gate) for row in nearest))
 
     # -- catalog records -----------------------------------------------------------------
@@ -1046,10 +1149,13 @@ class TourBackend(StorefrontBackend):
     ) -> list[Product]:
         window = self._window(stated.depart_from, stated.depart_to)
         middle = window[0] + (window[1] - window[0]) / 2
+        listed = [(record, await self._list(record, window, fetched)) for record in records]
+        # One semaphore for the whole shortlist: a card costs up to ``prices`` × 2 calls, and
+        # priced route after route the advisor would wait for their sum.
+        gate = asyncio.Semaphore(PRICE_CONCURRENCY)
+        await asyncio.gather(*(self._prices(rows, middle, prices, gate) for _, rows in listed))
         found = []
-        for record in records:
-            rows = await self._list(record, window, fetched)
-            await self._prices(rows, middle, prices)
+        for record, rows in listed:
             dates = [row.depart_date for row in rows]
             mismatch = (
                 _mismatch(record, self._facets(record), original, dates)
@@ -1106,8 +1212,8 @@ class TourBackend(StorefrontBackend):
             family=attributes.get("family", "").strip().lower() == "yes",
         )
         # This search's own reads, shared by the steps below: a query text and a window are
-        # asked for once however many steps repeat them, and the broad pass costs at most two
-        # calls for the whole run, since the window widens once.
+        # asked for once however many steps repeat them, and so is the window's whole 团期 read;
+        # the broad pass costs at most two reads for the whole run, since the window widens once.
         fetched = Fetched()
         found = await self._families(
             await self._search(stated, fetched), stated, context, "exact", None, fetched=fetched
@@ -1435,6 +1541,9 @@ class TourBackend(StorefrontBackend):
         stopping the host from booting."""
         context = self._default_context()
         stated = Request(text="", depart_from=context.depart_from, depart_to=context.depart_to)
+        # A reload reads the catalog again, so a route the last read did not carry is worth
+        # looking for again.
+        self._missing_routes.clear()
         listings: dict[str, ProductDetails] = {}
         variants: dict[str, ProductDetails] = {}
         try:

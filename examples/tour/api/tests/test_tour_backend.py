@@ -629,6 +629,104 @@ async def test_a_route_with_no_departure_in_the_window_is_not_an_exact_match(ses
     assert october[0].options["depart_date"] == ["2026-10-02"]
 
 
+class Windowed(MockErpClient):
+    """A fixture ERP that reads a window whole, as ``HttpErpClient`` does, and counts what the
+    backend asked of it. The real one has no ``routeId`` filter on its period list, so a search
+    that weighed each candidate on its own would cost a call per 线路; ``calls`` is what holds
+    this side to reading the window once instead."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.calls: dict[str, int] = {}
+
+    def _called(self, name: str) -> None:
+        self.calls[name] = self.calls.get(name, 0) + 1
+
+    async def list_window(self, depart_from, depart_to):
+        self._called("list_window")
+        rows = []
+        for route_id in self._routes:
+            rows.extend(
+                await MockErpClient.list_departures(self, route_id, "", depart_from, depart_to)
+            )
+        return rows
+
+    async def list_departures(self, route_id, route_name, depart_from, depart_to):
+        self._called("list_departures")
+        return await super().list_departures(route_id, route_name, depart_from, depart_to)
+
+    async def search_routes(self, q):
+        self._called("search_routes")
+        return await super().search_routes(q)
+
+
+async def test_a_search_reads_the_windows_departures_once_for_every_route_it_weighs(session):
+    """One window read answers every candidate: which 线路 have a 团期 inside the window, and
+    which dates and seats each card carries. Nothing in the pass asks the ERP about one route."""
+    erp = Windowed(today=TODAY, now=FakeClock())
+    backend = build(erp)
+    products = await search_yili(backend, session)
+    assert set(ids(products)) == {"RT-1021", "RT-1022", "RT-1024"}
+    assert erp.calls["list_window"] == 1
+    assert "list_departures" not in erp.calls
+
+
+class LooseWindowed(Windowed, LooseDates):
+    """Both production shapes at once: ``route/list`` answers with 线路 whose 团期 are all
+    outside the window, and the 团期 themselves are read a window at a time."""
+
+
+async def test_a_relaxation_step_costs_a_window_read_only_when_it_moves_the_window(session):
+    """The four steps repeat a window more often than they change it: widening the day count or
+    dropping the preferences leaves the dates alone, and only the dates decide what is read — and
+    the first step's week wider window was read around at the start. Every pass here has
+    candidates to weigh, because the ERP's date filter answers with 线路 that have no 团期 inside
+    the window at all."""
+    erp = LooseWindowed(today=TODAY, now=FakeClock())
+    backend = build(erp)
+    products = await search(
+        backend,
+        session,
+        "青海湖",
+        destination="青海",
+        depart_from="2026-09-06",
+        depart_to="2026-09-07",
+    )
+    assert ids(products) == ["RT-1051"]
+    # The stated window, read a week around it, answers the first step as well; the two steps
+    # after it relax nothing the ERP filters on, and only the fourth step's whole default window
+    # reaches past what was read.
+    assert erp.calls["list_window"] == 2
+    assert "list_departures" not in erp.calls
+
+
+async def test_a_route_the_advisor_opens_reads_that_routes_own_departures(session):
+    """The window read is the search's; a 线路 the advisor opened is one route over a padded
+    window, and its seat counts are the freshest read the process has made."""
+    erp = Windowed(today=TODAY, now=FakeClock())
+    backend = build(erp)
+    await search_yili(backend, session)
+    details = await backend.get_product_details(session, ROUTE)
+    assert details is not None and details.variants
+    assert erp.calls["list_departures"] == 1
+
+
+async def test_an_id_the_catalog_does_not_carry_is_scanned_for_once_and_remembered(session):
+    """A pasted id nothing answers for costs one scan of the catalog, not one per read: no
+    conversation adds a 线路 to the ERP, and a boot reload is what forgets the miss."""
+    erp = Windowed(today=TODAY, now=FakeClock())
+    backend = build(erp)
+    assert await backend.get_product_details(session, "RT-999999") is None
+    scanned = erp.calls["search_routes"]
+    assert scanned >= 1
+    assert await backend.get_product_details(session, "RT-999999") is None
+    assert erp.calls["search_routes"] == scanned
+    await backend.load_listings()
+    reloaded = erp.calls["search_routes"]
+    assert await backend.get_product_details(session, "RT-999999") is None
+    assert erp.calls["search_routes"] > reloaded
+
+
 # -- the route-first gate ----------------------------------------------------------------
 
 
