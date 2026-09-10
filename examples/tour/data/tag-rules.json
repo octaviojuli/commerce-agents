@@ -1,0 +1,72 @@
+{
+  "_comment": "The controlled vocabulary api/tags.py reads the ERP's itineraryTags with. Each attribute is a list of rules in priority order: a tag matches a rule when it holds one of the rule's substrings, and the first rule a tag matches is the one it counts for. A tag holding one of the attribute's negative substrings counts for nothing there. destination and departure_city keep every value they match, in the order the tags carry them; the others keep one value, the earliest rule any tag matched. Product staff extend this file; no code changes with it.",
+  "destination": {
+    "rules": [
+      { "value": "斯里兰卡", "any": ["斯里兰卡", "锡兰", "科伦坡", "康提", "加勒", "尼甘布", "丹布勒", "锡吉里耶", "努沃勒埃利耶", "狮子岩"] },
+      { "value": "马尔代夫", "any": ["马尔代夫", "马代"] },
+      { "value": "印度", "any": ["印度门", "印度色彩", "泰姬陵", "新德里", "阿格拉", "斋普尔", "瓦拉纳西", "恒河", "印度"] },
+      { "value": "格鲁吉亚", "any": ["格鲁吉亚", "第比利斯", "巴统"] },
+      { "value": "亚美尼亚", "any": ["亚美尼亚", "埃里温"] },
+      { "value": "迪拜", "any": ["迪拜", "阿联酋"] },
+      { "value": "泰国", "any": ["泰国", "曼谷", "普吉"] },
+      { "value": "尼泊尔", "any": ["尼泊尔", "加德满都"] },
+      { "value": "英国", "any": ["英国", "伦敦", "爱丁堡"] },
+      { "value": "伊犁", "any": ["伊犁", "赛里木湖", "那拉提", "喀拉峻", "琼库什台", "伊宁"] },
+      { "value": "喀纳斯", "any": ["喀纳斯", "禾木", "白哈巴"] },
+      { "value": "南疆", "any": ["南疆", "喀什", "帕米尔", "塔县", "库车"] },
+      { "value": "青海", "any": ["青海", "茶卡", "塔尔寺", "黑马河", "祁连"] }
+    ],
+    "negative": ["印度教", "印度洋", "印度文化", "大理石", "加勒比"]
+  },
+  "departure_city": {
+    "rules": [
+      { "value": "上海", "any": ["上海出发", "上海直飞", "上海起止"] },
+      { "value": "北京", "any": ["北京出发", "北京直飞", "北京起止"] },
+      { "value": "昆明", "any": ["昆明出发", "昆明直飞", "昆明起止"] },
+      { "value": "成都", "any": ["成都出发", "成都直飞", "成都起止"] },
+      { "value": "广州", "any": ["广州出发", "广州直飞", "广州起止"] },
+      { "value": "深圳", "any": ["深圳出发", "深圳直飞", "深圳起止"] },
+      { "value": "杭州", "any": ["杭州出发", "杭州直飞", "杭州起止"] },
+      { "value": "南京", "any": ["南京出发", "南京直飞", "南京起止"] },
+      { "value": "重庆", "any": ["重庆出发", "重庆直飞", "重庆起止"] },
+      { "value": "西安", "any": ["西安出发", "西安直飞", "西安起止"] },
+      { "value": "长沙", "any": ["长沙出发", "长沙直飞", "长沙起止"] },
+      { "value": "郑州", "any": ["郑州出发", "郑州直飞", "郑州起止"] },
+      { "value": "武汉", "any": ["武汉出发", "武汉直飞", "武汉起止"] },
+      { "value": "厦门", "any": ["厦门出发", "厦门直飞", "厦门起止"] },
+      { "value": "青岛", "any": ["青岛出发", "青岛直飞", "青岛起止"] },
+      { "value": "天津", "any": ["天津出发", "天津直飞", "天津起止"] },
+      { "value": "乌鲁木齐", "any": ["乌鲁木齐出发", "乌鲁木齐直飞", "乌鲁木齐起止"] },
+      { "value": "喀什", "any": ["喀什出发", "喀什直飞", "喀什起止"] },
+      { "value": "西宁", "any": ["西宁出发", "西宁直飞", "西宁起止"] }
+    ],
+    "negative": ["不含出发", "出发地不含"]
+  },
+  "hotel_grade": {
+    "rules": [
+      { "value": "五钻", "any": ["五钻", "5钻", "五星", "5星"] },
+      { "value": "四钻", "any": ["四钻", "4钻", "四星", "4星"] },
+      { "value": "三钻", "any": ["三钻", "3钻", "三星", "3星"] }
+    ],
+    "negative": ["需补差", "自愿升级", "不含酒店"]
+  },
+  "shopping": {
+    "rules": [
+      { "value": "none", "any": ["无购物", "零购物", "纯玩", "不进店", "无强制购物", "不强制购物", "无指定购物"] },
+      { "value": "some", "any": ["购物", "免税店", "特产店"] }
+    ],
+    "negative": []
+  },
+  "family": {
+    "rules": [
+      { "value": "yes", "any": ["亲子", "儿童友好", "家庭", "研学", "12岁以下儿童"] }
+    ],
+    "negative": ["儿童政策", "儿童加床", "儿童价格", "儿童收费", "儿童不占床"]
+  },
+  "direct_flight": {
+    "rules": [
+      { "value": "yes", "any": ["直飞"] }
+    ],
+    "negative": ["非直飞", "不直飞", "经停"]
+  }
+}

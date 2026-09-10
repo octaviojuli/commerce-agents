@@ -140,8 +140,9 @@ async def test_search_returns_route_families_for_the_stated_window(backend, sess
     assert route.options["depart_date"] == ["2026-10-13", "2026-10-17"]
     assert route.price == 5780.0
     assert route.in_stock is True
-    assert route.labels == ["纯玩", "小团", "亲子", "轻徒步"]
+    assert route.labels == ["四钻酒店", "纯玩无购物", "亲子", "乌鲁木齐出发"]
     assert route.attributes["tags"].startswith("纯玩|小团")
+    assert route.attributes["destination"] == "伊犁"
     # The two dates are the span the advisor means, whichever order they state them in.
     backwards = await search_yili(
         backend, session, depart_from="2026-10-20", depart_to="2026-10-11"
@@ -196,6 +197,95 @@ async def test_a_hotel_standard_is_matched_however_the_advisor_spells_it(backend
         products = await search_yili(backend, session, hotel_level=level)
         exact = [p.product_id for p in products if p.attributes["match"] == "exact"]
         assert exact == ["RT-1024"], level
+
+
+async def test_a_destination_only_the_normalised_tags_carry_is_found(backend, erp, session):
+    """The ERP's extraction of the itinerary is where a destination usually is, and it writes
+    the place names rather than the region: 禾木村 and 白哈巴 are 喀纳斯, and ``tag-rules.json``
+    is what says so. Nothing else on this line says 喀纳斯 at all, so the ERP's own name search
+    misses it and the broad pass keeps it on the normalised destination."""
+    route = erp._routes[1031]
+    route["routeName"] = "禾木秋色 7 日纯玩"
+    route["features"] = ["禾木村", "白哈巴", "五彩滩"]
+    route["itineraryTags"] = [
+        "禾木村",
+        "白哈巴",
+        "五彩滩",
+        "乌鲁木齐出发",
+        "四钻酒店",
+        "纯玩无购物",
+    ]
+    assert "喀纳斯" not in str(route)
+    products = await search(backend, session, "喀纳斯", destination="喀纳斯")
+    found = next(product for product in products if product.product_id == "RT-1031")
+    assert found.attributes["match"] == "exact"
+    assert found.attributes["destination"] == "喀纳斯"
+
+
+async def test_no_shopping_reads_the_shopping_tag_before_the_names_wording(backend, session):
+    """A line whose extraction lists a market is selling one, whatever its name says, and one
+    whose extraction says 纯玩无购物 is 纯玩 even where the name does not."""
+    products = await search_yili(backend, session)
+    # RT-1023's itinerary tags carry 市集购物, so the filter drops it.
+    assert "RT-1023" not in ids(products)
+    assert all(product.attributes["shopping"] == "none" for product in products)
+    relaxed = await search(
+        backend, session, "喀纳斯", destination="喀纳斯", no_shopping="yes", hotel_level="五钻"
+    )
+    selling = next(product for product in relaxed if product.product_id == "RT-1032")
+    assert selling.attributes["shopping"] == "some"
+    assert "标签标注含购物" in selling.attributes["mismatch"]
+
+
+async def test_a_line_whose_tags_name_no_hotel_standard_is_only_a_relaxed_match(backend, session):
+    """RT-1051 stays at a 民宿 and its tags name no 钻 standard. That is not a no, so the line
+    is not an exact match for 四钻 and the note says the tags do not state it."""
+    products = await search(
+        backend, session, "青海湖", destination="青海", hotel_level="四钻", adults="2"
+    )
+    found = next(product for product in products if product.product_id == "RT-1051")
+    assert found.attributes["hotel_grade"] == "unknown"
+    assert found.attributes["match"] == "similar_route"
+    assert found.attributes["mismatch"] == "未标注四钻"
+
+
+async def test_a_departure_city_keeps_only_the_lines_that_leave_from_it(backend, session):
+    """The city is a tag on the itinerary (上海出发, 昆明直飞) and a field on the 线路; either
+    one answers, and a line leaving from anywhere else is not offered at all."""
+    products = await search(backend, session, "", depart_from="2026-10-01", depart_to="2026-10-31")
+    assert len(ids(products)) > 1
+    from_kashgar = await search(
+        backend,
+        session,
+        "",
+        departure_city="喀什",
+        depart_from="2026-10-01",
+        depart_to="2026-10-31",
+    )
+    assert ids(from_kashgar) == ["RT-1041"]
+    assert from_kashgar[0].attributes["departure_cities"] == "喀什"
+
+
+async def test_family_orders_the_shortlist_and_filters_nothing(backend, session):
+    """A party with children is a preference and not a condition: the lines whose tags claim
+    亲子 come first, and the rest stay on the shortlist for the advisor to weigh."""
+    window = {"depart_from": "2026-10-01", "depart_to": "2026-10-31"}
+    plain = await search(backend, session, "", **window)
+    preferred = await search(backend, session, "", family="yes", **window)
+    assert set(ids(preferred)) == set(ids(plain))
+    claimed = [p.product_id for p in preferred if p.attributes["family"] == "yes"]
+    assert ids(preferred)[: len(claimed)] == claimed
+    assert ids(plain)[: len(claimed)] != claimed
+
+
+async def test_a_cards_labels_are_what_the_line_claims_not_its_first_tags(backend, session):
+    """The raw tags are dozens of attraction names, so the badges are the normalised
+    attributes in the order an advisor reads them out."""
+    products = await search_yili(backend, session)
+    labels = {product.product_id: product.labels for product in products}
+    assert labels["RT-1024"] == ["五钻酒店", "纯玩无购物", "乌鲁木齐出发", "含景点首道门票"]
+    assert labels["RT-1021"][:3] == ["四钻酒店", "纯玩无购物", "亲子"]
+    assert all(len(found) <= 4 for found in labels.values())
 
 
 # -- details -----------------------------------------------------------------------------
@@ -442,8 +532,9 @@ async def test_dropping_a_preference_names_the_one_it_dropped(backend, session):
     notes = {product.product_id: product.attributes["mismatch"] for product in products}
     assert set(notes) == {"RT-1031", "RT-1032"}
     assert all(product.attributes["match"] == "similar_route" for product in products)
-    assert notes["RT-1031"] == "未标注五钻"
-    assert notes["RT-1032"] == "未标注五钻；未标注纯玩或零购物"
+    # The tags name a standard on both, so the note says which one, not that it is missing.
+    assert notes["RT-1031"] == "标签标注四钻，要求五钻"
+    assert notes["RT-1032"] == "标签标注三钻，要求五钻；标签标注含购物"
 
 
 async def test_a_relaxed_route_names_every_condition_it_misses(backend, session):
@@ -460,9 +551,9 @@ async def test_a_relaxed_route_names_every_condition_it_misses(backend, session)
         no_shopping="yes",
     )
     notes = {product.product_id: product.attributes["mismatch"] for product in products}
-    assert notes["RT-1031"] == "无 10/3–10/5 团期，最近为 10/1；未标注五钻"
+    assert notes["RT-1031"] == "无 10/3–10/5 团期，最近为 10/1；标签标注四钻，要求五钻"
     # RT-1032 does depart on 10/3, so the window is not one of the conditions it misses.
-    assert notes["RT-1032"] == "未标注五钻；未标注纯玩或零购物"
+    assert notes["RT-1032"] == "标签标注三钻，要求五钻；标签标注含购物"
 
 
 # -- the route-first gate ----------------------------------------------------------------

@@ -97,6 +97,8 @@ def _route_record(row: dict[str, Any]) -> erp.RouteRecord:
         company_name=row["companyName"],
         from_price=float(row["fromPrice"]),
         tags=tuple(row.get("tags") or ()),
+        itinerary_tags=tuple(row.get("itineraryTags") or ()),
+        price_tags=tuple(row.get("periodPriceTags") or ()),
         features=tuple(row.get("features") or ()),
         image_url=row.get("firstImageUrl"),
         attachment_name=row.get("routeAttachmentName"),

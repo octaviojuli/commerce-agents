@@ -43,6 +43,7 @@ _KEYS: dict[str, str | tuple[str, ...]] = {
     "adults": "adultCount", "children": "childCount", "elders": "elderCount",
     "rooms": "roomCount", "code": "csCode", "price": "priceInfo",
     "attachment_name": "routeAttachmentName", "attachment_url": "routeAttachmentUrl",
+    "price_tags": "periodPriceTags",
     "created_at": "createTime", "reserve_expires_at": "reserveExpireAt",
     "customer_type": "companyType", "name": "companyName", "depart_city": "departCityName",
     "image_url": "firstImageUrl", "is_external": "isExternalOrder",

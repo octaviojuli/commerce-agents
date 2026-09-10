@@ -77,7 +77,12 @@ class RouteQuery:
 @dataclass(frozen=True)
 class RouteRecord:
     """A route family. ``from_price`` is the ERP's own 起价 and may be 0 when the catalog
-    does not carry one; ``tags`` and ``features`` are free text the ERP's editors wrote."""
+    does not carry one; ``tags`` and ``features`` are free text the ERP's editors wrote.
+    ``itinerary_tags`` is the ERP's own auto-extraction of the itinerary attachment — some
+    fifty tags naming the destination, the departure city, the hotel standard, 购物, what the
+    price includes and every attraction on the way — written in whatever words the extractor
+    found and carrying its mistakes, so it is evidence and not a specification.
+    ``price_tags`` is the budget band the ERP puts on the route's 团期 (预算约9999—1万元)."""
 
     route_id: int
     route_code: str
@@ -87,6 +92,8 @@ class RouteRecord:
     company_name: str
     from_price: float
     tags: tuple[str, ...]
+    itinerary_tags: tuple[str, ...]
+    price_tags: tuple[str, ...]
     features: tuple[str, ...]
     image_url: str | None
     attachment_name: str | None

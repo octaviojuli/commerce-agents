@@ -117,7 +117,8 @@ async def main() -> int:
     route = routes[0]
     print(
         f"  route: id={route.route_id} code={trim(route.route_code)} days={route.days} "
-        f"name={trim(route.route_name)} from_price={route.from_price} tags={len(route.tags)}"
+        f"name={trim(route.route_name)} from_price={route.from_price} tags={len(route.tags)} "
+        f"itinerary_tags={len(route.itinerary_tags)} price_tags={len(route.price_tags)}"
     )
 
     rows: list[DepartureRecord] = []
