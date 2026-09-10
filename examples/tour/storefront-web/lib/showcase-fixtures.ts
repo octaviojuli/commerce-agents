@@ -6,8 +6,10 @@
  * one session read: the three routes are what `search_products` returned for destination 伊犁 in
  * the window 2026-10-11 到 2026-10-20, 8 到 10 天, 2 大 2 小 (儿童 5 岁与 9 岁), 不含购物店; the
  * three 团期 are variants `get_product_details("RT-1022")` returned in that same session. The
- * keys are the ERP's own (`docs/erp-contract.md`): a 线路 carries its 线路编号, 天数, 出发城市 and
- * the tags and features its editors wrote, and a 团期 carries its 团号, 余位, 成团人数, the 同业价
+ * keys are the ERP's own (`docs/erp-contract.md`): a 线路 carries its 线路编号, 天数, 出发城市, the
+ * tags and features its editors wrote and the attributes `api/tags.py` normalised the ERP's
+ * itinerary tags into (`destination`, `shopping`, `hotel_grade`, `family`, `departure_cities`,
+ * `inclusions`, `budget`), and a 团期 carries its 团号, 余位, 成团人数, the 同业价
  * this party was quoted at (`adult_price`, `party_quote_total`) and the 市场价 beside it
  * (`market_adult_price`), which is the customer's own price. A route's 起价 is the cheapest 同业价
  * in that window and a 团期's 报价 is made for that party, so both are a snapshot of that one read.
@@ -28,13 +30,20 @@ const XINJIANG_8: Product = {
   currency: "CNY",
   image_url: null,
   category: "tour",
-  labels: ["纯玩", "小团", "亲子", "轻徒步"],
+  labels: ["四钻酒店", "纯玩无购物", "亲子", "乌鲁木齐出发"],
   attributes: {
     route_code: "YLBJ",
     days: "8",
     depart_city: "乌鲁木齐",
     company: "ACME 旅行社 新疆部",
-    tags: "纯玩|小团|亲子|轻徒步|零购物|四钻|8座商务车",
+    destination: "伊犁",
+    shopping: "none",
+    hotel_grade: "四钻",
+    family: "yes",
+    departure_cities: "乌鲁木齐",
+    inclusions: "含景点首道门票|含导游服务费",
+    budget: "预算约5800—6600元",
+    tags: "纯玩|小团|亲子|轻徒步|零购物|四钻|8座商务车|伊犁|乌鲁木齐出发|赛里木湖|那拉提草原|喀拉峻",
     features: "赛里木湖|那拉提草原|喀拉峻|薰衣草田|果子沟大桥|8 座车不超 8 人，全程零购物，赛里木湖与那拉提各住一晚，适合带孩子的家庭。",
     match: "exact"
   },
@@ -53,13 +62,20 @@ const KALAJUN_10: Product = {
   currency: "CNY",
   image_url: null,
   category: "tour",
-  labels: ["深度游", "摄影", "纯玩", "小团"],
+  labels: ["四钻酒店", "纯玩无购物", "乌鲁木齐出发", "含景点首道门票"],
   attributes: {
     route_code: "YLKL",
     days: "10",
     depart_city: "乌鲁木齐",
     company: "ACME 旅行社 新疆部",
-    tags: "深度游|摄影|纯玩|小团|零购物|四钻|6座商务车",
+    destination: "伊犁",
+    shopping: "none",
+    hotel_grade: "四钻",
+    family: "no",
+    departure_cities: "乌鲁木齐",
+    inclusions: "含景点首道门票|含摄影向导",
+    budget: "",
+    tags: "深度游|摄影|纯玩|小团|零购物|四钻|6座商务车|伊犁|乌鲁木齐出发|喀拉峻|琼库什台|夏塔古道",
     features: "喀拉峻|琼库什台|夏塔古道|唐布拉百里画廊|独库公路|6 人小车走透伊犁，喀拉峻两晚、琼库什台一晚，早晚光线全留给拍照。",
     match: "exact"
   },
@@ -78,13 +94,20 @@ const LUXURY_8: Product = {
   currency: "CNY",
   image_url: null,
   category: "tour",
-  labels: ["高端", "纯玩", "小团", "老人友好"],
+  labels: ["五钻酒店", "纯玩无购物", "乌鲁木齐出发", "含景点首道门票"],
   attributes: {
     route_code: "YLQS",
     days: "8",
     depart_city: "乌鲁木齐",
     company: "ACME 旅行社 新疆部",
-    tags: "高端|纯玩|小团|老人友好|零购物|五钻|6座商务车",
+    destination: "伊犁",
+    shopping: "none",
+    hotel_grade: "五钻",
+    family: "no",
+    departure_cities: "乌鲁木齐",
+    inclusions: "含景点首道门票|含导游服务费|含双导服务",
+    budget: "预算约9800—1.1万元",
+    tags: "高端|纯玩|小团|老人友好|零购物|五钻|6座商务车|伊犁|乌鲁木齐出发|赛里木湖|那拉提草原|喀拉峻",
     features: "赛里木湖|那拉提草原|喀拉峻|伊宁六星街|全程五钻酒店与 6 座商务车，每日车程控制在 4 小时内，含双导服务。",
     match: "exact"
   },

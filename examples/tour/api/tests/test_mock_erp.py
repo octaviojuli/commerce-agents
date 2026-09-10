@@ -85,6 +85,28 @@ async def test_search_matches_a_tag_the_erp_carries(erp: MockErpClient):
     assert {route.route_id for route in routes} == {1021, 1051}
 
 
+async def test_a_route_carries_the_itinerary_tags_and_the_budget_band_from_the_fixture(
+    erp: MockErpClient,
+):
+    """``data/routes.json`` holds the ERP's own ``itineraryTags`` and ``periodPriceTags``, and
+    the mock passes them through as written; normalising them is the backend's job."""
+    routes = await erp.search_routes(query(route_name="伊犁北疆环线"))
+    route = next(row for row in routes if row.route_id == ROUTE)
+    assert "乌鲁木齐出发" in route.itinerary_tags
+    assert "纯玩无购物" in route.itinerary_tags
+    assert route.price_tags == ("预算约5800—6600元",)
+
+
+async def test_the_erps_own_search_reads_the_name_and_the_editors_tags_not_the_extraction(
+    erp: MockErpClient,
+):
+    """The real ERP filters ``route/list`` on the 线路 name alone, so nothing here ranks a
+    route by the ERP's extraction: 中文导游 is in every route's itinerary tags and in no name,
+    tag or 亮点. What is written only there is found by the backend's own broad pass instead
+    (``api/tour_backend.py``)."""
+    assert await erp.search_routes(query(route_name="中文导游")) == []
+
+
 async def test_search_keeps_only_routes_with_a_departure_in_the_window(erp: MockErpClient):
     routes = await erp.search_routes(query(depart_to=date(2026, 9, 13)))
     ids = {route.route_id for route in routes}

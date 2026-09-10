@@ -22,6 +22,7 @@ from tour.api.erp_client import (
     OrderRequest,
     PriceInfo,
     RouteQuery,
+    RouteRecord,
 )
 
 DEPARTURE = {
@@ -80,6 +81,30 @@ def test_an_order_built_from_a_list_row_defaults_its_detail_only_fields():
     )
     assert (order.adults, order.children, order.elders) == (0, 0, 0)
     assert (order.contact_name, order.depart_date, order.reserve_expires_at) == ("", None, None)
+
+
+def test_a_route_carries_the_two_tag_lists_the_erp_extracts_beside_its_editors_own():
+    """The editors write a few ``tags``; the ERP extracts ``itineraryTags`` from the itinerary
+    attachment and puts the 团期's budget band in ``periodPriceTags``. All three are free text
+    on the record, and ``api/tags.py`` is what turns them into attributes."""
+    record = RouteRecord(
+        route_id=1021,
+        route_code="YLBJ",
+        route_name="伊犁北疆环线 8 日纯玩小团",
+        days=8,
+        depart_city="乌鲁木齐",
+        company_name="ACME 旅行社 新疆部",
+        from_price=5580.0,
+        tags=("纯玩", "四钻"),
+        itinerary_tags=("伊犁", "乌鲁木齐出发", "四钻酒店", "纯玩无购物", "含景点首道门票"),
+        price_tags=("预算约5800—6600元",),
+        features=("赛里木湖",),
+        image_url=None,
+        attachment_name=None,
+        attachment_url=None,
+    )
+    assert record.itinerary_tags[1] == "乌鲁木齐出发"
+    assert record.price_tags == ("预算约5800—6600元",)
 
 
 def test_a_query_states_only_what_the_erp_can_filter_on():

@@ -35,7 +35,7 @@ decisions that shape Phase 4. Fictional example values throughout.
 
 | Call | Endpoint | Filters | Row |
 |---|---|---|---|
-| routes | `GET /route/list` | `routeName~`, `routeCode~`, `departDateStart/End` | `routeId, routeCode, routeName, days, departCityId, departCityName, companyId, companyName, groupId, fromPrice, tags[], features[], firstImageUrl, posterUrls[], routeAttachmentName, routeAttachmentUrl` |
+| routes | `GET /route/list` | `routeName~`, `routeCode~`, `departDateStart/End` | `routeId, routeCode, routeName, days, departCityId, departCityName, companyId, companyName, groupId, fromPrice, tags[], itineraryTags[], itineraryTagsStatus, periodTags[], periodPriceTags[], periodHolidayTags[], features[], firstImageUrl, posterUrls[], routeAttachmentName, routeAttachmentUrl` |
 | departures | `GET /period/list` | `periodCode~`, `routeName~`, `departDateStart/End` — **no `routeId`**, so a route's departures are fetched by name and kept by `routeId` | `periodId, periodCode, routeId, routeName, departDate, returnDate, days, planGuests, minGroupSize, confirmCount, availableSeats, reserveHours, companyId, companyName, departCityName, groupId` |
 | departure | `GET /period/detail?periodId=` | | the row above (`companyId` included) plus `reserveCount, placeholderCount, waitlistCount, flightInfo[], priceInfo{adultPrice, childPrice, elderPrice, singleRoomDiff, currency}` (the 市场价) |
 | customers | `GET /customer/list` | `keyword~` | `customerId, companyName, csCode, companyType` (1 = 同行) |
@@ -82,10 +82,22 @@ singleRoomDiffCount, storeId?, storeName?, contactName, contactMobile, remark?}`
 - **A hold is a 预留 order** the session created, shown in the cart with a 30-minute
   countdown of our own. Removing or resizing a hold is not offered: the ERP has no such
   call, and the advisor is told to handle it in the ERP.
-- **Search is name-based.** The ERP carries no destination, hotel, vehicle, shopping or
-  child-age fields; `destination` becomes a `routeName` fuzzy match, `days` is filtered
-  client-side, and 纯玩/零购物 is read from `tags` when present. A structured tag scheme
-  on the ERP side is a separate task.
+- **The itinerary tags are the catalog's only structure, and they are ours to read.**
+  `route/list` carries `itineraryTags`: some fifty free-text tags per 线路, auto-extracted from
+  the itinerary attachment (`itineraryTagsStatus` is the extraction's own state and is not
+  read here), naming the destination, the departure city and airline, the hotel standard,
+  购物, what the price includes, the guide and every attraction on the way. There is **no
+  server-side tag filter**, and the extraction has mistakes in it, so the normalisation and
+  the filtering are both ours: `api/tags.py` maps the tags onto controlled attributes with
+  the vocabulary in `data/tag-rules.json`, and the backend filters on those. `periodTags` and
+  `periodPriceTags` carry a budget band on a few routes (预算约9999—1万元) and
+  `periodHolidayTags` is empty; `RouteRecord` keeps `itineraryTags` as `itinerary_tags` and
+  `periodPriceTags` as `price_tags`, and a row without either maps to an empty tuple.
+- **Search is still name-based on the ERP's side.** The ERP carries no destination, hotel,
+  vehicle, shopping or child-age *field* and no tag filter, so `destination` becomes a
+  `routeName` fuzzy match, and `days`, 纯玩, the hotel standard and the departure city are
+  filtered client-side off the tags. A destination written only in the tags is why the backend
+  reads the window's whole catalog once and matches the normalised attributes itself.
 - **Test data.** Beta has no future departures, so `TOUR_ERP_ALLOW_PAST=1` lets the
   backend list departures that already left; it is off in production.
 - Ids: `RT-{routeId}` and `DP-{periodId}`. `hold_ttl_minutes` is 30 on our side whatever

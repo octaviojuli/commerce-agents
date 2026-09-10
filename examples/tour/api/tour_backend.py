@@ -75,6 +75,7 @@ from .erp_client import (
     RouteQuery,
     RouteRecord,
 )
+from .tags import UNKNOWN, RouteFacets, normalize
 
 DATA_DIR = example_data_dir(__file__)
 STORE_NAME = "ACME 旅行社"
@@ -138,8 +139,11 @@ _ORDER_STATE = {
 }
 # What a 纯玩 request reads as in a catalog whose only free text is the name and the tags.
 _NO_SHOPPING_WORDS = ("纯玩", "零购物", "无购物")
-# 五钻, 5钻, 五星 and 5星 name one standard; the ERP's editors write whichever they like.
-_HOTEL_DIGITS = {"三": "3", "四": "4", "五": "5", "3": "三", "4": "四", "5": "五"}
+# The hotel standard the advisor may state, in either spelling, as the facets' own value.
+_HOTEL_GRADES = {"三": "三钻", "3": "三钻", "四": "四钻", "4": "四钻", "五": "五钻", "5": "五钻"}
+# How many of a route's raw tags a record carries: the ERP extracts some fifty, an advisor
+# reads a handful, and every one of them rides in a fenced tool result.
+MAX_RAW_TAGS = 12
 # What a policy entry is scored on: its 标题 and 分类 answer a question more directly than a
 # clause buried in the body does.
 _HELP_TITLE_WEIGHT = 3.0
@@ -214,46 +218,72 @@ def first_advisor_mobile(data_dir: Path = DATA_DIR) -> str:
     return next((str(user.get("mobile") or "") for user in users), "")
 
 
+def _raw_tags(record: RouteRecord) -> tuple[str, ...]:
+    """Every tag a 线路 carries: the editors' own few, then the ERP's auto-extraction of the
+    itinerary attachment, which is where a destination and a hotel standard usually are."""
+    return (*record.tags, *record.itinerary_tags)
+
+
 def _text_of(record: RouteRecord) -> str:
     """A route's searchable free text: its name and its tags, which is all the ERP has."""
-    return record.route_name + " " + " ".join(record.tags)
+    return record.route_name + " " + " ".join(_raw_tags(record))
 
 
-def _mentions(record: RouteRecord, text: str) -> bool:
+def _mentions(record: RouteRecord, facets: RouteFacets, text: str) -> bool:
     """Whether the destination the advisor stated is written anywhere on the route. The ERP
     matches a search on the 线路 name alone, and its editors do not put the destination in
     every name: 欧洲 is the department that sells the line, 伊犁 a tag, 喀纳斯 a 亮点, and the
-    city a group leaves from is its own field. A plain substring, because a destination the
-    advisor typed and one the ERP's editors wrote are the same characters or nothing."""
+    city a group leaves from is its own field. The normalised destinations come first, so
+    斯里兰卡 finds a line whose tags say 科伦坡 and nothing else; then a plain substring over
+    the raw text, because a destination the advisor typed and one the ERP's editors or its
+    extractor wrote are the same characters or nothing."""
     if not text:
         return False
     fields = (
+        *facets.destinations,
         record.route_name,
         record.company_name,
         record.depart_city,
-        *record.tags,
+        *_raw_tags(record),
         *record.features,
     )
     return any(text in field for field in fields)
 
 
-def _hotel_aliases(level: str) -> tuple[str, ...]:
-    """Every spelling of a hotel standard the advisor may state: 五钻, 5钻, 五星, 5星."""
-    wanted = level.strip()
-    other = _HOTEL_DIGITS.get(wanted[:1]) if wanted else None
-    if other is None:
-        return (wanted,)
-    return tuple(f"{head}{tail}" for head in (wanted[:1], other) for tail in ("钻", "星"))
+def _wanted_grade(level: str) -> str | None:
+    """The hotel standard the advisor stated as the one value the facets carry: 五钻, 5钻,
+    五星 and 5星 are all 五钻, because the ERP's editors write whichever they like."""
+    return _HOTEL_GRADES.get(level.strip()[:1]) if level and level.strip() else None
 
 
-def _has_hotel_level(record: RouteRecord, level: str) -> bool:
-    text = _text_of(record)
-    return any(alias in text for alias in _hotel_aliases(level))
+def _has_hotel_level(record: RouteRecord, facets: RouteFacets, level: str) -> bool:
+    """The tags say this standard. A route whose tags name none is not admitted here: it is
+    not a no, so the step that drops the preferences takes it with a note saying so."""
+    return facets.hotel_grade == _wanted_grade(level)
 
 
-def _is_no_shopping(record: RouteRecord) -> bool:
+def _is_no_shopping(record: RouteRecord, facets: RouteFacets) -> bool:
+    """纯玩 by the tags where they say anything about 购物 at all; by the words in the name
+    and the tags where they do not, which is what the catalog offered before the ERP
+    extracted a 购物 tag from the itinerary."""
+    if facets.shopping != UNKNOWN:
+        return facets.shopping == "none"
     text = _text_of(record)
     return any(word in text for word in _NO_SHOPPING_WORDS)
+
+
+def _labels(record: RouteRecord, facets: RouteFacets) -> list[str]:
+    """The four badges a 线路 card carries, in the order an advisor reads them out: the hotel
+    standard, 纯玩, 亲子, the city it leaves from, then what the price includes. The raw tags
+    are dozens of attraction names and the first four of them say nothing about the line."""
+    labels = [
+        f"{facets.hotel_grade}酒店" if facets.hotel_grade != UNKNOWN else "",
+        "纯玩无购物" if facets.shopping == "none" else "",
+        "亲子" if facets.family else "",
+        f"{facets.departure_cities[0]}出发" if facets.departure_cities else "",
+        *facets.inclusions[:2],
+    ]
+    return [label for label in labels if label][:MAX_LABELS]
 
 
 def _feature_sentence(record: RouteRecord) -> str | None:
@@ -261,27 +291,49 @@ def _feature_sentence(record: RouteRecord) -> str | None:
     return next((text for text in record.features if "，" in text or "。" in text), None)
 
 
-def _route_attributes(record: RouteRecord, match: str, mismatch: str | None) -> dict[str, str]:
+def _route_attributes(
+    record: RouteRecord, facets: RouteFacets, match: str, mismatch: str | None
+) -> dict[str, str]:
+    """What the model reads about a 线路: the ERP's own fields, then the attributes its tags
+    were normalised into, which are what the advisor filtered on. The raw tags ride along
+    capped, because the extraction is evidence the advisor may want to check against the
+    itinerary attachment."""
     return {
         "route_code": record.route_code,
         "days": str(record.days),
         "depart_city": record.depart_city,
         "company": record.company_name,
-        "tags": "|".join(record.tags),
+        "destination": "|".join(facets.destinations),
+        "shopping": facets.shopping,
+        "hotel_grade": facets.hotel_grade,
+        "family": "yes" if facets.family else "no",
+        "departure_cities": "|".join(facets.departure_cities),
+        "inclusions": "|".join(facets.inclusions),
+        "budget": "|".join(facets.budget),
+        "tags": "|".join(_raw_tags(record)[:MAX_RAW_TAGS]),
         "features": "|".join(record.features),
         "match": match,
         **({"mismatch": mismatch} if mismatch else {}),
     }
 
 
-def _specs(record: RouteRecord) -> dict[str, str]:
-    """The 行程规格 the advisor reads out; display only, so the keys are Chinese."""
+def _specs(record: RouteRecord, facets: RouteFacets) -> dict[str, str]:
+    """The 行程规格 the advisor reads out; display only, so the keys are Chinese. 酒店, 购物
+    and 包含 are what the tags say, and are left off where the tags say nothing."""
     specs = {
         "行程天数": f"{record.days} 天",
-        "出发城市": record.depart_city,
-        "标签": "、".join(record.tags),
-        "亮点": "、".join(record.features),
+        "出发城市": "、".join(facets.departure_cities) or record.depart_city,
     }
+    if facets.hotel_grade != UNKNOWN:
+        specs["酒店"] = facets.hotel_grade
+    if facets.shopping != UNKNOWN:
+        specs["购物"] = "纯玩无购物" if facets.shopping == "none" else "含购物店"
+    if facets.inclusions:
+        specs["包含"] = "、".join(facets.inclusions)
+    if facets.budget:
+        specs["预算"] = "、".join(facets.budget)
+    specs["标签"] = "、".join(_raw_tags(record)[:MAX_RAW_TAGS])
+    specs["亮点"] = "、".join(record.features)
     if record.attachment_name:
         specs["行程附件"] = record.attachment_name
     return specs
@@ -402,6 +454,8 @@ class Request:
     days_max: int | None = None
     no_shopping: bool = False
     hotel_level: str | None = None
+    departure_city: str | None = None
+    family: bool = False
 
 
 def _widen_window(stated: Request) -> Request:
@@ -424,6 +478,9 @@ def _drop_preferences(stated: Request) -> Request:
     return replace(stated, hotel_level=None, no_shopping=False)
 
 
+# How close a record came to what the advisor stated, for an ordering that keeps the exact
+# matches ahead of the relaxed ones whatever else is sorted on.
+_MATCH_ORDER = {"exact": 0, "adjacent_date": 1, "similar_route": 2}
 # Each step keeps the one before it, so a route found late is measured against everything
 # the advisor stated, whichever step first found it.
 _RELAXATIONS = (
@@ -439,13 +496,24 @@ def _fits_days(record: RouteRecord, stated: Request) -> bool:
     return low <= record.days <= high
 
 
-def _fits(record: RouteRecord, stated: Request) -> bool:
-    """The filters the ERP cannot apply: the day count, 纯玩, and the hotel standard."""
+def _fits_city(record: RouteRecord, facets: RouteFacets, city: str) -> bool:
+    """The city the group leaves from, as the tags say it (上海出发, 昆明直飞) or as the ERP's
+    own ``departCityName`` does."""
+    wanted = city.strip()
+    return any(wanted in name for name in (*facets.departure_cities, record.depart_city))
+
+
+def _fits(record: RouteRecord, facets: RouteFacets, stated: Request) -> bool:
+    """The filters the ERP cannot apply: the day count, 纯玩, the hotel standard and the city
+    the group leaves from. 亲子 is not one of them — a family that would take a line without
+    the tag is better served by it sorting first, so it orders the shortlist instead."""
     if not _fits_days(record, stated):
         return False
-    if stated.no_shopping and not _is_no_shopping(record):
+    if stated.no_shopping and not _is_no_shopping(record, facets):
         return False
-    return not (stated.hotel_level and not _has_hotel_level(record, stated.hotel_level))
+    if stated.departure_city and not _fits_city(record, facets, stated.departure_city):
+        return False
+    return not (stated.hotel_level and not _has_hotel_level(record, facets, stated.hotel_level))
 
 
 def _distance(day: date, start: date, end: date) -> int:
@@ -472,23 +540,29 @@ def _days_note(record: RouteRecord, stated: Request) -> str | None:
     return f"天数 {record.days} 天，超出要求的 {low}–{high} 天"
 
 
-def _preference_notes(record: RouteRecord, stated: Request) -> list[str]:
-    """The ERP states a hotel standard and 纯玩 only as words in the name or the tags, so
-    what the advisor is told is that the route does not claim them, not that it fails them."""
+def _preference_notes(record: RouteRecord, facets: RouteFacets, stated: Request) -> list[str]:
+    """What the tags say against what the advisor asked for. The tags are the ERP's own
+    extraction of the itinerary and can be wrong, so a note states what they say rather than
+    that the route fails the condition, and says so plainly where they say nothing at all."""
     notes = []
-    if stated.hotel_level and not _has_hotel_level(record, stated.hotel_level):
-        notes.append(f"未标注{stated.hotel_level}")
-    if stated.no_shopping and not _is_no_shopping(record):
-        notes.append("未标注纯玩或零购物")
+    if stated.hotel_level and not _has_hotel_level(record, facets, stated.hotel_level):
+        wanted = _wanted_grade(stated.hotel_level) or stated.hotel_level
+        notes.append(
+            f"标签标注{facets.hotel_grade}，要求{wanted}"
+            if facets.hotel_grade != UNKNOWN
+            else f"未标注{wanted}"
+        )
+    if stated.no_shopping and not _is_no_shopping(record, facets):
+        notes.append("标签标注含购物" if facets.shopping == "some" else "未标注纯玩或零购物")
     return notes
 
 
-def _mismatch(record: RouteRecord, stated: Request, dates: list[date]) -> str:
+def _mismatch(record: RouteRecord, facets: RouteFacets, stated: Request, dates: list[date]) -> str:
     """What the advisor reads back: every condition they stated that this record fails, in
     the order they stated them. A route admitted by one relaxation usually misses more than
     that step alone relaxed, and a note that named only that step would understate it."""
     notes = [note for note in (_date_note(stated, dates), _days_note(record, stated)) if note]
-    return "；".join(notes + _preference_notes(record, stated)) or "与所提条件略有出入"
+    return "；".join(notes + _preference_notes(record, facets, stated)) or "与所提条件略有出入"
 
 
 @dataclass
@@ -637,6 +711,9 @@ class TourBackend(StorefrontBackend):
         # departure's 同业价 is cached beside it, ``None`` where the ERP has no price row for
         # it, so a second read of the same 团期 costs no further call.
         self._routes: dict[int, RouteRecord] = {}
+        # Each route's tags as attributes, normalised once: a search runs the filters over
+        # every route in the window, and a card, its specs and its notes read them again.
+        self._route_facets: dict[int, RouteFacets] = {}
         self._departures: dict[int, DepartureRecord] = {}
         self._quotes: dict[int, Quote | None] = {}
         # The listing snapshot the host's catalog routes read; `load_listings` fills both.
@@ -696,6 +773,14 @@ class TourBackend(StorefrontBackend):
 
     # -- the ERP's routes and departures -------------------------------------------------
 
+    def _facets(self, record: RouteRecord) -> RouteFacets:
+        """One 线路's tags as the attributes the advisor filters on (``api/tags.py``)."""
+        cached = self._route_facets.get(record.route_id)
+        if cached is None:
+            cached = normalize(_raw_tags(record), record.price_tags)
+            self._route_facets[record.route_id] = cached
+        return cached
+
     async def _broad(
         self, window: tuple[date, date], cache: dict[tuple[date, date], list[RouteRecord]]
     ) -> list[RouteRecord]:
@@ -731,16 +816,17 @@ class TourBackend(StorefrontBackend):
             RouteQuery(route_name=stated.text, depart_from=window[0], depart_to=window[1])
         )
         self._routes.update({record.route_id: record for record in records})
-        found = [record for record in records if _fits(record, stated)]
+        found = [record for record in records if _fits(record, self._facets(record), stated)]
         if broad is None or not stated.text or len(found) >= MIN_RESULTS:
             return found
         seen = {record.route_id for record in found}
         for record in await self._broad(window, broad):
             if len(found) >= MAX_BROAD_MATCHES:
                 break
-            if record.route_id in seen or not _mentions(record, stated.text):
+            facets = self._facets(record)
+            if record.route_id in seen or not _mentions(record, facets, stated.text):
                 continue
-            if _fits(record, stated):
+            if _fits(record, facets, stated):
                 found.append(record)
         return found
 
@@ -821,6 +907,7 @@ class TourBackend(StorefrontBackend):
         searched window that were quoted, the cheapest 市场价 when none of them was, and the
         route's own 起价 when neither price is known. The dates that window holds are the one
         option a variant chooses."""
+        facets = self._facets(record)
         party = context.adults + context.children
         quoted = [q.price.adult for row in rows if (q := self._quotes.get(row.period_id))]
         listed = [price.adult for row in rows if (price := self._priced(row))]
@@ -837,8 +924,8 @@ class TourBackend(StorefrontBackend):
             currency=CURRENCY,
             image_url=record.image_url,
             category=CATEGORY,
-            labels=list(record.tags[:MAX_LABELS]),
-            attributes=_route_attributes(record, match, mismatch),
+            labels=_labels(record, facets),
+            attributes=_route_attributes(record, facets, match, mismatch),
             in_stock=any(row.available_seats >= party for row in rows),
             short_description=(
                 _feature_sentence(record) or f"{record.days} 天 · {record.depart_city}出发"
@@ -894,7 +981,11 @@ class TourBackend(StorefrontBackend):
             rows = await self._list(record, window)
             await self._prices(rows, middle, prices)
             dates = [row.depart_date for row in rows]
-            mismatch = _mismatch(record, original, dates) if original is not None else None
+            mismatch = (
+                _mismatch(record, self._facets(record), original, dates)
+                if original is not None
+                else None
+            )
             found.append(self._family(record, rows, context, match, mismatch))
         return found
 
@@ -906,9 +997,11 @@ class TourBackend(StorefrontBackend):
         limit: int = 8,
     ) -> list[Product]:
         """The routes matching the advisor's text over the stated window. ``destination`` is
-        matched against the ERP's route names, and against the free text the rest of a 线路
-        carries when the names alone are not a shortlist, because the catalog has no
-        destination field; ``child_ages`` is carried into every quote's party but filters
+        matched against the ERP's route names, against the attributes a 线路's tags normalise
+        into and against the rest of its free text when the names alone are not a shortlist,
+        because the catalog has no destination field; ``departure_city`` and the hotel
+        standard are read off those attributes too, ``family`` orders the shortlist rather
+        than filtering it, and ``child_ages`` is carried into every quote's party but filters
         nothing, since the ERP states no minimum age."""
         attributes = dict(filters.attributes) if filters is not None else {}
         context = self._read_context(attributes)
@@ -921,6 +1014,8 @@ class TourBackend(StorefrontBackend):
             days_max=_int_or_none(attributes.get("days_max")),
             no_shopping=attributes.get("no_shopping", "").strip().lower() == "yes",
             hotel_level=attributes.get("hotel_level") or None,
+            departure_city=(attributes.get("departure_city") or "").strip() or None,
+            family=attributes.get("family", "").strip().lower() == "yes",
         )
         # This search's broad pass, shared by the steps below: the window widens once, so the
         # whole run costs at most two calls for it however many steps it takes.
@@ -936,6 +1031,15 @@ class TourBackend(StorefrontBackend):
             seen = {product.product_id for product in found}
             fresh = [r for r in await self._search(relaxed, broad) if route_id_of(r) not in seen]
             found += await self._families(fresh, relaxed, context, match, stated)
+        if stated.family:
+            # 亲子 is a preference and not a condition: the lines whose tags claim it come
+            # first inside each match class, and the rest are still on the shortlist.
+            found.sort(
+                key=lambda p: (
+                    _MATCH_ORDER.get(p.attributes["match"], 3),
+                    p.attributes["family"] != "yes",
+                )
+            )
         return found[:limit]
 
     # -- details -------------------------------------------------------------------------
@@ -968,7 +1072,7 @@ class TourBackend(StorefrontBackend):
         details = ProductDetails(
             **family.model_dump(),
             long_description="\n".join(record.features)[:1200] or None,
-            specs=_specs(record),
+            specs=_specs(record, self._facets(record)),
         )
         details.variants = [self._variant(row, record, context) for row in rows]
         return details
@@ -989,7 +1093,7 @@ class TourBackend(StorefrontBackend):
         return ProductDetails(
             **variant.model_dump(),
             long_description=("\n".join(record.features)[:1200] or None) if record else None,
-            specs=_specs(record) if record else {},
+            specs=_specs(record, self._facets(record)) if record else {},
         )
 
     async def get_product_details(

@@ -74,6 +74,11 @@ ROUTE = {
     "companyName": "ACME 旅行社 新疆部",
     "groupId": 1,
     "tags": ["纯玩", "小团"],
+    "itineraryTags": ["伊犁", "乌鲁木齐出发", "四钻酒店", "纯玩无购物", "含景点首道门票"],
+    "itineraryTagsStatus": 1,
+    "periodTags": ["预算约5800—6600元"],
+    "periodPriceTags": ["预算约5800—6600元"],
+    "periodHolidayTags": [],
     "features": [],
     "firstImageId": 121,
     "firstImageUrl": "https://images.example/acme/ylbj.jpg",
@@ -284,6 +289,24 @@ async def test_search_routes_sends_the_window_and_maps_the_row():
     assert (route.route_id, route.route_code, route.days) == (1021, "YLBJ", 8)
     assert (route.from_price, route.tags) == (0.0, ("纯玩", "小团"))
     assert route.attachment_name == "伊犁北疆环线 8 日.docx"
+    # The ERP's own extraction of the itinerary attachment, and the 团期 budget band.
+    assert route.itinerary_tags == (
+        "伊犁",
+        "乌鲁木齐出发",
+        "四钻酒店",
+        "纯玩无购物",
+        "含景点首道门票",
+    )
+    assert route.price_tags == ("预算约5800—6600元",)
+
+
+async def test_a_route_row_without_the_tag_lists_maps_them_to_nothing():
+    """The extraction is not on every row — a route with no attachment carries none of it —
+    and a field the ERP leaves out is empty here, not a failure."""
+    bare = {key: value for key, value in ROUTE.items() if not key.startswith("itinerary")}
+    client, _ = erp({"/login": LOGIN, "/route/list": page([{**bare, "periodPriceTags": None}])})
+    (route,) = await client.search_routes(RouteQuery())
+    assert (route.itinerary_tags, route.price_tags) == ((), ())
 
 
 async def test_list_departures_filters_by_name_and_keeps_only_the_matching_route_id():

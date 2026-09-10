@@ -119,11 +119,32 @@ Single prompts worth trying after those turns:
   names any department but the 团期's own is refused with 部门不匹配, which is the guard the
   real ERP enforces with a bare 404. Nothing expires here, because the ERP's own 预留 runs on
   the departure's `reserveHours`.
+- `api/tags.py`: `normalize`, the ERP's free-text 行程标签 as the attributes an advisor filters
+  on — `destinations`, `shopping` (`none` / `some` / `unknown`), `hotel_grade`, `family`,
+  `departure_cities`, `direct_flight`, `inclusions`, `budget`. A 线路 carries some fifty tags
+  the ERP auto-extracted from its itinerary attachment (斯里兰卡, 上海出发, 网评5钻酒店,
+  纯玩无购物, 含签证, and forty attraction names), written in whatever words the extractor
+  found and carrying its mistakes, so the facets are evidence and not a specification: an
+  attribute no tag names is `unknown`, which is not a no. The vocabulary is not in the module.
+  `data/tag-rules.json` holds it — for each attribute a list of `{value, any}` rules matched
+  by substring in file order, plus the `negative` substrings that take a tag out of that
+  attribute (印度教寺庙 is not a trip to 印度) — so product staff extend the synonyms without a
+  code change. `destinations` and `departure_cities` keep every value their tags name, in tag
+  order; every other attribute keeps one, the earliest rule in the file that any tag matched,
+  which is what makes 无购物 beat 购物 on a line whose extractor listed a market as an
+  attraction. `api/tests/test_tags.py` holds the rule families, and its coverage test runs
+  them over a live `route/list` snapshot named by `TOUR_TAG_SNAPSHOT`.
 - `api/tour_backend.py`: `TourBackend`, the `StorefrontBackend`. A 线路 is a family and its
   团期 are that family's variants, so search stays a shortlist of lines and the seats and
   quotes come from one details call. The advisor's destination is matched against 线路 names
-  and tags, because the ERP catalog has no destination field, and the day count, 纯玩 and
-  the hotel standard are filtered on this side for the same reason. The ERP's own search
+  and against the attributes `api/tags.py` normalises a line's tags into, because the ERP
+  catalog has no destination field; the day count, 纯玩, the hotel standard and the departure
+  city are filtered on this side against those attributes for the same reason, and 亲子 orders
+  the shortlist instead of filtering it. The facets are computed once per 线路 and carried on
+  every record: a card's labels are the hotel standard, 纯玩, 亲子, the departure city and the
+  first inclusions rather than the first four raw tags, its specs carry 酒店 / 购物 / 出发城市 /
+  包含 where the tags say them, and a relaxed record's note says what the tags state
+  (`标签标注四钻，要求五钻`) or that they state nothing (`未标注五钻`). The ERP's own search
   reads the name alone, and its editors do not write every destination into one — 欧洲 names
   no route and 欧洲部 sells them all — so a named query that returns fewer than two routes is
   followed by one broad read of the window, whose routes are kept when the destination is in
@@ -202,21 +223,27 @@ The filter keys the model writes into `filters.attributes` on every search:
 
 | Key | Value |
 |---|---|
-| `destination` | the customer's destination as text; the ERP matches it against 线路 names, and the mock ranks tags and features too, because the catalog has no destination field |
+| `destination` | the customer's destination as text; the ERP matches it against 线路 names, and this side matches it against the normalised destinations, the raw tags, the 亮点, the selling department and the departure city, because the catalog has no destination field |
 | `depart_from`, `depart_to` | ISO dates; the ERP's own date filter, and the window this and every later quote is made for |
 | `days_min`, `days_max` | whole days; filtered here, since the ERP has no day filter |
 | `adults`, `children` | the party every quote is made for, and the split `add_to_cart` writes onto the order |
 | `child_ages` | pipe-separated, `5\|9`; kept on the session's `SearchContext` and filters nothing, because the ERP states no minimum age |
-| `no_shopping` | `yes` keeps the 线路 whose name or tags carry 纯玩, 零购物 or 无购物 |
-| `hotel_level` | 四钻, 五钻; matched in every spelling the ERP's editors use (五钻, 5钻, 五星, 5星) |
+| `no_shopping` | `yes` keeps the 线路 whose tags say 纯玩 (`shopping=none`) and drops the ones that say 购物; a 线路 whose tags say neither falls back to the words in its name |
+| `hotel_level` | 四钻, 五钻; matched against the normalised `hotel_grade`, in every spelling the ERP's editors use (五钻, 5钻, 五星, 5星, 4+5钻) |
+| `departure_city` | the city the group leaves from, against the tags (上海出发, 昆明直飞) and the ERP's own `departCityName`; it is not relaxed, because a customer cannot fly from a city the line does not leave |
+| `family` | `yes` sorts the 线路 whose tags claim 亲子 to the front of the shortlist and drops nothing, because a family will take a line that never wrote the word down |
 
 ## Data
 
 - `data/routes.json`: eight 线路 over four destinations, in the ERP's own row shape — integer
   `routeId`, `routeCode`, `routeName`, `days`, `departCityName`, `companyId` (2 for the 新疆
-  routes and 5 for the 青海 one, as the real account's departments run), `fromPrice`, and the
-  `tags` and `features` free text that is all the catalog carries. There is no destination, hotel,
-  vehicle, shopping or child-age field, because the ERP has none.
+  routes and 5 for the 青海 one, as the real account's departments run), `fromPrice`, the
+  `tags` and `features` free text the editors wrote, the `itineraryTags` the ERP extracted
+  from the itinerary attachment and the `periodPriceTags` budget band. There is no
+  destination, hotel, vehicle, shopping or child-age *field*, because the ERP has none; those
+  are tags, and `api/tags.py` is what reads them.
+- `data/tag-rules.json`: the controlled vocabulary those tags are normalised with, one list
+  of rules per attribute. The agency's product staff extend it without a code change.
 - `data/departures.json`: sixty-six 团期, six to twelve per 线路, in the ERP's period row
   shape — `periodId`, `periodCode`, `planGuests`, `availableSeats`, `minGroupSize`,
   `confirmCount`, `reserveHours`, the route's own `companyId`, and the `priceInfo` block

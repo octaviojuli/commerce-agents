@@ -27,6 +27,8 @@ ROUTE_KEYS = {
     "companyName",
     "fromPrice",
     "tags",
+    "itineraryTags",
+    "periodPriceTags",
     "features",
     "firstImageUrl",
     "routeAttachmentName",
@@ -52,6 +54,8 @@ TAGS = {
     "8座商务车",
     "20座中巴",
 }
+# The ERP extracts some fifty itinerary tags per 线路; the fixtures carry a demo-scale list.
+MIN_ITINERARY_TAGS = 12
 # The departments the fixtures span, as beta's account does: 新疆部 and 青海部.
 DEPARTMENTS = {2, 5}
 WINDOW_DAYS = 60
@@ -96,6 +100,24 @@ def test_every_route_row_is_the_erps_own_shape(routes):
         assert re.fullmatch(r"[A-Z]{4}", route["routeCode"]), route["routeId"]
         assert set(route["tags"]) <= TAGS, route["routeId"]
         assert route["features"], route["routeId"]
+
+
+def test_every_route_carries_the_erps_itinerary_tags(routes):
+    """The real catalog's tags are the ERP's own extraction of the itinerary attachment —
+    some fifty free-text tags per 线路 — and ``api/tags.py`` normalises them into the
+    attributes search filters on. The fixtures carry the same shape at demo scale: the
+    destination, the departure city, the hotel standard, 购物 and what the price includes."""
+    for route in routes:
+        tags = route["itineraryTags"]
+        assert len(tags) >= MIN_ITINERARY_TAGS, route["routeId"]
+        assert len(set(tags)) == len(tags), route["routeId"]
+        assert any(word in tag for tag in tags for word in ("钻", "民宿")), route["routeId"]
+        assert any("购物" in tag for tag in tags), route["routeId"]
+        assert any(tag.endswith("出发") for tag in tags), route["routeId"]
+        assert all(isinstance(tag, str) and tag.strip() for tag in tags), route["routeId"]
+    priced = [route for route in routes if route["periodPriceTags"]]
+    assert priced, "the ERP carries a budget band on a few routes; the fixtures should too"
+    assert all(tag.startswith("预算约") for route in priced for tag in route["periodPriceTags"])
 
 
 def test_route_ids_and_codes_are_unique(routes):
