@@ -8,9 +8,11 @@ the file."""
 import httpx
 import pytest
 
+from commerce_common.skills import SkillRegistry
 from demo_common import SESSION_HEADER
 from tour.api import attachments
 from tour.api.main import ATTACHMENT_TOO_LARGE, ATTACHMENT_UNAVAILABLE, NO_ATTACHMENT
+from tour.api.tour_backend import TourToolExecutor
 
 NAME = "【一价全含·纯玩+观鲸】东航斯里兰卡7天5晚5钻.docx"
 URL = "https://store.example/attachments/2026/09/10/6aa20bcd6093c.docx"
@@ -109,3 +111,73 @@ async def test_the_route_record_names_its_attachment(main, linked, session):
     by_id = {p.product_id: p for p in products}
     assert by_id["RT-1021"].attributes["attachment"] == NAME
     assert "attachment" not in by_id["RT-1022"].attributes
+
+
+@pytest.fixture
+def executor(main, backend, session, state) -> TourToolExecutor:
+    return TourToolExecutor(
+        backend=backend,
+        config=main.agent.config,
+        skills=SkillRegistry([]),
+        session=session,
+        state=state,
+        extensions=list(main.agent.extra_presentation_tools),
+    )
+
+
+@pytest.fixture
+def linked_on_backend(backend):
+    """The test backend's own mock ERP links an attachment on RT-1021 and RT-1024."""
+    for route_id, name in ((1021, NAME), (1024, "伊犁五钻轻奢8日-行程单.pdf")):
+        row = backend.erp._routes[route_id]
+        row["routeAttachmentName"], row["routeAttachmentUrl"] = name, URL
+    yield
+    for route_id in (1021, 1024):
+        row = backend.erp._routes[route_id]
+        row["routeAttachmentName"] = row["routeAttachmentUrl"] = None
+
+
+def _ui(result):
+    return next(event for event in result.events if event.type == "ui").data
+
+
+def test_the_tool_is_advertised_with_its_input_schema(main):
+    extension = attachments.build_attachments_extension()
+    assert extension.component == "attachments"
+    tool = next(t for t in main.agent._tools if t["name"] == "present_attachments")
+    assert tool["input_schema"] == extension.input_schema
+    assert (
+        "only when the advisor asks" in tool["description"].lower()
+        or "Use only when" in tool["description"]
+    )
+
+
+async def test_the_card_lists_the_documents_of_the_lines_the_advisor_asked_for(
+    executor, linked_on_backend
+):
+    """The ids are the model's; each file's name is the server's, joined from the record the
+    session saw. A line with no document and an id never seen are named as dropped."""
+    await executor.execute("search_products", {"query": "伊犁", "limit": 8})
+    result = await executor.execute(
+        "present_attachments",
+        {"product_ids": ["RT-1021", "RT-1024", "RT-1022", "RT-999999"], "note": "两条线的行程单"},
+    )
+    assert not result.is_error, result.result_text
+    ui = _ui(result)
+    assert ui["component"] == "attachments"
+    card = ui["payload"]
+    assert card["note"] == "两条线的行程单"
+    assert [(i["product_id"], i["extension"]) for i in card["items"]] == [
+        ("RT-1021", "docx"),
+        ("RT-1024", "pdf"),
+    ]
+    assert card["items"][0]["name"] == NAME and card["items"][0]["title"]
+    assert "RT-1022" in result.result_text and "RT-999999" in result.result_text
+
+
+async def test_a_card_with_nothing_on_it_is_refused(executor):
+    await executor.execute("search_products", {"query": "伊犁", "limit": 8})
+    result = await executor.execute("present_attachments", {"product_ids": ["RT-1022"]})
+    assert result.is_error and attachments.NOTHING_TO_SEND in result.result_text
+    unseen = await executor.execute("present_attachments", {"product_ids": ["RT-999999"]})
+    assert unseen.is_error

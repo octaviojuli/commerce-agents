@@ -343,12 +343,15 @@ Single prompts worth trying after those turns:
   `days` and never counted off the dates, that the advisor works in the ERP's own backstage
   and there is no App to send them to, and — in live mode — that a 政策 question is answered
   by saying the rule has to come from the 门店 or the ERP.
-- `api/attachments.py`: the 行程附件 as a download. The catalog links each 线路's itinerary
-  document on a public object store under a hashed file name and carries the agency's own name
-  beside it, so the workbench asks `GET /api/attachments/{product_id}` (a 线路 or one of its
-  团期) on the advisor's session and this host reads the file and answers it under that name,
-  with a 30 MB ceiling; the route record's `attachment` attribute is what tells the card the
-  file exists, and the model is told to point at the card rather than send a file.
+- `api/attachments.py`: the 行程附件 as a download the advisor asked for. The catalog links
+  each 线路's itinerary document on a public object store under a hashed file name and carries
+  the agency's own name beside it. `present_attachments` is the presentation extension the
+  model calls only when the advisor asks for a line's 行程单: it names the ids, the server joins
+  each to the file's name from the record the session saw, drops the ids it never saw or that
+  link no document, and refuses a card with nothing on it. A tap on the card asks
+  `GET /api/attachments/{product_id}` (a 线路 or one of its 团期) on the advisor's session, and
+  this host reads the file and answers it under that name, with a 30 MB ceiling. The route
+  record's `attachment` attribute tells the model a document exists; no card offers it unasked.
 - `api/focus.py`: `present_focus`, the 聚焦卡. A search that matched more 线路 than it may
   show leaves an overview on the backend; the model writes one narrowing question and names
   the dimension, and the card's chips are that overview's groups with their counts, each tap
@@ -409,8 +412,8 @@ per head, the 同业价 an order is booked at (`adult_price`, `child_price`) abo
 customer is shown (`market_adult_price`, `market_child_price`), with the party's total on the
 同业价 and `quote_source` saying which of the two it was made at (or `partial`, where a fare
 the party needs is 未发布 and there is no total), the bag counts each 预留
-down and flips to 已过期 at zero, and `present_focus`, `present_shortlist`, `present_itinerary`,
-`present_guide` and `checkout` each have a card. The `itinerary` card draws one version of a
+down and flips to 已过期 at zero, and `present_focus`, `present_attachments`, `present_shortlist`,
+`present_itinerary`, `present_guide` and `checkout` each have a card. The `itinerary` card draws one version of a
 定制方案 — the days with what this version did to each of them, the baseline's own figures, the
 customer's link and the 计调's copy — and `app/p/[token]/page.tsx` is the customer's own page
 for the version their link names, which reads `GET /api/share/plan/{token}` and answers on it.

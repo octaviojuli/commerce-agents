@@ -9,6 +9,7 @@
 import { type GenerativeBlockProps, UnknownBlock } from "web-shared";
 import { HISTORY_MARK } from "@/lib/sessions";
 import type {
+  AttachmentsPayload,
   CheckoutPayload,
   ComparisonPayload,
   FocusPayload,
@@ -19,6 +20,7 @@ import type {
   ProductsPayload,
   ShortlistPayload,
 } from "@/lib/types";
+import AttachmentsCard from "./AttachmentsCard";
 import BookingStatusCard from "./BookingStatusCard";
 import ComparisonSpread from "./ComparisonSpread";
 import FocusCard from "./FocusCard";
@@ -41,6 +43,9 @@ export default function GenerativeBlock({ block, status }: GenerativeBlockProps)
     case "focus":
       if (partial) return null;
       return <FocusCard payload={payload as FocusPayload} />;
+    case "attachments":
+      if (partial) return null;
+      return <AttachmentsCard payload={payload as AttachmentsPayload} />;
     case "comparison":
       return <ComparisonSpread payload={payload as ComparisonPayload} partial={partial} />;
     case "itinerary":

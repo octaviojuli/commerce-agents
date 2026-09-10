@@ -147,6 +147,15 @@ export interface FocusPayload {
 }
 
 /**
+ * `present_attachments`: the 行程附件 of the 线路 the advisor asked for, each the file as the
+ * agency named it; the bytes come from `GET /api/attachments/{product_id}` on a tap.
+ */
+export interface AttachmentsPayload {
+  note?: string;
+  items: { product_id: string; title: string; name: string; extension: string }[];
+}
+
+/**
  * One 历史会话 as `GET /api/sessions` lists it, newest first: the conversation's id, the title
  * the API made for it, when it was last spoken in, and how many messages it holds. `current` is
  * the session the request itself was made in.

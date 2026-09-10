@@ -20,8 +20,6 @@ import {
   tradePerHead,
   tradePriceLabel,
 } from "@/lib/format";
-import { api } from "@/lib/api";
-import { downloadAttachment } from "@/lib/attachments";
 import type { Product, ProductsPayload } from "@/lib/types";
 import { MismatchNote, SeatsPill, SkeletonCard, SpecGrid, StatusPill, Tag } from "./shared";
 
@@ -48,7 +46,6 @@ function RouteCard({ product }: { product: Product }) {
           is long enough to be cut in half there. */}
       <SpecGrid specs={routeSpecs(product)} cols={1} />
       <MismatchNote product={product} />
-      <AttachmentButton product={product} />
       {sentence ? (
         <p className="line-clamp-2 text-[13px] leading-relaxed text-(--ink-soft)">{sentence}</p>
       ) : null}
@@ -70,45 +67,6 @@ function RouteCard({ product }: { product: Product }) {
         </div>
       ) : null}
     </>
-  );
-}
-
-/**
- * The 行程附件 the 线路 links, as a download under the name the agency gave it; nothing when
- * the record names none. The button says what happened until the next click.
- */
-function AttachmentButton({ product }: { product: Product }) {
-  const name = product.attributes?.attachment ?? "";
-  const [state, setState] = useState<"idle" | "busy" | "done" | "failed">("idle");
-  const [detail, setDetail] = useState("");
-  if (!name) return null;
-  const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
-  const label =
-    state === "busy" ? "下载中…" : state === "done" ? "已下载" : state === "failed" ? "重试下载" : "行程附件";
-  return (
-    <div className="flex flex-col gap-1">
-      <button
-        type="button"
-        className="chip self-start"
-        disabled={state === "busy"}
-        title={name}
-        onClick={async () => {
-          setState("busy");
-          const result = await downloadAttachment(api, product.product_id, name);
-          if (result.ok) {
-            setState("done");
-            setDetail("");
-          } else {
-            setState("failed");
-            setDetail(result.detail);
-          }
-        }}
-      >
-        <span aria-hidden>↓</span> {label}
-        {ext ? <span className="tg-label ml-1 uppercase">{ext}</span> : null}
-      </button>
-      {detail ? <span className="text-[12px] text-(--danger,#b3261e)">{detail}</span> : null}
-    </div>
   );
 }
 

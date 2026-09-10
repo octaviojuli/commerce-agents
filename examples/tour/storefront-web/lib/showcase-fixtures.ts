@@ -20,6 +20,7 @@
  */
 
 import type {
+  AttachmentsPayload,
   CartPayload,
   CheckoutPayload,
   ComparisonPayload,
@@ -559,6 +560,25 @@ const order_status: OrderStatusPayload = {
 
 // A request too broad to shortlist: the question, the catalog's own groups as chips, and the
 // footholds the advisor may open straight away.
+// The 行程附件 of the two 线路 the advisor asked for, each under the agency's own file name.
+const attachments: AttachmentsPayload = {
+  note: "两条线的行程单，点下载即存到本机。",
+  items: [
+    {
+      product_id: "RT-1021",
+      title: "伊犁北疆环线 8 日纯玩小团",
+      name: "伊犁北疆环线8日纯玩小团-行程单-0901.docx",
+      extension: "docx",
+    },
+    {
+      product_id: "RT-1022",
+      title: "伊犁·喀拉峻草原深度 10 日",
+      name: "喀拉峻草原深度10日-行程单.pdf",
+      extension: "pdf",
+    },
+  ],
+};
+
 const focus: FocusPayload = {
   question: "新疆这批线路先按方向缩一下，客人想走哪一片？",
   total: 7,
@@ -599,6 +619,7 @@ const focus: FocusPayload = {
 export const SHOWCASE = {
   products,
   focus,
+  attachments,
   departures,
   shortlist,
   shortlist_streaming,

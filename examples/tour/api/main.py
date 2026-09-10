@@ -150,6 +150,7 @@ agent = ShoppingAgent(
         build_shortlist_extension(),
         build_focus_extension(),
         build_itinerary_extension(),
+        attachments.build_attachments_extension(),
     ],
     executor_class=TourToolExecutor,
 )
