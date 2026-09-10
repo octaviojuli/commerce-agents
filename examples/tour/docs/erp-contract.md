@@ -113,3 +113,12 @@ singleRoomDiffCount, storeId?, storeName?, contactName, contactMobile, remark?}`
   in the lowest (2), and one window's reads bring back 8 routes and their departures across
   departments 2, 4 and 5. A quote for a departure in department 5 answers only after a switch
   into it.
+
+## Production observations
+
+- `GET /route/list` applies `departDateStart`/`departDateEnd` loosely: a week's query answers
+  with 线路 that have no 团期 inside it at all — five 斯里兰卡 lines for 10-01..10-07, of which
+  `period/list` shows two departing in October. The window on a route search is therefore a
+  hint and not a filter, and `TourBackend._search` reads each candidate's departures for the
+  pass's window and drops the ones with none, whichever pass it is; they come back through a
+  relaxation step with a note naming their nearest date.

@@ -6,6 +6,7 @@ quoted for the searched party, the 预留 orders this conversation wrote as cart
 relaxation that answers a request the catalog cannot meet exactly. Every backend runs on a
 fixed ``today``, so the fixture's dates and ids are the same whatever day the suite runs."""
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
@@ -185,8 +186,9 @@ async def test_a_destination_no_route_name_carries_is_found_on_the_rest_of_the_l
     assert products[0].attributes["match"] == "exact"
     assert "mismatch" not in products[0].attributes
     assert products[0].brand == "ACME 旅行社 青海部"
-    # The stated window and the widened one, and nothing more: the three relaxation steps
-    # share what the widened one already fetched.
+    # The stated window and the widened one, and nothing more: the four relaxation steps
+    # share what the widened one already fetched, and the last of them reads no window of
+    # its own.
     assert broad.count("") == 2
 
 
@@ -554,6 +556,77 @@ async def test_a_relaxed_route_names_every_condition_it_misses(backend, session)
     assert notes["RT-1031"] == "无 10/3–10/5 团期，最近为 10/1；标签标注四钻，要求五钻"
     # RT-1032 does depart on 10/3, so the window is not one of the conditions it misses.
     assert notes["RT-1032"] == "标签标注三钻，要求五钻；标签标注含购物"
+
+
+async def test_a_window_the_catalog_has_no_departure_in_offers_the_default_window(backend, session):
+    """The week before the earliest 团期 the catalog holds. Widening by a week reaches nothing
+    either, so the fourth step searches the whole default window: what the advisor can act on
+    is the nearest date the line runs, not an empty shortlist."""
+    products = await search(
+        backend,
+        session,
+        "青海湖",
+        destination="青海",
+        depart_from="2026-09-06",
+        depart_to="2026-09-07",
+    )
+    assert ids(products) == ["RT-1051"]
+    assert products[0].attributes["match"] == "adjacent_date"
+    assert products[0].attributes["mismatch"] == "无 9/6–9/7 团期，最近为 9/18"
+    # The default window's own 团期, so the dates say when the line actually runs.
+    assert products[0].options["depart_date"][0] == "2026-09-18"
+    assert products[0].options["depart_date"][-1] == "2026-11-02"
+
+
+async def test_the_exact_matches_come_before_the_relaxed_ones(backend, session):
+    """Whichever step admitted them: the advisor reads the shortlist from the top, and a line
+    that meets the window they stated is the first thing they should read."""
+    products = await search(backend, session, "", depart_from="2026-11-02", depart_to="2026-11-02")
+    matches = [product.attributes["match"] for product in products]
+    assert matches[0] == "exact" and matches.count("exact") == 1
+    assert set(matches[1:]) == {"adjacent_date"}
+
+
+class LooseDates(MockErpClient):
+    """``route/list`` as the production ERP answers it: its date filter is loose, so a window's
+    routes include 线路 whose 团期 are all outside it — five 斯里兰卡 lines for a week only two
+    of them depart in. The fixtures filter strictly, so the looseness is added here, by dropping
+    the window from the query and keeping the ERP's own text match."""
+
+    async def search_routes(self, q):
+        return await super().search_routes(replace(q, depart_from=None, depart_to=None))
+
+
+async def test_a_route_with_no_departure_in_the_window_is_not_an_exact_match(session):
+    """The loose filter returns 青海湖 for a week it does not depart in. A card built from that
+    row would carry no date, no seat count and no price while claiming to be what the advisor
+    asked for, so the route is dropped from the stated pass; the fourth step takes it back with
+    its nearest 团期 named."""
+    backend = build(LooseDates(today=TODAY, now=FakeClock()))
+    products = await search(
+        backend,
+        session,
+        "青海湖",
+        destination="青海",
+        depart_from="2026-09-06",
+        depart_to="2026-09-07",
+    )
+    assert [product for product in products if product.attributes["match"] == "exact"] == []
+    assert ids(products) == ["RT-1051"]
+    assert products[0].attributes["match"] == "adjacent_date"
+    assert products[0].attributes["mismatch"] == "无 9/6–9/7 团期，最近为 9/18"
+    assert products[0].options["depart_date"]
+    # A window the route does depart in is untouched by the drop.
+    october = await search(
+        backend,
+        session,
+        "青海湖",
+        destination="青海",
+        depart_from="2026-10-01",
+        depart_to="2026-10-07",
+    )
+    assert [product.attributes["match"] for product in october] == ["exact"]
+    assert october[0].options["depart_date"] == ["2026-10-02"]
 
 
 # -- the route-first gate ----------------------------------------------------------------

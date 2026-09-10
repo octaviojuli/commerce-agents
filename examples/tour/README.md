@@ -149,7 +149,10 @@ Single prompts worth trying after those turns:
   no route and 欧洲部 sells them all — so a named query that returns fewer than two routes is
   followed by one broad read of the window, whose routes are kept when the destination is in
   a tag, a 亮点, the selling department or the departure city, and those count as exact
-  matches; the read is cached per window, so the three relaxation steps below share it. A quoted departure costs
+  matches; the read is cached per window, so the four relaxation steps below share it, as they
+  share the named query and each route's departure list. A route the ERP's loose date filter
+  returns with no 团期 inside the window at all is dropped from the pass, whichever pass it is,
+  because a card built from one carries no date, no seat count and no price. A quoted departure costs
   two ERP calls — its detail for the 市场价 and the seat counts, `order/price` in its own
   department for the 同业价 — so a listing prices at most six of them and a route's details at
   most twelve, nearest the middle of the window first and four at a time. A variant is priced
@@ -179,11 +182,15 @@ Single prompts worth trying after those turns:
   card is held with `route_first`, so the advisor picks off the 线路 cards and a route's 团期
   open only after that; a 团期 id and a route id the advisor pasted are not gated, and the
   record of what was presented lives on the backend, because the executor is rebuilt each turn.
-- When fewer than two 线路 are quotable, the search widens in three steps and each relaxed
+- When fewer than two 线路 are quotable, the search widens in four steps and each relaxed
   route says in Chinese what it misses: the date window by a week (`match=adjacent_date`,
   `无 10/3–10/8 团期，最近为 10/2`), then the day count by two either way, then the hotel
-  standard and 纯玩 (`match=similar_route`, `未标注五钻`). Each step keeps the one before it,
-  and the note is measured against everything the advisor stated.
+  standard and 纯玩 (`match=similar_route`, `未标注五钻`), then the advisor's dates for the whole
+  default window, which answers a stated week the destination has no 团期 in with the nearest
+  one it does (`match=adjacent_date`, `无 10/1–10/7 团期，最近为 11/2`). Each step keeps the one
+  before it, and the note is measured against everything the advisor stated. The last step
+  spends one route query and the departure lists behind it: its broad pass is what the steps
+  above already read.
 - `api/agent_config.py`: the shopping config. `enable_fulfillment=False`, because the
   customer joins the group at its 集合地点; `product_id_patterns` replaced with the two id
   shapes this catalog has, `RT-\d+` and `DP-\d+`; the cart capped at three lines of up to
