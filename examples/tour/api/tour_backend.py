@@ -77,6 +77,7 @@ from .erp_client import (
     RouteRecord,
     WindowReader,
 )
+from .private_lines import load_private_line_rules
 from .tags import UNKNOWN, RouteFacets, normalize
 
 DATA_DIR = example_data_dir(__file__)
@@ -808,6 +809,8 @@ class TourBackend(StorefrontBackend):
             "store_name", STORE_NAME
         )
         self._users = load_users(data_dir)
+        # 包团, 会销 and 定制 lines: not a search result, reachable by id or full name.
+        self._private = load_private_line_rules(data_dir)
         self._policies = load_policies(data_dir)
         self._contexts: dict[str, SearchContext] = {}
         # What the ERP has already returned this process: a route is looked up by id long
@@ -982,6 +985,14 @@ class TourBackend(StorefrontBackend):
         simply has no departures; the record this route becomes reads the same rows again."""
         return bool(await self._list(erp, record, window, fetched))
 
+    def _sellable(self, record: RouteRecord, stated: Request) -> bool:
+        """Whether a search may offer the line: any line on general sale, and a private one
+        only when the advisor named it in full — the 会销 its own salesperson opens by name is
+        theirs to see, and nobody else's 欧洲 shortlist."""
+        if not self._private.is_private(record):
+            return True
+        return bool(stated.text) and stated.text.strip() == record.route_name.strip()
+
     async def _search(
         self,
         erp: ErpClient,
@@ -1010,7 +1021,11 @@ class TourBackend(StorefrontBackend):
         boot snapshot — takes the named query alone and reads no departures."""
         window = self._window(stated.depart_from, stated.depart_to)
         records = await self._routes_for(erp, stated.text, window, fetched)
-        fits = [record for record in records if _fits(record, self._facets(record), stated)]
+        fits = [
+            record
+            for record in records
+            if _fits(record, self._facets(record), stated) and self._sellable(record, stated)
+        ]
         if fetched is None:
             return fits
         found = [record for record in fits if await self._departs(erp, record, window, fetched)]
@@ -1021,6 +1036,8 @@ class TourBackend(StorefrontBackend):
         for record in await self._broad(erp, window, fetched, read=broad_read):
             facets = self._facets(record)
             if record.route_id in seen or not _mentions(record, facets, stated.text):
+                continue
+            if not self._sellable(record, stated):
                 continue
             if _fits(record, facets, stated) and await self._departs(erp, record, window, fetched):
                 matched += 1
@@ -1174,7 +1191,10 @@ class TourBackend(StorefrontBackend):
             image_url=record.image_url,
             category=CATEGORY,
             labels=_labels(record, facets),
-            attributes=_route_attributes(record, facets, match, mismatch),
+            attributes={
+                **_route_attributes(record, facets, match, mismatch),
+                **({"line_type": kind} if (kind := self._private.line_type(record)) else {}),
+            },
             in_stock=any(row.available_seats >= party for row in rows),
             short_description=(
                 _feature_sentence(record) or f"{record.days} 天 · {record.depart_city}出发"

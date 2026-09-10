@@ -1,0 +1,5 @@
+{
+  "_": "A 线路 that is not on general sale: a 包团 a customer chartered, a 会销 a salesperson runs, a 定制 built for one party. The ERP carries no field for it yet, so the name is read for these words; saleType is the field asked of the ERP, and a value outside public_sale_types is private once it arrives.",
+  "name_keywords": ["包团", "会销", "定制", "包机", "团建", "考察", "独立成团"],
+  "public_sale_types": ["", "0", "公开"]
+}

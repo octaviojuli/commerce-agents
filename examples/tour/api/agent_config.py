@@ -142,7 +142,9 @@ def build_shopping_config(*, live: bool = False) -> ShoppingAgentConfig:
             "advisor once. Every result carries catalog_matches, the number of 线路 that met "
             "the request in the window; when it exceeds the results shown, say how many there "
             "are and ask the advisor to narrow by country, departure city, dates or days "
-            "before opening one."
+            "before opening one. A record carrying line_type (包团, 会销, 定制) is not on "
+            "general sale and appears only because the advisor named it or pasted its id; say "
+            "what it is and do not offer it to another customer."
         ),
         # Nothing ships: the customer joins the group at its 集合地点, which the route's
         # specs carry, so the fulfillment tool is not registered at all.

@@ -160,6 +160,17 @@ singleRoomDiffCount, storeId?, storeName?, contactName, contactMobile, remark?}`
 - Ids: `RT-{routeId}` and `DP-{periodId}`. `hold_ttl_minutes` is 30 on our side whatever
   `reserveHours` says.
 
+- **A 包团 is not a search result.** The catalog carries, beside the lines anyone may sell,
+  the 包团 a customer chartered, the 会销 one salesperson runs and the 定制 built for one party
+  (50 of the 269 production 线路 by name), and `route/list` has no field saying which is which.
+  So `api/private_lines.py` reads the name for the words `data/private-lines.json` lists and
+  keeps such a line out of every shortlist and out of the boot snapshot; it still opens by id
+  and by its full name. **Asked of the ERP:** a `saleType` on each `route/list` row — `公开`,
+  `包团`, `会销`, `定制` as strings, or a documented code — maintained by the editors. The
+  client already reads it into `RouteRecord.sale_type`: a value outside the file's
+  `public_sale_types` makes the line private whatever the name says, and the name becomes the
+  fallback for a row that carries none.
+
 ## Beta observations
 
 - `GET /order/price` answers a bare nginx HTML 404, not the JSON envelope, for a departure

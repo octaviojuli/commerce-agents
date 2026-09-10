@@ -201,6 +201,54 @@ async def test_a_hotel_standard_is_matched_however_the_advisor_spells_it(backend
         assert exact == ["RT-1024"], level
 
 
+async def test_a_private_line_is_not_a_search_result(backend, erp, session):
+    """The catalog carries the 包团 a customer chartered and the 会销 one salesperson runs
+    beside what anyone may sell, and the ERP has no field saying which is which. So the name
+    is read (``data/private-lines.json``), and such a line is kept out of every shortlist —
+    the named pass and the broad one — and out of the boot listing snapshot."""
+    before = await search_yili(backend, session, no_shopping="")
+    assert "RT-1023" in ids(before)
+    erp._routes[1023]["routeName"] = "王鑫包团-伊犁定制行程 9 日"
+    products = await search_yili(backend, session, no_shopping="")
+    assert "RT-1023" not in ids(products)
+    assert "RT-1021" in ids(products)
+    await backend.load_listings()
+    assert "RT-1023" not in backend.products and "RT-1021" in backend.products
+
+
+async def test_a_private_line_opens_by_its_id_and_by_its_full_name(backend, erp, session):
+    """The salesperson whose 会销 it is can still work it: pasted by id or named in full it is
+    the record it always was, and ``line_type`` says what it is so the model says so."""
+    erp._routes[1023]["routeName"] = "王鑫包团-伊犁定制行程 9 日"
+    details = await backend.get_product_details(session, "RT-1023")
+    assert details is not None and details.attributes["line_type"] == "包团"
+    products = await search(
+        backend,
+        session,
+        "王鑫包团-伊犁定制行程 9 日",
+        depart_from="2026-10-11",
+        depart_to="2026-10-20",
+    )
+    # The mock scores every 伊犁 line against the name; the ERP's own substring match answers
+    # the one line. Either way the named line is offered, and says what it is.
+    named = next(p for p in products if p.product_id == "RT-1023")
+    assert named.attributes["line_type"] == "包团"
+    # A line on general sale carries no line_type at all.
+    public = await search_yili(backend, session)
+    assert all("line_type" not in p.attributes for p in public)
+
+
+async def test_the_erps_sale_type_is_read_ahead_of_the_name(backend, erp, session):
+    """Once the ERP carries ``saleType``, it decides: a plainly named line it calls 包团 is
+    private, and a 包团-named line it calls public is on sale."""
+    erp._routes[1022]["saleType"] = "包团"
+    erp._routes[1023]["routeName"] = "王鑫包团-伊犁定制行程 9 日"
+    erp._routes[1023]["saleType"] = "公开"
+    products = await search_yili(backend, session, no_shopping="")
+    assert "RT-1022" not in ids(products)
+    assert "RT-1023" in ids(products)
+
+
 async def test_the_named_matches_are_never_the_whole_shortlist(backend, erp, session):
     """On the agency's catalog, 欧洲 names three of the thirty-odd lines the 欧洲部 departs
     in a month. So two name matches do not close the search: the broad pass runs whenever a
