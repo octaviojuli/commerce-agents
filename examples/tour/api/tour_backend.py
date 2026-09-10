@@ -104,8 +104,6 @@ MAX_VARIANTS = 24
 MAX_LISTING_PRICES = 6
 MAX_DETAIL_PRICES = 12
 PRICE_CONCURRENCY = 4
-# What the boot snapshot fetches from a live ERP, where every route is an HTTP round trip.
-MAX_BOOT_ROUTES = 8
 DEFAULT_ADULTS = 2
 DEFAULT_CHILDREN = 0
 MAX_LABELS = 4
@@ -1309,6 +1307,16 @@ class TourBackend(StorefrontBackend):
 
     # -- details -------------------------------------------------------------------------
 
+    def _details(self, record: RouteRecord, family: Product) -> ProductDetails:
+        """One route's family as a details record: the route's own free text and the specs its
+        tags normalise into, both read off the record and costing no call. The variants, where
+        the caller has any, are the caller's to fill in."""
+        return ProductDetails(
+            **family.model_dump(),
+            long_description="\n".join(record.features)[:1200] or None,
+            specs=_specs(record, self._facets(record)),
+        )
+
     async def _route_details(
         self, route_id: int, context: SearchContext, *, prices: int = MAX_DETAIL_PRICES
     ) -> ProductDetails | None:
@@ -1333,12 +1341,7 @@ class TourBackend(StorefrontBackend):
             rows = nearest[:MAX_VARIANTS]
         rows = sorted(rows, key=lambda row: row.depart_date)
         await self._prices(rows, middle, prices)
-        family = self._family(record, rows, context, "exact", None)
-        details = ProductDetails(
-            **family.model_dump(),
-            long_description="\n".join(record.features)[:1200] or None,
-            specs=_specs(record, self._facets(record)),
-        )
+        details = self._details(record, self._family(record, rows, context, "exact", None))
         details.variants = [self._variant(row, record, context) for row in rows]
         return details
 
@@ -1631,16 +1634,24 @@ class TourBackend(StorefrontBackend):
     # -- the demo host's view: a listing snapshot, per-session cleanup, live holds --------
 
     async def load_listings(self) -> None:
-        """Fill ``products`` with one record per route, its ``variants`` the departures in
-        the default window. This is a boot snapshot for the host's catalog routes and the
-        demo's listing pages; the agent's own tools call the ERP on every turn, so seats,
-        prices, and party quotes in the conversation are live and these are not. Against a
-        live ERP every route is a round trip, so the snapshot takes the first few routes and
-        no list prices; an ERP that refuses or is down leaves the snapshot empty rather than
-        stopping the host from booting. This is also where the deployment's 同行 customer is
-        resolved, because that costs one ERP call too."""
+        """Fill ``products`` with one record per route in the default window. This is a boot
+        snapshot for the host's catalog routes and the demo's listing pages; the agent's own
+        tools call the ERP on every turn, so seats, prices, and party quotes in the
+        conversation are live and these are not.
+
+        On the fixtures a record is the whole route: its ``variants`` are the departures in
+        the window, priced. Against a live ERP a detail read per route is a round trip per
+        线路, and the workbench's home page reads this snapshot whole to name the directions
+        the catalog sells — so a live snapshot is the families alone, out of the reads one
+        search already makes: the route list, and the window's 团期 read once for every route
+        in it. It costs no call per route and carries no variant and no price beyond the
+        route's 起价; a 团期 id the host asks for is read from the ERP by the conversation
+        instead. An ERP that refuses or is down leaves the snapshot empty rather than stopping
+        the host from booting. This is also where the deployment's 同行 customer is resolved,
+        because that costs one ERP call too."""
         context = self._default_context()
         stated = Request(text="", depart_from=context.depart_from, depart_to=context.depart_to)
+        window = self._window(context.depart_from, context.depart_to)
         await self._resolve_customer()
         # A reload reads the catalog again, so a route the last read did not carry is worth
         # looking for again.
@@ -1648,16 +1659,20 @@ class TourBackend(StorefrontBackend):
         listings: dict[str, ProductDetails] = {}
         variants: dict[str, ProductDetails] = {}
         try:
-            records = await self._search(stated)
-            for record in records[: MAX_BOOT_ROUTES if self.live else len(records)]:
-                details = await self._route_details(
-                    record.route_id, context, prices=0 if self.live else MAX_DETAIL_PRICES
-                )
-                if details is None:
-                    continue
-                listings[details.product_id] = details
-                for variant in details.variants:
-                    variants[variant.product_id] = ProductDetails(**variant.model_dump())
+            if self.live:
+                fetched = Fetched()
+                for record in await self._search(stated, fetched):
+                    rows = await self._list(record, window, fetched)
+                    family = self._family(record, rows, context, "exact", None)
+                    listings[family.product_id] = self._details(record, family)
+            else:
+                for record in await self._search(stated):
+                    details = await self._route_details(record.route_id, context)
+                    if details is None:
+                        continue
+                    listings[details.product_id] = details
+                    for variant in details.variants:
+                        variants[variant.product_id] = ProductDetails(**variant.model_dump())
         except ErpError as error:
             log.warning("tour listings not loaded: %s: %s", type(error).__name__, error)
             listings, variants = {}, {}

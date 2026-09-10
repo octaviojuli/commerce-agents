@@ -11,7 +11,7 @@ suite touches a real one. The data guards are here too, because a beta catalog i
 fare and a 团期 with no 线路 come from."""
 
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import pytest
@@ -32,6 +32,7 @@ from .test_tour_backend import (
     ROUTE,
     TODAY,
     FakeClock,
+    Windowed,
     search_yili,
 )
 
@@ -44,6 +45,8 @@ CUSTOMER_NAME = "ACME 同业 · 北京营业部"
 USER_INFO = {"userId": 88, "userName": "陆珉", "companyId": 4, "companyName": "欧洲部-上海"}
 DEPARTMENTS = [{"companyId": 2}, {"companyId": 4}, {"companyId": 5}]
 STORE = "ACME 旅行社 上海总部"
+# How many 线路 the production-scale fake sells: more than a boot could read one at a time.
+CATALOG_ROUTES = 30
 
 
 class LiveErp(MockErpClient):
@@ -106,6 +109,43 @@ class WindowErp(LiveErp):
             for row in await self.list_departures(route_id, "", depart_from, depart_to)
         ]
         return [*rows, replace(rows[0], period_id=99001, route_id=0, route_name="")]
+
+
+class BigCatalog(Windowed, LiveErp):
+    """A live login onto a catalog at the agency's own scale: far more 线路 than a boot could
+    read one at a time, each with one 团期 inside the default window, their 团期 read a window
+    at a time as the real client reads them. ``calls`` counts what the boot asked of it, the
+    detail and price reads a 团期 costs included."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        route = dict(next(iter(self._routes.values())))
+        period = dict(next(iter(self._departures.values())))
+        self._routes, self._departures = {}, {}
+        for index in range(CATALOG_ROUTES):
+            route_id, period_id = 9000 + index, 7000 + index
+            self._routes[route_id] = {
+                **route,
+                "routeId": route_id,
+                "routeCode": f"BIG{index:03d}",
+                "routeName": f"目的地{index} 环线 {route['days']} 日",
+            }
+            depart = self.today + timedelta(days=14 + index % 7)
+            self._departures[period_id] = {
+                **period,
+                "periodId": period_id,
+                "routeId": route_id,
+                "departDate": depart,
+                "returnDate": depart + timedelta(days=route["days"] - 1),
+            }
+
+    async def get_departure(self, period_id: int) -> DepartureRecord | None:
+        self._called("get_departure")
+        return await super().get_departure(period_id)
+
+    async def quote(self, period_id: int, customer_id: int, company_id: int) -> Quote:
+        self._called("quote")
+        return await super().quote(period_id, customer_id, company_id)
 
 
 def build(erp: MockErpClient, *, code: str = CODE, store: str = STORE) -> TourBackend:
@@ -247,6 +287,30 @@ async def test_a_write_with_no_store_configured_says_which_variable_is_missing(e
     with pytest.raises(NotOffered, match="TOUR_ERP_STORE_NAME"):
         await backend.add_to_cart(session, OPEN, 4)
     assert await erp.list_orders() == []
+
+
+# -- the boot snapshot a live catalog gets --------------------------------------------------
+
+
+async def test_a_live_snapshot_holds_every_route_in_the_window_at_no_call_per_route():
+    """The workbench's home page names the directions the catalog sells off this snapshot, so a
+    live boot holds every 线路 selling seats in the default window and not the first few of them.
+    It costs what one search costs — the route list, and the window's 团期 read once for every
+    route in it — and asks nothing about any one route."""
+    erp = BigCatalog(today=TODAY, now=FakeClock())
+    backend = build(erp)
+    await backend.load_listings()
+    assert len(backend.products) == CATALOG_ROUTES
+    assert erp.calls == {"search_routes": 1, "list_window": 1}
+    family = backend.product("RT-9000")
+    assert family is not None and family.attributes["destination"]
+    # The 团期 the window holds are the dates the family offers; the route's 起价 is its price,
+    # because no departure was quoted and a listed row carries no 市场价 either.
+    assert family.options["depart_date"] == [(TODAY + timedelta(days=14)).isoformat()]
+    assert family.price == 5580.0
+    # No variant is snapshotted: a 团期 the host asks for is the conversation's own live read.
+    assert family.variants == []
+    assert backend.product("DP-7000") is None
 
 
 # -- the tool surface and the brand ---------------------------------------------------------
