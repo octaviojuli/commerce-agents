@@ -31,6 +31,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from commerce_common.presentation import PresentationRefused
 from commerce_common.streaming import ToolOutcome
 from demo_common.storefront_fixtures import (
     example_data_dir,
@@ -79,7 +80,18 @@ from .erp_client import (
     WindowReader,
 )
 from .itinerary_source import cache_read, cache_write, fetch_attachment, parse_docx
+from .plans import (
+    DayDiff,
+    Plan,
+    PlanDay,
+    PlanVersion,
+    ReferencePrice,
+    diff_days,
+    new_plan_id,
+    new_share_token,
+)
 from .private_lines import load_private_line_rules
+from .store import PlanConflictError, SqliteSessionStore
 from .tags import UNKNOWN, RouteFacets, normalize
 
 DATA_DIR = example_data_dir(__file__)
@@ -129,6 +141,22 @@ HOLD_TTL_MINUTES = 30
 # in it are, because the choose route reads that token back.
 DEFAULT_SHARE_BASE_URL = "http://localhost:3004"
 SHARE_TOKEN_BYTES = 12
+# How many 定制方案 one conversation may build: a plan is a piece of work on one 线路 for one
+# customer, and a fourth in the same conversation is the next customer's conversation.
+MAX_PLANS_PER_SESSION = 3
+# How many versions one plan may carry: the advisor revises with the customer on the phone,
+# and a plan past this many rounds is a new plan rather than another version.
+MAX_PLAN_VERSIONS = 30
+
+# What the plan tool answers with where the deployment kept no plan store, and the four rules
+# a call to it must pass. All five are advisor-facing Chinese: the executor relays them into
+# the conversation the way it relays the ERP's own refusals.
+NO_PLAN_STORE = "此部署未配置方案库，定制方案无法保存。"
+TOO_MANY_PLANS = f"本会话最多 {MAX_PLANS_PER_SESSION} 个定制方案，请开新会话再建下一个。"
+FOREIGN_PLAN = "该方案不属于本会话，请在建它的会话里改，或在本会话里另建一个。"
+TOO_MANY_VERSIONS = f"该方案最多 {MAX_PLAN_VERSIONS} 版，请另建一个方案。"
+NO_SUCH_VERSION = "该方案没有第 {version} 版，请按最新版改。"
+PLAN_BUSY = "该方案刚被另一轮改过，请再发一次。"
 
 _STATUS_TEXT = {"confirmed": "已成团", "pending": "待成团", "waitlist": "已满候补"}
 # The ERP's six order statuses as the shared enum's eight: everything the agency has not
@@ -811,6 +839,7 @@ class TourBackend(StorefrontBackend):
         order_store_name: str = "",
         registry: AdvisorRegistry | None = None,
         state_dir: Path | None = None,
+        plans: SqliteSessionStore | None = None,
     ) -> None:
         """``today`` is for a host that runs on its own clock; the default is the real date.
         ``allow_past`` lets the windows reach behind today, for a test environment whose 团期
@@ -827,9 +856,13 @@ class TourBackend(StorefrontBackend):
         that has not built one — every call goes out on ``erp``.
 
         ``state_dir`` is where the parsed 行程附件 are kept between restarts; with none the
-        attachment is parsed again in every process that reads the 线路."""
+        attachment is parsed again in every process that reads the 线路.
+
+        ``plans`` is where the 定制方案 are kept, which is the same file the sessions are in;
+        with none the deployment builds no plan at all and ``present_itinerary`` says so."""
         self.erp = erp
         self.registry = registry
+        self.plans = plans
         self._state_dir = state_dir
         self.today: date = today or _utcnow().date()
         self.live = live
@@ -1953,6 +1986,131 @@ class TourBackend(StorefrontBackend):
     def share_record(self, token: str) -> ShareRecord | None:
         """The shortlist behind a link's token, for the route the customer's page calls."""
         return self._shares.get(token)
+
+    # -- the 定制方案 the advisor builds on a published 线路 ---------------------------------
+
+    def _plan_store(self) -> SqliteSessionStore:
+        """Where the plans are kept. A deployment that configured none builds no plan, rather
+        than one that is gone at the next restart."""
+        if self.plans is None:
+            raise PresentationRefused(NO_PLAN_STORE)
+        return self.plans
+
+    async def create_plan(
+        self, session: ShoppingSessionContext, route: Product, departure: Product | None
+    ) -> Plan:
+        """A plan on one published 线路, with the 团期 the advisor opened as its baseline. The
+        line's own kind rides along, because a 包团 or 定制 baseline is not on general sale and
+        the 计调 has to read that off the plan."""
+        store = self._plan_store()
+        if len(store.plans_for_session(session.session_id)) >= MAX_PLANS_PER_SESSION:
+            raise PresentationRefused(TOO_MANY_PLANS)
+        route_id = _erp_id(route.product_id, ROUTE_PREFIX)
+        if route_id is None:
+            raise PresentationRefused(f"{route.product_id} 不是线路编号，定制方案要建在 RT- 上。")
+        plan = Plan(
+            plan_id=new_plan_id(),
+            session_id=session.session_id,
+            user_id=session.user_id,
+            route_id=route_id,
+            route_name=route.title,
+            line_type=route.attributes.get("line_type") or None,
+            departure_id=(
+                None if departure is None else _erp_id(departure.product_id, DEPARTURE_PREFIX)
+            ),
+        )
+        store.create_plan(plan)
+        return plan
+
+    async def add_plan_version(
+        self,
+        session: ShoppingSessionContext,
+        plan: Plan,
+        days: list[PlanDay],
+        *,
+        title: str,
+        travel_dates: str | None,
+        party: str | None,
+        reference_price: ReferencePrice | None,
+        base_version: int | None,
+    ) -> tuple[PlanVersion, list[DayDiff]]:
+        """One card as the next version of ``plan``, with its reading of the version it was
+        written against — the latest, or the one ``base_version`` names. The number is taken
+        and checked inside the store's own write, so two turns of one conversation racing to
+        revise the same plan do not both become v3: the loser numbers again against what the
+        winner wrote, and gives up rather than replacing the card the winner sent."""
+        store = self._plan_store()
+        if plan.session_id != session.session_id:
+            raise PresentationRefused(FOREIGN_PLAN)
+        for _ in range(2):
+            latest = store.latest_version(plan.plan_id)
+            if latest >= MAX_PLAN_VERSIONS:
+                raise PresentationRefused(TOO_MANY_VERSIONS)
+            parent, parent_days = None, None
+            if latest:
+                parent = base_version or latest
+                stored = store.version(plan.plan_id, parent)
+                if stored is None:
+                    raise PresentationRefused(NO_SUCH_VERSION.format(version=parent))
+                parent_days = stored[0].days
+            diff = diff_days(parent_days, days)
+            version = PlanVersion(
+                plan_id=plan.plan_id,
+                version=latest + 1,
+                parent_version=parent,
+                title=title,
+                travel_dates=travel_dates,
+                party=party,
+                days=days,
+                reference_price=reference_price,
+                share_token=new_share_token(),
+            )
+            try:
+                store.add_version(version, diff)
+            except PlanConflictError:
+                continue
+            return version, diff
+        raise PresentationRefused(PLAN_BUSY)
+
+    async def link_plan_route(
+        self, session: ShoppingSessionContext, plan_id: str, erp_route_id: str
+    ) -> Plan:
+        """Record the 线路 the agency built in the ERP for this plan. It is the plan's and not
+        a version's, so nothing is versioned here."""
+        store = self._plan_store()
+        plan = store.plan(plan_id)
+        if plan is None or plan.session_id != session.session_id:
+            raise PresentationRefused(FOREIGN_PLAN)
+        route_id = _erp_id(erp_route_id, ROUTE_PREFIX)
+        if route_id is None:
+            raise PresentationRefused(f"{erp_route_id} 不是线路编号，请用 ERP 里的 RT- 编号。")
+        store.link_route(plan_id, route_id)
+        return plan.model_copy(update={"erp_route_id": route_id})
+
+    def plan_share_url(self, token: str) -> str:
+        """The customer's link to one version. The token stands for the version, so a customer
+        sent v2 keeps reading v2 after the advisor sends v3."""
+        base = os.environ.get("TOUR_SHARE_BASE_URL", DEFAULT_SHARE_BASE_URL).rstrip("/")
+        return f"{base}/p/{token}"
+
+    def plan_of(self, plan_id: str) -> Plan | None:
+        return None if self.plans is None else self.plans.plan(plan_id)
+
+    def plan_versions(self, plan_id: str) -> list[tuple[PlanVersion, list[DayDiff]]]:
+        return [] if self.plans is None else self.plans.versions(plan_id)
+
+    def plan_for_token(self, token: str) -> tuple[Plan, PlanVersion, list[DayDiff]] | None:
+        return None if self.plans is None else self.plans.version_by_token(token)
+
+    def advisor_name(self, user_id: str) -> str:
+        """Who the customer's page says made their plan: the name the ERP login carries, the
+        fixture profile's where there is no login, and nothing at all for an id neither
+        knows."""
+        login = None if self.registry is None else self.registry.get(user_id)
+        if login is not None:
+            return login.name
+        profile = self._users.get(user_id)
+        return (profile.display_name or "") if profile is not None else ""
 
     def recent_orders(self, limit: int = 6) -> list[Order]:
         """The cross-user feed a merchant portal would show. This example has no portal, and

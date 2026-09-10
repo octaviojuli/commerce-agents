@@ -144,7 +144,16 @@ def build_shopping_config(*, live: bool = False) -> ShoppingAgentConfig:
             "are and ask the advisor to narrow by country, departure city, dates or days "
             "before opening one. A record carrying line_type (包团, 会销, 定制) is not on "
             "general sale and appears only because the advisor named it or pasted its id; say "
-            "what it is and do not offer it to another customer."
+            "what it is and do not offer it to another customer. "
+            "A custom plan (定制方案) is built with present_itinerary on a route the advisor "
+            "has been shown: v1 restates the route's 第N天 specs day by day and says the "
+            "itinerary follows the 行程附件; a change re-presents the whole plan with plan_id "
+            "and only the asked days changed, and the reply names the version the server "
+            "assigned ('已出 v3，改了第 5、6 天'). A plan carries no price of its own: the "
+            "reference price is the baseline 团期's, the 定制 difference is the 计调's to "
+            "quote, and a plan is never added to the cart — add_to_cart is for a 团期 alone. "
+            "Anything the customer wants that the route does not carry goes into that day's "
+            "note as 待计调确认."
         ),
         # Nothing ships: the customer joins the group at its 集合地点, which the route's
         # specs carry, so the fulfillment tool is not registered at all.

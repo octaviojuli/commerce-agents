@@ -344,6 +344,27 @@ Single prompts worth trying after those turns:
   chose becomes an app event on the advisor's conversation, or on their other live sessions
   when that one has ended. `TOUR_SHARE_BASE_URL` is the origin the link points at,
   `http://localhost:3004` by default; the page itself is not part of this example.
+- `api/itinerary.py`: `present_itinerary`, the 定制方案 the advisor builds on one published
+  线路. The model writes the days and names the baseline; the server does the rest. The first
+  call creates the plan and is v1, the baseline restated; every later call sends the whole
+  plan again with `plan_id` and only the asked days changed, and the server numbers the
+  version, reads it against the version it was written against (`base_version`, the latest
+  unless it names one), and marks each day 新增, 修改 or 删除 off that reading. The call is
+  refused unless the baseline is a 线路 the advisor has been shown — a `present_products` card,
+  or a 包团 or 定制 line opened by id, which was never a search result — and a plan is one
+  conversation's: 3 plans per conversation, 30 versions per plan, and a `plan_id` from another
+  conversation is refused. `departure_id` names the 团期 the reference price is read off, and
+  one that is not this 线路's is dropped and named to the model rather than refusing the plan;
+  a plan has no price of its own, because the 定制 difference is the 计调's to quote.
+  `erp_route_id` links the 线路 the agency built in the ERP and adds no version. Each version
+  carries its own share token, so a customer sent v2 keeps reading v2, and the card leaves the
+  advisor with two texts: the customer's link and `plans.py`'s `handoff_text` for the 计调.
+
+      GET  /api/plans/{plan_id}                    the caller's own plan and every version of it
+      GET  /api/plans/{plan_id}/versions/{n}       one stored version as the card it was sent as
+      GET  /api/share/plan/{token}                 the customer's read of the version their link names, 市场价 only
+      POST /api/share/plan/{token}/respond         {choice: ok|question, text?} → an app event on the advisor's conversation
+
 - `api/main.py`: the host. It builds the ERP client from the environment, and `live =
   isinstance(erp, HttpErpClient)` is the switch the table above hangs off: it hands the backend
   the 客户编码, the 门店, the brand and the advisor's mobile, picks the empty memory seed, and
@@ -363,8 +384,11 @@ per head, the 同业价 an order is booked at (`adult_price`, `child_price`) abo
 customer is shown (`market_adult_price`, `market_child_price`), with the party's total on the
 同业价 and `quote_source` saying which of the two it was made at (or `partial`, where a fare
 the party needs is 未发布 and there is no total), the bag counts each 预留
-down and flips to 已过期 at zero, and `present_shortlist`, `present_guide` and `checkout`
-each have a card. Its `showcase` page renders every card from a snapshot of one advisor
+down and flips to 已过期 at zero, and `present_shortlist`, `present_itinerary`, `present_guide`
+and `checkout` each have a card. The `itinerary` card draws one version of a 定制方案 — the days
+with what this version did to each of them, the baseline's own figures, the customer's link and
+the 计调's copy — and `app/p/[token]/page.tsx` is the customer's own page for the version
+their link names, which reads `GET /api/share/plan/{token}` and answers on it. Its `showcase` page renders every card from a snapshot of one advisor
 search, which `api/tests/test_showcase.py` holds to the live records.
 The page before it is the login (`components/LoginView.tsx`, `lib/auth.ts`): the advisor's own
 ERP 手机号 and 密码, which `POST /api/login` signs in and answers with the session it started.

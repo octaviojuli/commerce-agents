@@ -52,8 +52,13 @@ def make_storefront():
 
 @pytest.fixture(scope="session")
 def extra_public_routes() -> set[str]:
-    # The customer choosing a 团期 on a shared shortlist; they hold no session here.
-    return {"/api/share/{token}/choose"}
+    # The customer's own two pages — choosing a 团期 on a shared shortlist, and reading and
+    # answering one version of a 定制方案; they hold no session here.
+    return {
+        "/api/share/{token}/choose",
+        "/api/share/plan/{token}",
+        "/api/share/plan/{token}/respond",
+    }
 
 
 @pytest.fixture(scope="session")

@@ -460,6 +460,21 @@ def test_the_policy_tool_is_not_on_the_live_surface():
     assert "knowledge base" not in demo.domain_search_notes
 
 
+def test_the_plan_tool_stands_whatever_the_erp_behind_it_is():
+    """A 定制方案 is the advisor's own work on a 线路 they were shown, so nothing about it is
+    the fixtures': the tool is on the surface either way, and the rules for it are in both
+    sets of notes."""
+    for config in (build_shopping_config(), build_shopping_config(live=True)):
+        assert "present_itinerary" in config.domain_search_notes
+        assert "待计调确认" in config.domain_search_notes
+        assert "add_to_cart is for a 团期 alone" in config.domain_search_notes
+
+
+def test_the_plan_tool_is_registered_beside_the_shortlist(main):
+    names = {tool["name"] for tool in main.agent._tools}
+    assert {"present_shortlist", "present_itinerary"} <= names
+
+
 def test_the_notes_state_the_two_rules_a_beta_catalog_needs():
     notes = build_shopping_config().domain_search_notes
     # A 团期's own dates disagree with its 线路's day count, so the record's days is the answer.
