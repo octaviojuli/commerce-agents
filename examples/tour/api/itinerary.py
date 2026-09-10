@@ -388,7 +388,10 @@ def build_itinerary_extension() -> PresentationExtension:
         component="itinerary",
         description=(
             "Show the day-by-day itinerary of a custom plan (定制方案) for this customer, "
-            "built on one 线路 the advisor has been shown. Pass route_id (RT-…) and one entry "
+            "built on one 线路 the advisor has been shown. Use it when the advisor asks for a "
+            "定制方案; an advisor who only wants to read a route's own itinerary is answered "
+            "from its 第N天 specs in text, because a conversation holds three plans at most. "
+            "Pass route_id (RT-…) and one entry "
             "per day — label '第 N 天 · 起点—终点', note the day's programme in one or two "
             "sentences of your own drawn from the route's 第N天 specs, because every later "
             "version sends every day again; write 待计调确认 into a note for anything the "
