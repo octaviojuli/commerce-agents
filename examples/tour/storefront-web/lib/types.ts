@@ -149,3 +149,80 @@ export interface SessionMessage {
   role: "user" | "assistant";
   text: string;
 }
+
+/**
+ * One day of a 定制方案. A finished day carries how it stands against the version it was made
+ * from — `change` is null on a plan made straight off the baseline — and `request` marks a day
+ * the customer asked for that only the 计调 can price. A streaming partial carries the label and
+ * the note and nothing else, so everything but the label is optional.
+ */
+export interface ItineraryDay {
+  label: string;
+  note?: string;
+  /** The day is what the customer asked for, not what the baseline itinerary runs. */
+  request?: boolean;
+  change?: "same" | "changed" | "added" | null;
+  changed_fields?: ("label" | "note")[];
+}
+
+/**
+ * `itinerary`: one version of the 定制方案 the advisor is building on a 线路. The final frame
+ * carries the version's own facts — which plan it is, which version it was made from, the
+ * baseline 线路 and the 团期 the advisor opened, what changed, and the customer's link; a
+ * streaming partial carries only the title, the dates, the party and the days so far, so
+ * everything else is optional and the card draws what has landed.
+ */
+export interface ItineraryPayload {
+  plan_id?: string;
+  version?: number;
+  /** The version this one was made from; null on a plan made straight off the baseline. */
+  parent_version?: number | null;
+  title?: string;
+  /** "2026-10-14 至 2026-10-23", or whatever free text the dates were written as. */
+  travel_dates?: string;
+  party?: string;
+  /** The baseline 线路 this plan changes. */
+  route?: Product;
+  /** The 团期 the reference price is read off, when the advisor opened one. */
+  departure?: Product;
+  days: ItineraryDay[];
+  /** Days of the parent version that are gone; `index` is where they sat in `days`. */
+  removed_days?: { index: number; label: string; note: string }[];
+  /** "+1 天（第 5 天）；改 1 天（第 6 天）" — what this version did to the one before it. */
+  summary?: string;
+  /**
+   * The baseline 团期's own prices, which a 定制 plan only refers to: the 同业价 and the 市场价
+   * for one adult, which of the two the ERP quoted at, and this party's total. The plan's own
+   * price is the 计调's to make, so nothing here is the customer's price for it.
+   */
+  reference_price?: {
+    tong_ye_adult: number | null;
+    market_adult: number | null;
+    quote_source: string;
+    party_total: number | null;
+  } | null;
+  /** The 线路 the agency built for this plan in the ERP; null until it has built one. */
+  erp_route_id?: string | null;
+  /** The plan as plain text for the 计调, which the advisor copies out of the card. */
+  handoff_text?: string;
+  /** The customer's link, minted on the finished call; a partial has none. */
+  share_url?: string;
+}
+
+/**
+ * One version of a 定制方案 as `GET /api/share/plan/{token}` hands it to the customer. It is the
+ * customer's own read: the advisor who made it, the baseline in words rather than as a record,
+ * and the 市场价 alone — the 同业价 is the agency's and does not leave the workbench.
+ */
+export interface SharedPlan {
+  plan_id: string;
+  version: number;
+  title: string;
+  travel_dates?: string;
+  party?: string;
+  advisor_name: string;
+  created_at: string;
+  route: { title: string; days?: string; depart_city?: string };
+  days: { label: string; note: string; request: boolean }[];
+  market_adult: number | null;
+}

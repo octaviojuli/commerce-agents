@@ -5,8 +5,40 @@
 
 /** The pieces the cards share: the specs an advisor reads out, and the state of a 团期. */
 
+import { useCallback, useEffect, useRef, useState } from "react";
 import { formatYuan, mismatchNote, seatsTone, statusText, type Spec } from "@/lib/format";
 import type { Product } from "@/lib/types";
+
+const COPIED_MS = 2000;
+
+/**
+ * Text the advisor hands on — a customer's link, the plan the 计调 works from — put on the
+ * clipboard, with 已复制 said for a moment after. A browser that refuses the clipboard, or a
+ * page not served over a secure context, leaves the advisor the text selected in `fieldRef`
+ * to copy themselves, so the card that uses this renders the text in a field of its own.
+ */
+export function useCopy<T extends HTMLInputElement | HTMLTextAreaElement>(text: string) {
+  const fieldRef = useRef<T>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), COPIED_MS);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  const copy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+    } catch {
+      fieldRef.current?.focus();
+      fieldRef.current?.select();
+    }
+  }, [text]);
+
+  return { copied, copy, fieldRef };
+}
 
 const STATUS_TONE: Record<string, string> = {
   confirmed: "bg-(--ok-soft) text-(--ok)",

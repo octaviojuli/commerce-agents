@@ -9,7 +9,6 @@
  * still-streaming card says the link is coming instead of showing one.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import {
   dateLabel,
   groupProgress,
@@ -19,9 +18,7 @@ import {
   tradePriceLabel,
 } from "@/lib/format";
 import type { Product, ShortlistPayload } from "@/lib/types";
-import { SeatsPill, StatusPill } from "./shared";
-
-const COPIED_MS = 2000;
+import { SeatsPill, StatusPill, useCopy } from "./shared";
 
 /**
  * The 线路 on one line, in the order `routeSpecs` states it: how many days, then the city it
@@ -80,25 +77,7 @@ function Row({ departure, route }: { departure: Product; route: Product }) {
 
 /** The link, ready to paste; the clipboard is asked first and the field is selected if it refuses. */
 function ShareLink({ url }: { url: string }) {
-  const fieldRef = useRef<HTMLInputElement>(null);
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), COPIED_MS);
-    return () => clearTimeout(timer);
-  }, [copied]);
-
-  const copy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-    } catch {
-      // No clipboard permission, or no secure context: hand the advisor the selected text.
-      fieldRef.current?.focus();
-      fieldRef.current?.select();
-    }
-  }, [url]);
+  const { copied, copy, fieldRef } = useCopy<HTMLInputElement>(url);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
