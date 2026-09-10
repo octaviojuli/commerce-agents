@@ -201,6 +201,20 @@ async def test_a_hotel_standard_is_matched_however_the_advisor_spells_it(backend
         assert exact == ["RT-1024"], level
 
 
+async def test_the_named_matches_are_never_the_whole_shortlist(backend, erp, session):
+    """On the agency's catalog, 欧洲 names three of the thirty-odd lines the 欧洲部 departs
+    in a month. So two name matches do not close the search: the broad pass runs whenever a
+    destination is stated, a line that carries it only in its tags is kept beside the named
+    ones, and every result says how many lines met the request before the cut."""
+    route = erp._routes[1024]
+    route["routeName"] = "五钻轻奢 8 日私享小团"
+    assert "伊犁" not in route["routeName"]
+    products = await search_yili(backend, session, days_min="8", days_max="10")
+    exact = [p.product_id for p in products if p.attributes["match"] == "exact"]
+    assert "RT-1024" in exact and "RT-1021" in exact
+    assert {p.attributes["catalog_matches"] for p in products} == {str(len(exact))}
+
+
 async def test_a_destination_only_the_normalised_tags_carry_is_found(backend, erp, session):
     """The ERP's extraction of the itinerary is where a destination usually is, and it writes
     the place names rather than the region: 禾木村 and 白哈巴 are 喀纳斯, and ``tag-rules.json``
