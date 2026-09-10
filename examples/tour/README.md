@@ -272,6 +272,10 @@ the party needs is 未发布 and there is no total), the bag counts each 预留
 down and flips to 已过期 at zero, and `present_shortlist`, `present_guide` and `checkout`
 each have a card. Its `showcase` page renders every card from a snapshot of one advisor
 search, which `api/tests/test_showcase.py` holds to the live records.
+Its 历史会话 drawer (`components/SessionPanel.tsx`, `lib/sessions.ts`) lists the advisor's
+earlier conversations from `GET /api/sessions`, reopens one by sending that session's id
+with the stored transcript replayed above the live one, and remembers the last session per
+browser, reopening it when the advisor's own list still carries it.
 
 The filter keys the model writes into `filters.attributes` on every search:
 
