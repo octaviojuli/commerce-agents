@@ -24,12 +24,12 @@ from shopping_agent import Product, ShoppingSessionState
 MAX_DEPARTURES = 5
 
 _DROPPED_NOTE = "以下团期不在本次会话的结果里，已从分享清单中去掉："
-_NOTHING_LEFT = (
+NOTHING_LEFT = (
     "分享清单里没有一个团期来自本次会话的结果。先搜索线路、打开团期，再用返回的 DP- 编号发清单。"
 )
 # The order the flow runs in, stated to the model the way the route-first gate states its
 # own: the departure cards come first, and the shortlist only once the advisor has chosen.
-_NOT_PRESENTED = (
+NOT_PRESENTED = (
     "present_shortlist is the list the advisor sends to the customer. Show the departures "
     "first with present_products (their DP- ids as picks) so the advisor can choose; call "
     "present_shortlist only for the departures the advisor then asks to send."
@@ -128,11 +128,11 @@ async def _enrich(payload: ShortlistPayload, context: EnrichmentContext) -> dict
     if dropped:
         context.notes.append(f"{_DROPPED_NOTE}{'、'.join(dropped)}。")
     if not items:
-        raise PresentationRefused(_NOTHING_LEFT)
+        raise PresentationRefused(NOTHING_LEFT)
     # The card the advisor sends is the step after their pick: every 团期 on it must have been
     # a card of its own first, so nothing reaches the customer the advisor has not seen.
     if _unpresented(kept, context):
-        raise PresentationRefused(_NOT_PRESENTED)
+        raise PresentationRefused(NOT_PRESENTED)
     # Server-side: the customer's page acts on the ids this call kept, not on anything the
     # model wrote.
     share_url = await context.backend.create_share_link(

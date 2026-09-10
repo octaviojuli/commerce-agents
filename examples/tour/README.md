@@ -378,6 +378,15 @@ display view: the advisor's turns and the assistant's replies as strings, with t
 exchange and the app-event notes the host writes for the model left out, so the count on a
 list row is the number of lines the transcript route returns.
 
+`scripts/review_sessions.py --state-dir <dir> [--since YYYY-MM-DD] [--out report.md]` reads both
+files and prints one Markdown report for the agency's staff: what the advisors searched for and
+with which conditions, the searches that came back empty or only after the backend relaxed them,
+the calls a gate or the ERP refused, the facts the memory file holds, the destination words
+`data/tag-rules.json` has no rule for, and the answers whose wording is worth a second look. It
+reports only — nothing is written, and the words it lists are candidates to review, because a
+change to the vocabulary or the prompt is made by hand afterwards. The sections and the parsing
+are `api/review.py`, which is where the tests read them.
+
 `python scripts/run_demo.py tour --fresh-memory` deletes `memory-store.json` and leaves the
 conversations beside it alone. The fixture seed in `data/memory-seed.json` is loaded at every
 boot, so on the fixtures a seeded fact the advisor retracted is back after a restart; live
