@@ -196,6 +196,13 @@ Single prompts worth trying after those turns:
   names any department but the 团期's own is refused with 部门不匹配, which is the guard the
   real ERP enforces with a bare 404. Nothing expires here, because the ERP's own 预留 runs on
   the departure's `reserveHours`.
+- `api/advisor_memory.py`: the memory's subject. The core extracts a customer's one live
+  undertaking as `current_project`; an advisor's conversations are their customers' trips one
+  after another, and a trip kept as the advisor's own would be read into the next customer's
+  conversation. So the extraction runs under a prompt rendered for the advisor — what
+  qualifies is a standing habit of their own work — and `advisor_write_filter` refuses a
+  customer's trip (a party size, a date on a journey, a key the customer prompt would use) on
+  every path to the store: the extraction pass, the model's memory tool, the memory editor.
 - `api/advisors.py`: `AdvisorRegistry`, the logins this process holds — `AdvisorLogin` per ERP
   employee, carrying the `with_token` client their calls go out on, their name, their mobile,
   the department the login landed in and the moment the token dies. `login` forwards the mobile

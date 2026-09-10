@@ -45,6 +45,7 @@ from demo_common import (
 )
 from shopping_agent_runtime import ShoppingAgent
 
+from .advisor_memory import advisor_memory, advisor_write_filter
 from .advisors import NEED_LOGIN, AdvisorLogin, AdvisorRegistry, FixtureAdvisorRegistry
 from .agent_config import brand_name, build_shopping_config
 from .erp_client import ErpAuth, ErpClient, ErpError, ErpThrottled
@@ -127,9 +128,13 @@ agent = ShoppingAgent(
     # memory_retention_days, which the agent's MemoryRuntime wraps the store with.
     config=build_shopping_config(live=live),
     memory_store=JsonFileMemoryStore(STATE_DIR / "memory-store.json"),
+    memory_write_filter=advisor_write_filter(),
     extra_presentation_tools=[build_shortlist_extension()],
     executor_class=TourToolExecutor,
 )
+# The advisor is the subject of the memory, not their customers: the extraction runs under
+# the advisor's prompt (``api/advisor_memory.py``), and the filter above refuses a trip.
+agent.memory = advisor_memory(agent.memory)
 sessions = SqliteSessionStore(STATE_DIR / "sessions.sqlite")
 # The seeded habits are this example's own invention, so a live deployment starts with an
 # empty memory and the advisor's own facts are the ones the conversation extracts.
