@@ -3,10 +3,10 @@
 
 """The advisor's sessions on disk: ``SqliteSessionStore``, the six storage methods of
 ``demo_common.sessions.SessionStore`` over one SQLite file, plus the two reads the history
-routes need. An advisor's workbench is open all day and the API restarts under them, so a
-conversation has to be there after the restart; a single file is all this deployment needs
-for it, and the store is a subclass exactly as the base class's docstring describes, so no
-route or record shape changes.
+routes need and the list of advisors the offline review script reads. An advisor's workbench is
+open all day and the API restarts under them, so a conversation has to be there after the
+restart; a single file is all this deployment needs for it, and the store is a subclass exactly
+as the base class's docstring describes, so no route or record shape changes.
 
 Two tables. ``sessions`` holds one row per session — the principal, the state document, and
 the version the base class's compare-and-set runs on — and ``messages`` holds the transcript
@@ -235,7 +235,17 @@ class SqliteSessionStore(SessionStore[ShoppingSessionState]):
             ).fetchall()
         return [row[0] for row in rows]
 
-    # -- the history routes' two reads ---------------------------------------------------
+    # -- the reads over the file, rather than over one session ---------------------------
+
+    def user_ids(self) -> list[str]:
+        """Every advisor the file holds a session for. No route answers with this — a request
+        is one advisor's — and the offline reader is what it is for: ``api/review.py`` reports
+        on the whole deployment, so it needs the list a request already knows."""
+        with self._open() as connection:
+            rows = connection.execute(
+                "SELECT DISTINCT user_id FROM sessions ORDER BY user_id"
+            ).fetchall()
+        return [row[0] for row in rows]
 
     def summaries(self, user_id: str) -> list[SessionSummary]:
         """One line per session of ``user_id``, newest first. The count is the history
