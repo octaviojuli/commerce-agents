@@ -38,6 +38,30 @@ export function dateLabel(iso?: string | null): string | null {
   return `${ymd[1]}/${ymd[2]} ${weekday}`;
 }
 
+function clock(at: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}
+
+/**
+ * "今天 14:20", "昨天", "9月3日" — when a 历史会话 was last spoken in, on the browser's clock.
+ * A timestamp from another year names it; one the API sent in a shape this side cannot read
+ * says nothing at all.
+ */
+export function sessionTimeLabel(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "";
+  const now = new Date();
+  const day = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const days = Math.round((day(now).getTime() - day(at).getTime()) / 86_400_000);
+  if (days === 0) return `今天 ${clock(at)}`;
+  if (days === 1) return "昨天";
+  if (at.getFullYear() !== now.getFullYear()) {
+    return `${at.getFullYear()}年${at.getMonth() + 1}月${at.getDate()}日`;
+  }
+  return `${at.getMonth() + 1}月${at.getDate()}日`;
+}
+
 /** The three states `group_status` carries, in the words the advisor uses. */
 const STATUS_TEXT: Record<string, string> = {
   confirmed: "已成团",

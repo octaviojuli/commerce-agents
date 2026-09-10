@@ -130,3 +130,22 @@ export interface ShortlistPayload {
   items: { departure: Product; route: Product }[];
   share_url?: string;
 }
+
+/**
+ * One 历史会话 as `GET /api/sessions` lists it, newest first: the conversation's id, the title
+ * the API made for it, when it was last spoken in, and how many messages it holds. `current` is
+ * the session the request itself was made in.
+ */
+export interface SessionSummary {
+  session_id: string;
+  title: string;
+  updated_at: string;
+  message_count: number;
+  current: boolean;
+}
+
+/** One message of a session's transcript, as `GET /api/sessions/{id}/messages` returns it. */
+export interface SessionMessage {
+  role: "user" | "assistant";
+  text: string;
+}

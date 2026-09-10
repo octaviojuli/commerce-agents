@@ -1,9 +1,13 @@
 // Copyright 2026 Anthropic PBC
 // SPDX-License-Identifier: Apache-2.0
 
-/** Maps a `ui` event's component key to a card. */
+/**
+ * Maps a `ui` event's component key to a card, and the one key the workbench mints itself: the
+ * divider `lib/sessions.ts` puts under a resumed 历史会话.
+ */
 
 import { type GenerativeBlockProps, UnknownBlock } from "web-shared";
+import { HISTORY_MARK } from "@/lib/sessions";
 import type {
   CheckoutPayload,
   ComparisonPayload,
@@ -15,6 +19,7 @@ import type {
 } from "@/lib/types";
 import BookingStatusCard from "./BookingStatusCard";
 import ComparisonSpread from "./ComparisonSpread";
+import HistoryMark from "./HistoryMark";
 import PlanChecklist from "./PlanChecklist";
 import PolicyCard from "./PolicyCard";
 import QuoteSheet from "./QuoteSheet";
@@ -38,6 +43,8 @@ export default function GenerativeBlock({ block, status }: GenerativeBlockProps)
     case "order_status":
       if (partial) return null;
       return <BookingStatusCard payload={payload as OrderStatusPayload} />;
+    case HISTORY_MARK:
+      return <HistoryMark />;
     case "checkout":
       if (partial) return null;
       return <QuoteSheet payload={payload as CheckoutPayload} />;
