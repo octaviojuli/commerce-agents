@@ -343,7 +343,15 @@ Single prompts worth trying after those turns:
   `days` and never counted off the dates, that the advisor works in the ERP's own backstage
   and there is no App to send them to, and — in live mode — that a 政策 question is answered
   by saying the rule has to come from the 门店 or the ERP.
-- `api/shortlist.py`: `present_shortlist`, the one presentation extension. The model names
+- `api/focus.py`: `present_focus`, the 聚焦卡. A search that matched more 线路 than it may
+  show leaves an overview on the backend; the model writes one narrowing question and names
+  the dimension, and the card's chips are that overview's groups with their counts, each tap
+  sending `只看<维度>：<值>` into the conversation as the advisor's words. Up to three results
+  may stand on the card as a foothold while the match is twelve or fewer. The card is refused
+  when the last search fits a shortlist and after the advisor has narrowed once, and while the
+  overview stands and no card has asked, `TourToolExecutor` holds a `present_products` of more
+  than three picks (`FOCUS_FIRST_GATE`) the way it holds a route opened before its card.
+- `api/shortlist.py`: `present_shortlist`, the presentation extension for the customer's list. The model names
   one to five 团期 it has seen and writes the title; the server joins each to its 线路, names
   in Chinese the ids it dropped for want of provenance, refuses the call when nothing is
   left, and mints the customer's link through `TourBackend.create_share_link`, which holds
@@ -395,12 +403,13 @@ per head, the 同业价 an order is booked at (`adult_price`, `child_price`) abo
 customer is shown (`market_adult_price`, `market_child_price`), with the party's total on the
 同业价 and `quote_source` saying which of the two it was made at (or `partial`, where a fare
 the party needs is 未发布 and there is no total), the bag counts each 预留
-down and flips to 已过期 at zero, and `present_shortlist`, `present_itinerary`, `present_guide`
-and `checkout` each have a card. The `itinerary` card draws one version of a 定制方案 — the days
-with what this version did to each of them, the baseline's own figures, the customer's link and
-the 计调's copy — and `app/p/[token]/page.tsx` is the customer's own page for the version
-their link names, which reads `GET /api/share/plan/{token}` and answers on it. Its `showcase` page renders every card from a snapshot of one advisor
-search, which `api/tests/test_showcase.py` holds to the live records.
+down and flips to 已过期 at zero, and `present_focus`, `present_shortlist`, `present_itinerary`,
+`present_guide` and `checkout` each have a card. The `itinerary` card draws one version of a
+定制方案 — the days with what this version did to each of them, the baseline's own figures, the
+customer's link and the 计调's copy — and `app/p/[token]/page.tsx` is the customer's own page
+for the version their link names, which reads `GET /api/share/plan/{token}` and answers on it.
+Its `showcase` page renders every card from a snapshot of one advisor search, which
+`api/tests/test_showcase.py` holds to the live records.
 The page before it is the login (`components/LoginView.tsx`, `lib/auth.ts`): the advisor's own
 ERP 手机号 and 密码, which `POST /api/login` signs in and answers with the session it started.
 The browser remembers that session id and nothing else, so a reload asks `GET /api/advisor`
@@ -431,7 +440,7 @@ The filter keys the model writes into `filters.attributes` on every search:
 | `region` | a 线路系 from `tag-rules.json`'s region vocabulary (德法意瑞, 西欧多国, 英爱, 西葡, 北欧, 东欧巴尔干, 意大利一地 …), matched either way round against the line's `region`; a line filed nowhere is not admitted |
 | `price_max` | a ceiling on the 起价 in yuan; a 起价 the ERP has not published (0) is not over it |
 
-A search that matches more lines than it may show is ranked, not cut in the catalog's order: a 团期 the party fits into first, then the nearest to the middle of the window in three-day buckets, then 已成团, then the destination written in the name, then a published and lower 起价; at most two lines of one 线路系 take the cut before the rest of the ranking fills it. Every result carries `catalog_matches`, the number the cut came from. Above six matches the executor appends a 目录概览 to the tool result — the total and the matched lines grouped by 线路系, 出发城市, 天数, 起价 and 成团, each value but the last one the model sends back as a filter — and the model is told to state the total, ask one narrowing question with those values as chips, and present cards only once the advisor has narrowed.
+A search that matches more lines than it may show is ranked, not cut in the catalog's order: a 团期 the party fits into first, then the nearest to the middle of the window in three-day buckets, then 已成团, then the destination written in the name, then a published and lower 起价; at most two lines of one 线路系 take the cut before the rest of the ranking fills it. Every result carries `catalog_matches`, the number the cut came from. Above six matches the executor appends a 目录概览 to the tool result — the total and the matched lines grouped by 线路系, 出发城市, 天数, 起价 and 成团, each value but the last one the model sends back as a filter — and the model is told to state the total, put one narrowing question on a `present_focus` card whose chips are those values, and present cards only once the advisor has narrowed; a shortlist over that overview is held.
 
 ## Data
 
