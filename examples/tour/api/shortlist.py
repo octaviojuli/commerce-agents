@@ -27,6 +27,13 @@ _DROPPED_NOTE = "以下团期不在本次会话的结果里，已从分享清单
 _NOTHING_LEFT = (
     "分享清单里没有一个团期来自本次会话的结果。先搜索线路、打开团期，再用返回的 DP- 编号发清单。"
 )
+# The order the flow runs in, stated to the model the way the route-first gate states its
+# own: the departure cards come first, and the shortlist only once the advisor has chosen.
+_NOT_PRESENTED = (
+    "present_shortlist is the list the advisor sends to the customer. Show the departures "
+    "first with present_products (their DP- ids as picks) so the advisor can choose; call "
+    "present_shortlist only for the departures the advisor then asks to send."
+)
 
 
 class ShortlistPayload(BaseModel):
@@ -95,6 +102,17 @@ async def _route_of(departure: Product, context: EnrichmentContext) -> Product |
     return _plain(details) if details is not None else None
 
 
+def _unpresented(departure_ids: list[str], context: EnrichmentContext) -> list[str]:
+    """The 团期 among ``departure_ids`` this conversation has not shown as cards. A backend
+    that keeps no such record (the extension is the deployment's, the backend need not be)
+    holds nothing back."""
+    presented = getattr(context.backend, "presented", None)
+    if presented is None:
+        return []
+    shown = presented(context.session.session_id)
+    return [departure_id for departure_id in departure_ids if departure_id not in shown]
+
+
 async def _enrich(payload: ShortlistPayload, context: EnrichmentContext) -> dict[str, Any]:
     items: list[ShortlistItem] = []
     kept: list[str] = []
@@ -111,6 +129,10 @@ async def _enrich(payload: ShortlistPayload, context: EnrichmentContext) -> dict
         context.notes.append(f"{_DROPPED_NOTE}{'、'.join(dropped)}。")
     if not items:
         raise PresentationRefused(_NOTHING_LEFT)
+    # The card the advisor sends is the step after their pick: every 团期 on it must have been
+    # a card of its own first, so nothing reaches the customer the advisor has not seen.
+    if _unpresented(kept, context):
+        raise PresentationRefused(_NOT_PRESENTED)
     # Server-side: the customer's page acts on the ids this call kept, not on anything the
     # model wrote.
     share_url = await context.backend.create_share_link(
@@ -122,7 +144,8 @@ async def _enrich(payload: ShortlistPayload, context: EnrichmentContext) -> dict
 
 def _enrich_partial(data: dict[str, Any], state: ShoppingSessionState) -> dict[str, Any] | None:
     """The streamed prefix of a still-generating call, under the same provenance rule and
-    without a link: a share link is minted once, on the finished call."""
+    without a link: a share link is minted once, on the finished call, which is also where
+    the rule that every 团期 was a card of its own first is applied."""
     items: list[ShortlistItem] = []
     for departure_id in data.get("departure_ids") or []:
         if not isinstance(departure_id, str):
@@ -149,10 +172,10 @@ def build_shortlist_extension() -> PresentationExtension:
         component="shortlist",
         description=(
             "Show a shortlist of dated departures for the customer to choose between, "
-            "each with the route it departs from. Use when the advisor wants a set of "
-            "departures to send to the customer; pass departure ids (DP-…) from this "
-            "session's results — the UI fills in the titles, the quotes, and the share "
-            "link the advisor sends."
+            "each with the route it departs from. Use when the advisor, having seen the "
+            "departures as cards, asks for a set of them to send to the customer; pass "
+            "departure ids (DP-…) presented earlier in this session — the UI fills in the "
+            "titles, the quotes, and the share link the advisor sends."
         ),
         input_schema=_INPUT_SCHEMA,
         payload_model=ShortlistPayload,

@@ -123,7 +123,12 @@ Single prompts worth trying after those turns:
   团期 are that family's variants, so search stays a shortlist of lines and the seats and
   quotes come from one details call. The advisor's destination is matched against 线路 names
   and tags, because the ERP catalog has no destination field, and the day count, 纯玩 and
-  the hotel standard are filtered on this side for the same reason. A quoted departure costs
+  the hotel standard are filtered on this side for the same reason. The ERP's own search
+  reads the name alone, and its editors do not write every destination into one — 欧洲 names
+  no route and 欧洲部 sells them all — so a named query that returns fewer than two routes is
+  followed by one broad read of the window, whose routes are kept when the destination is in
+  a tag, a 亮点, the selling department or the departure city, and those count as exact
+  matches; the read is cached per window, so the three relaxation steps below share it. A quoted departure costs
   two ERP calls — its detail for the 市场价 and the seat counts, `order/price` in its own
   department for the 同业价 — so a listing prices at most six of them and a route's details at
   most twelve, nearest the middle of the window first and four at a time. A variant is priced
@@ -148,7 +153,11 @@ Single prompts worth trying after those turns:
 - `api/tour_backend.py` also holds `TourToolExecutor`: `ErpRefused`, `ErpNotFound`,
   `ErpThrottled` and `ErpAuth` are relayed as their own Chinese text, so the model says what
   stands in the way instead of reporting an outage. `ErpUnavailable` is an outage and falls
-  through to the base default.
+  through to the base default. It also gates the order of the flow the way `gates.py` gates a
+  cart write: `get_product_details` on a 线路 this session searched but has not shown as a
+  card is held with `route_first`, so the advisor picks off the 线路 cards and a route's 团期
+  open only after that; a 团期 id and a route id the advisor pasted are not gated, and the
+  record of what was presented lives on the backend, because the executor is rebuilt each turn.
 - When fewer than two 线路 are quotable, the search widens in three steps and each relaxed
   route says in Chinese what it misses: the date window by a week (`match=adjacent_date`,
   `无 10/3–10/8 团期，最近为 10/2`), then the day count by two either way, then the hotel
@@ -166,11 +175,13 @@ Single prompts worth trying after those turns:
   in Chinese the ids it dropped for want of provenance, refuses the call when nothing is
   left, and mints the customer's link through `TourBackend.create_share_link`, which holds
   the token and the shortlist's ids in memory so the link's contents never pass through the
-  model. `POST /api/share/{token}/choose` is where the customer's page answers: it takes no
-  session, because the customer is not a user here, and the 团期 they chose becomes an app
-  event on the advisor's conversation, or on their other live sessions when that one has
-  ended. `TOUR_SHARE_BASE_URL` is the origin the link points at, `http://localhost:3004` by
-  default; the page itself is not part of this example.
+  model. The card is the step after the advisor's pick, so it is refused while any 团期 on it
+  has not been shown as a `present_products` card of its own, read off the same record the
+  route-first gate keeps. `POST /api/share/{token}/choose` is where the customer's page
+  answers: it takes no session, because the customer is not a user here, and the 团期 they
+  chose becomes an app event on the advisor's conversation, or on their other live sessions
+  when that one has ended. `TOUR_SHARE_BASE_URL` is the origin the link points at,
+  `http://localhost:3004` by default; the page itself is not part of this example.
 - `api/main.py`: the host. It builds the ERP client from the environment, hands the backend
   the one customer id and the advisor's mobile, and puts the conversation's 预留 on every
   cart payload with what is left of each thirty-minute window. A 候补 order is not a hold and

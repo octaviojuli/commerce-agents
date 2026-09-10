@@ -32,7 +32,7 @@ from tour.api.erp_client import (
     Quote,
 )
 from tour.api.mock_erp import MockErpClient
-from tour.api.tour_backend import TourBackend, TourToolExecutor, _number
+from tour.api.tour_backend import ROUTE_FIRST_GATE, TourBackend, TourToolExecutor, _number
 
 TODAY = date(2026, 9, 6)
 ADVISOR = "demo-user"
@@ -103,13 +103,15 @@ async def search(backend, session, query, **attributes):
     return await backend.search_products(session, query, SearchFilters(attributes=dict(attributes)))
 
 
-def executor(backend, session) -> TourToolExecutor:
+def executor(backend, session, state: ShoppingSessionState | None = None) -> TourToolExecutor:
+    """The executor the runtime builds for one turn. ``state`` is the host's, so passing the
+    same one twice is the next turn of the same conversation and a fresh one is a new host."""
     return TourToolExecutor(
         backend=backend,
         config=ShoppingAgentConfig(brand_name="ACME"),
         skills=SkillRegistry([]),
         session=session,
-        state=ShoppingSessionState(),
+        state=state if state is not None else ShoppingSessionState(),
     )
 
 
@@ -147,6 +149,44 @@ async def test_search_returns_route_families_for_the_stated_window(backend, sess
     assert [(p.product_id, p.attributes["match"]) for p in backwards] == [
         (product.product_id, "exact") for product in products
     ]
+
+
+async def test_a_destination_no_route_name_carries_is_found_on_the_rest_of_the_line(
+    backend, erp, session
+):
+    """The ERP searches 线路 names, and its editors do not put the destination in every one:
+    on the agency's own catalog 欧洲 names no route and 欧洲部 sells them all. So a named query
+    that is not a shortlist is followed by one broad read of the window, and a route carrying
+    the destination anywhere else — here the department — is an exact match, not a relaxed
+    one. The broad read is made once per window, so the relaxation steps add no calls."""
+    route = erp._routes[1051]
+    route["routeName"] = "茶卡盐湖·环线 5 日亲子小团"
+    route["features"] = ["茶卡盐湖", "塔尔寺", "黑马河日出"]
+    assert "青海" not in route["routeName"] + "".join(route["features"])
+    assert "青海" in route["companyName"]
+    broad: list[str] = []
+    original = erp.search_routes
+
+    async def counted(query):
+        broad.append(query.route_name)
+        return await original(query)
+
+    erp.search_routes = counted
+    products = await search(
+        backend,
+        session,
+        "青海湖",
+        destination="青海",
+        depart_from="2026-10-05",
+        depart_to="2026-10-20",
+    )
+    assert ids(products) == ["RT-1051"]
+    assert products[0].attributes["match"] == "exact"
+    assert "mismatch" not in products[0].attributes
+    assert products[0].brand == "ACME 旅行社 青海部"
+    # The stated window and the widened one, and nothing more: the three relaxation steps
+    # share what the widened one already fetched.
+    assert broad.count("") == 2
 
 
 async def test_a_hotel_standard_is_matched_however_the_advisor_spells_it(backend, session):
@@ -423,6 +463,88 @@ async def test_a_relaxed_route_names_every_condition_it_misses(backend, session)
     assert notes["RT-1031"] == "无 10/3–10/5 团期，最近为 10/1；未标注五钻"
     # RT-1032 does depart on 10/3, so the window is not one of the conditions it misses.
     assert notes["RT-1032"] == "未标注五钻；未标注纯玩或零购物"
+
+
+# -- the route-first gate ----------------------------------------------------------------
+
+
+async def searched(backend, session, state) -> TourToolExecutor:
+    """One turn that searched 伊犁 through the executor, so the state holds the families."""
+    tour = executor(backend, session, state)
+    await tour.dispatch(
+        "search_products", {"query": "伊犁亲子游", "filters": {"attributes": dict(YILI)}}
+    )
+    return tour
+
+
+async def test_a_searched_route_opens_only_after_the_model_has_presented_it(backend, session):
+    """The advisor picks the 线路 off the cards; a route's 团期 are the step after the pick,
+    so a search followed straight by details is held with what to do instead."""
+    state = ShoppingSessionState()
+    tour = await searched(backend, session, state)
+    held = await tour.dispatch("get_product_details", {"product_id": ROUTE})
+    assert held.blocked == ROUTE_FIRST_GATE
+    assert ROUTE in held.result_text
+    assert "present_products" in held.result_text
+    # A payload that is not the tool's shape presents nothing, and holds nothing open.
+    malformed = await tour.dispatch("present_products", {"picks": ROUTE})
+    assert malformed.refused
+    assert (await tour.dispatch("get_product_details", {"product_id": ROUTE})).blocked
+    shown = await tour.dispatch(
+        "present_products", {"picks": [{"product_id": ROUTE}, {"product_id": "RT-1022"}]}
+    )
+    assert not shown.refused
+    assert backend.presented(session.session_id) == {ROUTE, "RT-1022"}
+    # The executor is built again for every turn, and the record is the conversation's.
+    opened = await executor(backend, session, state).dispatch(
+        "get_product_details", {"product_id": ROUTE}
+    )
+    assert opened.blocked is None and not opened.is_error
+    assert ROUTE in opened.result_text
+
+
+async def test_the_gate_holds_only_the_routes_this_conversation_searched(backend, session):
+    """A 团期 id is the step after the pick and a route id the advisor pasted was never on a
+    card of ours, so neither is held; a route this session searched and did not show is."""
+    state = ShoppingSessionState()
+    pasted = await executor(backend, session, state).dispatch(
+        "get_product_details", {"product_id": ROUTE}
+    )
+    assert pasted.blocked is None and not pasted.is_error
+    tour = await searched(backend, session, ShoppingSessionState())
+    departure = await tour.dispatch("get_product_details", {"product_id": OPEN})
+    assert departure.blocked is None and not departure.is_error
+    assert (await tour.dispatch("get_product_details", {"product_id": "RT-1024"})).blocked == (
+        ROUTE_FIRST_GATE
+    )
+
+
+async def test_the_departures_a_card_showed_are_recorded_beside_the_routes(backend, session):
+    """A route's 团期 are cards too, so the ids a card showed are recorded whichever kind they
+    are; ``present_shortlist`` reads that record to keep the customer's list behind the
+    advisor's pick. Anything in ``picks`` that is not an id of ours is recorded as nothing."""
+    state = ShoppingSessionState()
+    tour = await searched(backend, session, state)
+    await tour.dispatch("present_products", {"picks": [{"product_id": ROUTE}]})
+    await executor(backend, session, state).dispatch("get_product_details", {"product_id": ROUTE})
+    shown = await executor(backend, session, state).dispatch(
+        "present_products", {"picks": [{"product_id": OPEN}, {"product_id": "客人指定"}]}
+    )
+    assert not shown.refused
+    assert backend.presented(session.session_id) == {ROUTE, OPEN}
+
+
+async def test_resetting_a_session_forgets_the_routes_it_showed(backend, session):
+    state = ShoppingSessionState()
+    tour = await searched(backend, session, state)
+    await tour.dispatch("present_products", {"picks": [{"product_id": ROUTE}]})
+    assert backend.presented(session.session_id) == {ROUTE}
+    backend.reset_session(session.session_id)
+    assert backend.presented(session.session_id) == set()
+    again = await (await searched(backend, session, ShoppingSessionState())).dispatch(
+        "get_product_details", {"product_id": ROUTE}
+    )
+    assert again.blocked == ROUTE_FIRST_GATE
 
 
 # -- cart: the 预留 orders the conversation wrote -------------------------------------------
