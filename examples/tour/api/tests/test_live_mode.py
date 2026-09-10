@@ -4,12 +4,14 @@
 """What changes when the ERP behind the backend is the agency's own (``live=True``): the
 advisor's identity and department come from the ERP login, the 同行 customer is resolved from
 its 客户编码 and there is none until it resolves, an order needs the deployment's own 门店, the
-policy tool is not registered, and the brand names come from the environment. The fixtures are
+policy tool is not registered, the brand names come from the environment, and every read and
+the one write go out on the client the advisor's own login left in the registry. The fixtures are
 what stands in for the agency's ERP here — a client exposing ``user_info``, ``companies`` and
 ``search_customers`` is all the backend reads to tell who is logged in — so nothing in this
 suite touches a real one. The data guards are here too, because a beta catalog is where a 0
 fare and a 团期 with no 线路 come from."""
 
+import time
 from dataclasses import replace
 from datetime import date, timedelta
 from typing import Any
@@ -17,12 +19,21 @@ from typing import Any
 import pytest
 
 from shopping_agent import NotOffered, ShoppingSessionContext
+from tour.api.advisors import NEED_LOGIN, AdvisorLogin, AdvisorRegistry
 from tour.api.agent_config import (
     DEFAULT_ASSISTANT_NAME,
     DEFAULT_BRAND_NAME,
     build_shopping_config,
 )
-from tour.api.erp_client import CustomerRecord, DepartureRecord, ErpUnavailable, PriceInfo, Quote
+from tour.api.erp_client import (
+    CustomerRecord,
+    DepartureRecord,
+    ErpAuth,
+    ErpClient,
+    ErpUnavailable,
+    PriceInfo,
+    Quote,
+)
 from tour.api.mock_erp import MockErpClient
 from tour.api.tour_backend import DATA_DIR, TourBackend, _group_status
 
@@ -33,6 +44,7 @@ from .test_tour_backend import (
     TODAY,
     FakeClock,
     Windowed,
+    executor,
     search_yili,
 )
 
@@ -45,6 +57,12 @@ CUSTOMER_NAME = "ACME 同业 · 北京营业部"
 USER_INFO = {"userId": 88, "userName": "陆珉", "companyId": 4, "companyName": "欧洲部-上海"}
 DEPARTMENTS = [{"companyId": 2}, {"companyId": 4}, {"companyId": 5}]
 STORE = "ACME 旅行社 上海总部"
+# The two advisors of one deployment, as their own logins key them: the ERP employee behind
+# each. A live session belongs to one of these and never to a profile in users.json.
+SIGNED_IN = f"erp-{USER_INFO['userId']}"
+OTHER_ADVISOR = "erp-91"
+OTHER_NAME = "沈岚"
+OTHER_MOBILE = "13900000091"
 # How many 线路 the production-scale fake sells: more than a boot could read one at a time.
 CATALOG_ROUTES = 30
 
@@ -148,7 +166,43 @@ class BigCatalog(Windowed, LiveErp):
         return await super().quote(period_id, customer_id, company_id)
 
 
-def build(erp: MockErpClient, *, code: str = CODE, store: str = STORE) -> TourBackend:
+def signed_in(
+    user_id: str,
+    client: ErpClient,
+    *,
+    name: str = USER_INFO["userName"],
+    mobile: str = MOBILE,
+    expires_in: float = 3600.0,
+) -> AdvisorLogin:
+    """One advisor as their own ERP login left them: the client their calls go out on, and what
+    ``POST /login`` said about them (``api/advisors.py`` holds the login itself)."""
+    return AdvisorLogin(
+        client=client,
+        user_id=user_id,
+        name=name,
+        mobile=mobile,
+        department=USER_INFO["companyName"],
+        departments=len(DEPARTMENTS),
+        expires_at=time.time() + expires_in,
+    )
+
+
+class Registered(AdvisorRegistry):
+    """The registry with these advisors already signed in; nobody logs in over the wire here."""
+
+    def __init__(self, *logins: AdvisorLogin) -> None:
+        super().__init__()
+        for login in logins:
+            self._keep(login)
+
+
+def build(
+    erp: MockErpClient,
+    *,
+    code: str = CODE,
+    store: str = STORE,
+    registry: AdvisorRegistry | None = None,
+) -> TourBackend:
     return TourBackend(
         erp,
         today=TODAY,
@@ -158,6 +212,7 @@ def build(erp: MockErpClient, *, code: str = CODE, store: str = STORE) -> TourBa
         customer_code=code,
         store_name=DEFAULT_BRAND_NAME,
         order_store_name=store,
+        registry=registry,
     )
 
 
@@ -211,6 +266,81 @@ async def test_the_advisors_name_is_read_by_logging_in_on_demand(session):
     assert erp.logins == 1
     assert (await backend.get_account_context(session))["advisor"] == "陆珉"
     assert erp.logins == 1
+
+
+# -- the advisor's own login ----------------------------------------------------------------
+
+
+@pytest.fixture
+def signed_in_session() -> ShoppingSessionContext:
+    """A session of the advisor the fake ERP logs in, keyed by that ERP employee."""
+    return ShoppingSessionContext(session_id="live-3", user_id=SIGNED_IN)
+
+
+async def test_a_session_reads_and_writes_through_its_own_advisors_login(signed_in_session):
+    """Two advisors of one deployment, two ERP accounts: the catalog each reads and the order
+    each writes go out on the token their own login bought, and the order is signed with the
+    name and the mobile that login carries."""
+    mine = LiveErp(today=TODAY, now=FakeClock())
+    theirs = LiveErp(today=TODAY, now=FakeClock())
+    other_session = ShoppingSessionContext(session_id="live-4", user_id=OTHER_ADVISOR)
+    backend = build(
+        mine,
+        registry=Registered(
+            signed_in(SIGNED_IN, mine),
+            signed_in(OTHER_ADVISOR, theirs, name=OTHER_NAME, mobile=OTHER_MOBILE),
+        ),
+    )
+    assert backend._erp_for(signed_in_session) is mine
+    assert backend._erp_for(other_session) is theirs
+    await backend.load_listings()
+    await search_yili(backend, other_session)
+    await backend.add_to_cart(other_session, OPEN, 4)
+    assert await mine.list_orders() == []
+    (order,) = await theirs.list_orders()
+    assert (order.contact_name, order.contact_mobile) == (OTHER_NAME, OTHER_MOBILE)
+
+
+async def test_the_advisor_and_the_department_are_the_logins_own(signed_in_session):
+    """The deployment's own account is not the advisor: what the workbench states is the name
+    and the department the advisor's own login landed in."""
+    erp = LiveErp(today=TODAY, now=FakeClock())
+    backend = build(erp, registry=Registered(signed_in(SIGNED_IN, erp, name=OTHER_NAME)))
+    profile = await backend.get_preferences(signed_in_session)
+    assert (profile.user_id, profile.display_name) == (SIGNED_IN, OTHER_NAME)
+    assert profile.loyalty_tier == USER_INFO["companyName"]
+    context = await backend.get_account_context(signed_in_session)
+    assert (context["advisor"], context["departments"]) == (OTHER_NAME, len(DEPARTMENTS))
+
+
+async def test_a_session_with_no_live_login_asks_the_advisor_to_sign_in(signed_in_session):
+    """Nobody signed in on this process, or the eight hours of the token they signed in with
+    are up: the deployment's own account is not lent to the session, and every ERP call the
+    conversation makes says so in the advisor's own words."""
+    erp = LiveErp(today=TODAY, now=FakeClock())
+    expired = signed_in(SIGNED_IN, erp, expires_in=-1.0)
+    for registry in (Registered(), Registered(expired)):
+        backend = build(erp, registry=registry)
+        await backend.load_listings()  # the boot snapshot is the deployment's own account's
+        assert backend.products
+        for call in (
+            backend.search_products(signed_in_session, "伊犁"),
+            backend.get_product_details(signed_in_session, ROUTE),
+            backend.add_to_cart(signed_in_session, OPEN, 4),
+            backend.get_orders(signed_in_session),
+        ):
+            with pytest.raises(ErpAuth, match=NEED_LOGIN):
+                await call
+        # A conversation that holds no 占位 has nothing to ask the ERP about.
+        assert (await backend.get_cart(signed_in_session)).items == []
+
+
+def test_the_advisor_hears_the_sign_in_notice_and_not_an_outage(signed_in_session):
+    """``ErpAuth`` is a rule the advisor can act on, so the executor relays it into the
+    conversation as the ERP's own words."""
+    backend = build(LiveErp(today=TODAY, now=FakeClock()), registry=Registered())
+    relayed = executor(backend, signed_in_session).domain_error(ErpAuth(NEED_LOGIN))
+    assert relayed.is_error and NEED_LOGIN in relayed.result_text
 
 
 # -- the customer, by its 客户编码 ----------------------------------------------------------

@@ -69,10 +69,17 @@ singleRoomDiffCount, storeId?, storeName?, contactName, contactMobile, remark?}`
 
 ## Decisions
 
-- **The advisor is the ERP salesperson.** The host logs in with the advisor's ERP mobile and
-  password; the reads then span every department that account is authorised for, and a quote
-  or an order is written in the departure's own. `contactName` and `contactMobile` on an
-  order are the advisor's own.
+- **The advisor is the ERP salesperson, and each one signs in.** An advisor signs in to the
+  workbench with their own ERP mobile and password; the host forwards the pair to `POST /login`
+  once and keeps only the token, in memory, keyed by `userInfo.userId` (`api/advisors.py`). The
+  reads their session makes then span every department that account is authorised for, and a
+  quote or an order is written in the departure's own, on that advisor's token.
+  `contactName` and `contactMobile` on an order are the name the login named and the mobile it
+  was made with. A password is not stored anywhere and not logged. A token is not renewed, so
+  the advisor signs in again after its eight hours and after a restart of the host; until they
+  do, their session's ERP calls answer `请先登录 ERP 账号`. The deployment's own account
+  (`TOUR_ERP_MOBILE`, `TOUR_ERP_PASSWORD`) is what boots the listing snapshot and resolves the
+  同行 customer, and it answers no advisor's session.
 - **Two prices, and the advisor is quoted one of them.** A departure's `priceInfo` from
   `period/detail` is the 市场价, the direct customer's price and what the customer-facing
   share page shows. `order/price` is the 同业价, the advisor's settlement price and what an
@@ -96,11 +103,12 @@ singleRoomDiffCount, storeId?, storeName?, contactName, contactMobile, remark?}`
   `storeName` every order carries; unset, the write is refused with
   `未配置下单门店（TOUR_ERP_STORE_NAME）` rather than falling back to anything. `TOUR_BRAND_NAME`
   and `TOUR_ASSISTANT_NAME` are what the agency and the assistant are called.
-- **The advisor's identity comes from the login.** `userInfo.userName` is the advisor's name
-  and `userInfo.companyName` the department the login landed in; `companies` is how many the
-  account reads across. Against a live ERP those three are the whole profile the model is
-  handed — there are no habits and no 门店 preference — and no memory is seeded, because a
-  seeded habit is one the advisor never wrote.
+- **The advisor's identity comes from their own login.** `userInfo.userName` is the advisor's
+  name and `userInfo.companyName` the department that login landed in; `companies` is how many
+  the account reads across, and `userInfo.userId` is what the session and the memory are keyed
+  by, so two advisors of one deployment share neither. Against a live ERP the name and the
+  department are the whole profile the model is handed — there are no habits and no 门店
+  preference — and no memory is seeded, because a seeded habit is one the advisor never wrote.
 - **政策 are not answered here.** The agency keeps 退改, 儿童价, 成团, 定金 and 发票 rules in its
   own knowledge base, and this API reads none of it, so `search_policies` is not registered
   against a live ERP (`enable_policies=False`) and the search notes tell the model to say the

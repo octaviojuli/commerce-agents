@@ -12,7 +12,15 @@ department; the reads span all of them. The two write-side calls are department-
 client holds one token per department: the login token for its own, and a switched one, kept
 until it expires, for each other. One lock guards the login and one guards each department's
 switch, so a fan-out of concurrent calls on a cold client buys one token apiece instead of one
-per caller. No password or token is logged, or ever reaches the model."""
+per caller. No password or token is logged, or ever reaches the model.
+
+There are two ways to build one, and the difference is what it holds. ``from_login`` holds the
+mobile and the password, so it logs in on its first call and again whenever the token it has is
+spent. ``with_token`` holds a token a login already bought and no password at all, which is what
+a host keeping one client per logged-in advisor builds (``advisors.py``): it buys a
+``switch-company`` token the same way, because a switch is bought with the token, and once the
+token's own eight hours are up it says so — ``ErpAuth(EXPIRED)`` — rather than logging in again
+behind the advisor."""
 
 from __future__ import annotations
 
@@ -48,6 +56,7 @@ TOKEN_SKEW = 60.0
 UNAVAILABLE = "旅行社 ERP 暂时无法连接，请稍后再试。"
 AUTH_FAILED = "旅行社 ERP 登录失败，请检查账号与密码。"
 THROTTLED = "旅行社 ERP 登录过于频繁，请稍后再试。"
+EXPIRED = "登录已过期，请重新登录"
 NOT_FOUND = "旅行社 ERP 中找不到该记录。"
 REFUSED = "旅行社 ERP 不接受这笔操作。"
 EPOCH = datetime.fromtimestamp(0, UTC)
@@ -173,29 +182,36 @@ class HttpErpClient:
     salesperson ``mobile`` names, and the ``WindowReader`` call beside them. The ERP picks the
     department the login lands in, and a write-side call switches into the 团期's. Every listing
     read is paged to exhaustion, and one window's 团期 are read once and held for a moment.
-    ``transport`` is the tests' mock hook."""
+    ``from_login`` and ``with_token`` are the two constructors; ``transport`` is the tests' mock
+    hook."""
 
     def __init__(
         self,
         base_url: str,
         mobile: str,
-        password: str,
+        password: str = "",
         *,
+        token: str = "",
+        expires_at: float = 0.0,
+        user_info: dict[str, Any] | None = None,
+        companies: list[dict[str, Any]] | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._client = httpx.AsyncClient(
             base_url=base_url.rstrip("/"), timeout=httpx.Timeout(READ_TIMEOUT), transport=transport
         )
+        # An empty password is a client built from a token: there is nothing here to log in
+        # with, and ``_login`` says so instead of trying.
         self._credentials = {"mobile": mobile, "password": password}
-        self._token = ""
-        self._expires_at = 0.0
+        self._token = token
+        self._expires_at = expires_at
         # One (token, expiry) per department switched into; the login department is not in it,
         # because the login token is already that department's. ``user_info`` is the userId,
         # userName, companyId and companyName of the logged-in salesperson — the backend writes
         # that name onto an order — and ``companies`` is the span of this account's reads.
         self._switched: dict[int, tuple[str, float]] = {}
-        self.user_info: dict[str, Any] = {}
-        self.companies: list[dict[str, Any]] = []
+        self.user_info: dict[str, Any] = dict(user_info or {})
+        self.companies: list[dict[str, Any]] = list(companies or ())
         # A search fans out over one cold client: without these every caller would log in, and
         # every caller wanting the same department would switch into it. The login lock guards
         # the login token, one lock per department guards that department's switch, and the
@@ -208,6 +224,55 @@ class HttpErpClient:
         self._windows: dict[
             tuple[date | None, date | None], tuple[float, list[erp.DepartureRecord]]
         ] = {}
+
+    @classmethod
+    def from_login(
+        cls,
+        base_url: str,
+        mobile: str,
+        password: str,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> HttpErpClient:
+        """A client that holds the credentials: it logs in on its first call and again whenever
+        the token it holds is spent. This is the deployment's own account."""
+        return cls(base_url, mobile, password, transport=transport)
+
+    @classmethod
+    def with_token(
+        cls,
+        base_url: str,
+        token: str,
+        expires_at: float,
+        user_info: dict[str, Any],
+        companies: list[dict[str, Any]],
+        mobile: str = "",
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> HttpErpClient:
+        """A client that holds what one login answered — the token, its expiry, the salesperson
+        and the departments — and no password. It reads and switches departments on that token;
+        past its expiry there is nothing to log in with, so the call raises
+        ``ErpAuth(EXPIRED)`` and whoever holds the client logs the advisor in again."""
+        return cls(
+            base_url,
+            mobile,
+            token=token,
+            expires_at=expires_at,
+            user_info=user_info,
+            companies=companies,
+            transport=transport,
+        )
+
+    def token(self) -> tuple[str, float]:
+        """The login token and the moment it expires, for a host that keeps the token and drops
+        the password (``advisors.py``); empty until this client has logged in."""
+        return self._token, self._expires_at
+
+    async def aclose(self) -> None:
+        """Close the connections. A host that logs in only to keep the token closes the client
+        that held the password."""
+        await self._client.aclose()
 
     async def _send(
         self,
@@ -239,10 +304,13 @@ class HttpErpClient:
     async def _login(self) -> str:
         """Mobile and password alone; the ERP names the department it chose and all of them.
         The lock makes a concurrent fan-out cost one login: whoever waited for it finds the
-        token already there and takes it."""
+        token already there and takes it. A client built from a token holds no password, and
+        its spent token is the advisor's to renew, not this client's."""
         async with self._login_lock:
             if self._token and time.time() < self._expires_at - TOKEN_SKEW:
                 return self._token
+            if not self._credentials["password"]:
+                raise erp.ErpAuth(EXPIRED)
             response = await self._send("POST", "/login", self._credentials, WRITE_TIMEOUT, "")
             data = _data(response, credentials=True) or {}
             self._token, self._expires_at = _bearer(data)
