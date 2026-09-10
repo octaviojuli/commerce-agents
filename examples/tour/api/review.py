@@ -4,9 +4,16 @@
 """What a period of the workbench's conversations came to, as numbers a person reads: the
 functions behind ``scripts/review_sessions.py``, which writes nothing. The report says what the
 advisors searched for, where the system fell short — a search with no results, a call a gate or
-the ERP refused, an answer that reads wrong — what the memory file holds, and which destination
-words ``data/tag-rules.json`` has no rule for. That last list is one to review; a change to the
-vocabulary is made by hand afterwards.
+the ERP refused, an answer that reads wrong — which 定制方案 were built and what their days ask
+the 计调 to confirm, what the memory file holds, and which destination words
+``data/tag-rules.json`` has no rule for. The last two lists are ones to review; a change to the
+vocabulary or to the catalog is made by hand afterwards.
+
+The 定制方案 section is the one read off the plan tables rather than the transcripts: a plan is
+numbered and named by the server, so a ``present_itinerary`` call carries the plan's id only
+once the advisor revises it, and a plan they sent in one version is nameless in the conversation
+itself. ``read_plans`` reads it beside the sessions, out of the same file and for those sessions
+alone.
 
 A transcript is read the way the model saw it: the advisor's turn is a user message with text,
 an assistant message carries its ``tool_use`` blocks, and the user message after it carries one
@@ -33,10 +40,11 @@ from shopping_agent.executor import ShoppingToolExecutor
 from shopping_agent.fencing import STOREFRONT_FENCE
 from shopping_agent.serialization import SEARCH_EMPTY_HEADER
 
+from .plans import REQUEST_NOTE
 from .shortlist import NOT_PRESENTED, NOTHING_LEFT
 from .store import SqliteSessionStore, display_text
 from .tags import DATA_DIR, load_rules
-from .tour_backend import TourToolExecutor
+from .tour_backend import TourToolExecutor, route_id_of
 
 # The two files ``api/main.py`` builds its stores on, inside TOUR_STATE_DIR.
 SESSIONS_FILE = "sessions.sqlite"
@@ -162,6 +170,27 @@ class Search:
 
 
 @dataclass(frozen=True)
+class PlanBuilt:
+    """One 定制方案 built in a conversation, and how many versions of it the advisor sent."""
+
+    session_id: str
+    plan_id: str
+    route: str
+    versions: int
+
+
+@dataclass(frozen=True)
+class RequestDay:
+    """One day of one version whose note asks the 计调 to confirm something: what a customer
+    wanted that the 线路 does not carry, which is what the product staff read this list for."""
+
+    plan_id: str
+    route: str
+    label: str
+    note: str
+
+
+@dataclass(frozen=True)
 class Remembered:
     """One advisor's facts in the memory file, and how many times they were purged."""
 
@@ -179,6 +208,8 @@ class Review:
     sessions: list[Session] = field(default_factory=list)
     turns: int = 0
     searches: list[Search] = field(default_factory=list)
+    plans: list[PlanBuilt] = field(default_factory=list)
+    requests: list[RequestDay] = field(default_factory=list)
     refusals: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
     behaviour: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
     remembered: list[Remembered] = field(default_factory=list)
@@ -205,6 +236,31 @@ def read_sessions(store: SqliteSessionStore, since: date | None = None) -> list[
                 messages = store.transcript(row.session_id)
                 sessions.append(Session(row.session_id, user_id, row.updated_at, messages))
     return sessions
+
+
+def read_plans(
+    store: SqliteSessionStore, sessions: list[Session]
+) -> tuple[list[PlanBuilt], list[RequestDay]]:
+    """The 定制方案 built in these conversations, oldest first, and every day of every version
+    whose note carries 待计调确认. A request restated word for word in the next version of the
+    same plan is one candidate and is listed once."""
+    built: list[PlanBuilt] = []
+    requests: list[RequestDay] = []
+    seen: set[tuple[str, str, str]] = set()
+    for session in sessions:
+        for plan in store.plans_for_session(session.session_id):
+            route = f"{route_id_of(plan.route_id)} {plan.route_name}".strip()
+            versions = store.versions(plan.plan_id)
+            built.append(PlanBuilt(session.session_id, plan.plan_id, route, len(versions)))
+            for version, _diff in versions:
+                for day in version.days:
+                    note = " ".join(day.note.split())
+                    key = (plan.plan_id, " ".join(day.label.split()), note)
+                    if REQUEST_NOTE not in note or key in seen:
+                        continue
+                    seen.add(key)
+                    requests.append(RequestDay(plan.plan_id, route, day.label, note))
+    return built, requests
 
 
 @dataclass
@@ -353,18 +409,26 @@ def candidates(searches: list[Search], data_dir: Path = DATA_DIR) -> tuple[Count
 
 
 def review_sessions(
-    sessions: list[Session], memory_path: Path | None = None, since: date | None = None
+    sessions: list[Session],
+    memory_path: Path | None = None,
+    since: date | None = None,
+    plan_store: SqliteSessionStore | None = None,
 ) -> Review:
-    """Every number the report prints, read off the transcripts and the memory file."""
+    """Every number the report prints, read off the transcripts, the plan tables and the memory
+    file. With no ``plan_store`` the 定制方案 section is empty rather than absent."""
     review = Review(since=since, sessions=list(sessions))
     for session in sessions:
         _scan(session, review)
+    if plan_store is not None:
+        review.plans, review.requests = read_plans(plan_store, sessions)
     if memory_path is not None:
         review.remembered, review.memory_note = read_memory(memory_path)
     return review
 
 
 SEARCH_HEADERS = ("目的地", "其他条件", "结果数", "匹配", "会话")
+PLAN_HEADERS = ("方案", "基线线路", "版本数", "会话")
+REQUEST_HEADERS = ("线路", "天", "备注", "方案")
 REFUSAL_HEADERS = ("类别", "次数", "例子")
 BEHAVIOUR_HEADERS = ("现象", "次数", "例子")
 
@@ -387,6 +451,14 @@ def _search_rows(searches: list[Search]) -> list[tuple[str, ...]]:
     ]
 
 
+def _plan_rows(plans: list[PlanBuilt]) -> list[tuple[str, ...]]:
+    return [(p.plan_id, p.route, str(p.versions), p.session_id[:8]) for p in plans]
+
+
+def _request_rows(requests: list[RequestDay]) -> list[tuple[str, ...]]:
+    return [(r.route, r.label, r.note, r.plan_id) for r in requests]
+
+
 def _example_rows(notes: dict[str, list[str]]) -> list[tuple[str, ...]]:
     ordered = sorted(notes.items(), key=lambda item: (-len(item[1]), item[0]))
     return [(label, str(len(examples)), examples[0]) for label, examples in ordered]
@@ -406,7 +478,7 @@ def _memory_lines(review: Review) -> list[str]:
 
 
 def render(review: Review) -> str:
-    """The report as Markdown, in the six sections the agency's staff read."""
+    """The report as Markdown, in the seven sections the agency's staff read."""
     span = f"{review.period[0]}—{review.period[1]}" if review.period else "无会话"
     unknown, empty = candidates(review.searches)
     lines = [
@@ -434,6 +506,23 @@ def render(review: Review) -> str:
         ("只靠放宽才有结果的搜索", [s for s in review.searches if s.relaxed_only]),
     ):
         lines += [f"### {title}", "", *_table(SEARCH_HEADERS, _search_rows(picked))]
+    lines += [
+        "## 定制方案",
+        "",
+        f"共 {len(review.plans)} 个方案，"
+        f"{sum(plan.versions for plan in review.plans)} 个版本，"
+        f"{len(review.requests)} 天写了「{REQUEST_NOTE}」。"
+        "本节读的是方案表，不是对话：方案号由服务器在存版本时给出，只出一版的方案在对话里没有号。",
+        "",
+        "### 建过的方案",
+        "",
+        *_table(PLAN_HEADERS, _plan_rows(review.plans)),
+        f"### 写了「{REQUEST_NOTE}」的天",
+        "",
+        "以下是客人要、而线路本身没有的东西，需要计调确认后再定价。",
+        "",
+        *_table(REQUEST_HEADERS, _request_rows(review.requests)),
+    ]
     lines += ["## 门禁与拒绝", "", *_table(REFUSAL_HEADERS, _example_rows(review.refusals))]
     lines += ["## 记忆", "", *_memory_lines(review)]
     lines += ["## 待审词表", "", "以下是候选词，尚未写入 `data/tag-rules.json`。", ""]

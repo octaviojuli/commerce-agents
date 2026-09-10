@@ -6,6 +6,7 @@ quoted for the searched party, the 预留 orders this conversation wrote as cart
 relaxation that answers a request the catalog cannot meet exactly. Every backend runs on a
 fixed ``today``, so the fixture's dates and ids are the same whatever day the suite runs."""
 
+import asyncio
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
@@ -29,10 +30,13 @@ from tour.api.erp_client import (
     ErpRefused,
     ErpThrottled,
     ErpUnavailable,
+    Itinerary,
+    ItineraryDay,
     PriceInfo,
     Quote,
 )
 from tour.api.mock_erp import MockErpClient
+from tour.api.tests.test_itinerary_source import docx, paragraph, table
 from tour.api.tour_backend import ROUTE_FIRST_GATE, TourBackend, TourToolExecutor, _number
 
 TODAY = date(2026, 9, 6)
@@ -506,6 +510,174 @@ async def test_a_departure_id_is_quoted_at_the_customers_own_price(backend, sess
     assert float(details.attributes["party_quote_total"]) == 2 * 5780.0 + 2 * 3880.0
     assert await backend.get_product_details(session, "DP-999999") is None
     assert await backend.get_product_details(session, "not-an-id") is None
+
+
+# -- 行程来源: the baseline day-by-day itinerary --------------------------------------------
+
+
+async def test_route_details_carry_the_erps_own_days_under_the_source_line(backend, session):
+    details = await backend.get_product_details(session, ROUTE)
+    assert details.specs["行程来源"] == "ERP"
+    assert [key for key in details.specs if key.startswith("第")] == [
+        f"第{n}天" for n in range(1, 9)
+    ]
+    day = details.specs["第6天"]
+    assert day.startswith("那拉提连住 · 空中草原与薰衣草田｜")
+    assert "｜住宿：那拉提 · 河谷牧歌度假酒店（当地四钻，连住第二晚）" in day
+    assert "｜用餐：早餐：酒店；午餐：镇上小馆；晚餐：酒店合菜" in day
+
+
+async def test_a_departure_carries_its_own_routes_days(backend, session):
+    details = await backend.get_product_details(session, OPEN)
+    assert details.specs["行程来源"] == "ERP"
+    assert details.specs["第1天"].startswith("乌鲁木齐集合｜")
+
+
+async def test_a_route_with_no_itinerary_at_all_says_so_rather_than_saying_nothing(
+    backend, session
+):
+    details = await backend.get_product_details(session, "RT-1041")
+    assert details.specs["行程来源"] == tour_backend.NO_ITINERARY
+    assert not [key for key in details.specs if key.startswith("第")]
+
+
+async def test_search_results_carry_no_day_specs(backend, session):
+    products = await search_yili(backend, session)
+    assert set(ids(products)) == {"RT-1021", "RT-1022", "RT-1024"}
+    for product in products:
+        assert not [key for key in product.attributes if key.startswith("第")]
+        assert "行程来源" not in product.attributes
+
+
+async def test_a_days_text_is_capped_and_at_most_twenty_days_ride(backend, session):
+    long_day = "程" * (tour_backend.MAX_DAY_CHARS + 400)
+    backend._itineraries[1021] = Itinerary(
+        1021,
+        "attachment",
+        '"v9"',
+        tuple(ItineraryDay(n, "标题", long_day, None, None) for n in range(1, 27)),
+    )
+    details = await backend.get_product_details(session, ROUTE)
+    days = [key for key in details.specs if key.startswith("第")]
+    assert len(days) == tour_backend.MAX_ITINERARY_DAYS
+    assert details.specs["第1天"] == "标题｜" + "程" * tour_backend.MAX_DAY_CHARS
+
+
+class CountingItineraries(MockErpClient):
+    """Counts what the backend asks the ERP for a 线路's days."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.reads = 0
+
+    async def get_itinerary(self, route_id: int):
+        self.reads += 1
+        return await super().get_itinerary(route_id)
+
+
+async def test_a_second_read_of_one_route_asks_the_erp_for_its_days_once(session):
+    erp = CountingItineraries(today=TODAY, now=FakeClock())
+    backend = build(erp)
+    await backend.get_product_details(session, ROUTE)
+    await backend.get_product_details(session, ROUTE)
+    await backend.get_product_details(session, OPEN)
+    assert erp.reads == 1
+
+
+async def test_two_sessions_opening_one_route_at_once_read_its_days_once(session, other_session):
+    erp = CountingItineraries(today=TODAY, now=FakeClock())
+    backend = build(erp)
+    await asyncio.gather(
+        backend.get_product_details(session, ROUTE),
+        backend.get_product_details(other_session, ROUTE),
+    )
+    assert erp.reads == 1
+
+
+class NoErpItinerary(MockErpClient):
+    """An ERP with no itinerary endpoint — production, until it has one — whose 线路 carry the
+    行程附件 the catalog links instead."""
+
+    async def get_itinerary(self, route_id: int):
+        return None
+
+    async def search_routes(self, q):
+        return [replace(row, **ATTACHMENT) for row in await super().search_routes(q)]
+
+
+ATTACHMENT = {
+    "attachment_name": "伊犁北疆环线 8 日.docx",
+    "attachment_url": "https://files.example/acme/ylbj.docx",
+}
+# What that file holds, in the layout the agency's product staff write: one table of day rows,
+# the terms after it. ``test_itinerary_source.py`` is what holds the parser to both layouts.
+ATTACHMENT_DOCX = docx(
+    table(
+        [
+            ["第 1 天 乌鲁木齐集合"],
+            ["用餐", "早：自理", "中：自理", "晚：自理"],
+            ["住宿", "乌鲁木齐 · 云杉里酒店", "交通：旅游用车"],
+            ["全天接站，送酒店办理入住，晚上开行前说明会。"],
+            ["第 2 天 乌鲁木齐-赛里木湖"],
+            ["用餐", "早：酒店", "中：路餐", "晚：湖畔炖鱼"],
+            ["住宿", "赛里木湖 · 湖畔星野度假酒店", "交通：旅游用车"],
+            ["上午前往赛里木湖，下午环湖，傍晚在湖边看落日。"],
+        ]
+    ),
+    paragraph("包含项目"),
+    paragraph("行程所列门票与用餐。"),
+)
+# A file the editors uploaded that names no day at all.
+ATTACHMENT_EMPTY = docx(paragraph("本文件仅供同行参考，具体行程以出团通知为准。"))
+
+
+def attachment_backend(monkeypatch, state_dir, fetched, seen: list) -> TourBackend:
+    """A backend whose 线路 all carry a 行程附件, over a fetch that answers ``fetched`` and
+    counts the calls made to it."""
+
+    async def fetch(url: str, *, etag: str | None, **kwargs):
+        seen.append((url, etag))
+        return fetched
+
+    monkeypatch.setattr(tour_backend, "fetch_attachment", fetch)
+    erp = NoErpItinerary(today=TODAY, now=FakeClock())
+    return TourBackend(
+        erp,
+        today=TODAY,
+        customer_id=CUSTOMER_ID,
+        contact_mobile=MOBILE,
+        state_dir=state_dir,
+    )
+
+
+async def test_a_routes_days_are_parsed_out_of_its_attachment_and_kept_on_disk(
+    monkeypatch, tmp_path, session
+):
+    seen: list = []
+    backend = attachment_backend(monkeypatch, tmp_path, (ATTACHMENT_DOCX, '"v1"'), seen)
+    details = await backend.get_product_details(session, ROUTE)
+    assert details.specs["行程来源"] == "行程附件 伊犁北疆环线 8 日.docx"
+    assert details.specs["第1天"].startswith("乌鲁木齐集合｜全天接站")
+    assert (
+        "｜住宿：乌鲁木齐 · 云杉里酒店｜用餐：早：自理 中：自理 晚：自理" in details.specs["第1天"]
+    )
+    assert seen == [("https://files.example/acme/ylbj.docx", None)]
+    # A second process over the same state directory reads the file and downloads nothing new,
+    # sending the ETag it was written with.
+    again = attachment_backend(monkeypatch, tmp_path, None, seen)
+    reread = await again.get_product_details(session, ROUTE)
+    assert reread.specs == details.specs
+    assert seen[1] == ("https://files.example/acme/ylbj.docx", '"v1"')
+
+
+async def test_an_attachment_that_cannot_be_read_leaves_the_route_saying_so(
+    monkeypatch, tmp_path, session
+):
+    for fetched in ((b"not a .docx", None), (ATTACHMENT_EMPTY, None), None):
+        backend = attachment_backend(monkeypatch, tmp_path / str(id(fetched)), fetched, [])
+        details = await backend.get_product_details(session, ROUTE)
+        assert details.specs["行程来源"] == tour_backend.NO_ITINERARY
+        assert details.variants  # the 团期 are still there: only the 行程 is missing
 
 
 class Unpriced(MockErpClient):

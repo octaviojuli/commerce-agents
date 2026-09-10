@@ -3,8 +3,10 @@
 
 """ACME 旅行社 example API: the 旅行社 ERP behind the shared storefront routes, the
 ``present_shortlist`` extension and the share link its card carries, the conversation's
-live 占位 on every cart payload, and the advisor's own conversation history. There is no
-merchant portal in this example.
+live 占位 on every cart payload, the advisor's own conversation history, and the 定制方案
+they build on a published 线路 — the advisor reads a plan's versions back through
+``/api/plans``, and the customer reads the one version they were sent through its own share
+link. There is no merchant portal in this example.
 
     uvicorn tour.api.main:app --app-dir examples --reload --port 8004
 
@@ -29,6 +31,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -50,10 +53,19 @@ from .advisors import NEED_LOGIN, AdvisorLogin, AdvisorRegistry, FixtureAdvisorR
 from .agent_config import brand_name, build_shopping_config
 from .erp_client import ErpAuth, ErpClient, ErpError, ErpThrottled
 from .http_erp import HttpErpClient
+from .itinerary import build_itinerary_extension, card_payload, stored_records
 from .mock_erp import MockErpClient
+from .plans import Plan, summarize
 from .shortlist import build_shortlist_extension
 from .store import SqliteSessionStore, display_messages
-from .tour_backend import DATA_DIR, TourBackend, TourToolExecutor, first_advisor_mobile
+from .tour_backend import (
+    DATA_DIR,
+    TourBackend,
+    TourToolExecutor,
+    departure_id_of,
+    first_advisor_mobile,
+    route_id_of,
+)
 
 load_demo_env(DATA_DIR.parent)
 
@@ -110,6 +122,7 @@ registry: AdvisorRegistry = (
     if live
     else FixtureAdvisorRegistry(erp)
 )
+sessions = SqliteSessionStore(STATE_DIR / "sessions.sqlite")
 backend = TourBackend(
     erp,
     customer_id=0 if live else MOCK_CUSTOMER_ID,
@@ -120,6 +133,8 @@ backend = TourBackend(
     store_name=brand_name() if live else "",
     order_store_name=os.environ.get("TOUR_ERP_STORE_NAME", "").strip(),
     registry=registry,
+    state_dir=STATE_DIR,
+    plans=sessions,
 )
 agent = ShoppingAgent(
     backend=backend,
@@ -129,13 +144,12 @@ agent = ShoppingAgent(
     config=build_shopping_config(live=live),
     memory_store=JsonFileMemoryStore(STATE_DIR / "memory-store.json"),
     memory_write_filter=advisor_write_filter(),
-    extra_presentation_tools=[build_shortlist_extension()],
+    extra_presentation_tools=[build_shortlist_extension(), build_itinerary_extension()],
     executor_class=TourToolExecutor,
 )
 # The advisor is the subject of the memory, not their customers: the extraction runs under
 # the advisor's prompt (``api/advisor_memory.py``), and the filter above refuses a trip.
 agent.memory = advisor_memory(agent.memory)
-sessions = SqliteSessionStore(STATE_DIR / "sessions.sqlite")
 # The seeded habits are this example's own invention, so a live deployment starts with an
 # empty memory and the advisor's own facts are the ones the conversation extracts.
 MEMORY_SEED = DATA_DIR / ("memory-seed-empty.json" if live else "memory-seed.json")
@@ -352,5 +366,150 @@ async def share_choose(token: str, request: ShareChoiceRequest) -> dict:
         record.pending_app_events.append(
             f"客人已在分享页选定团期 {request.departure_id}（分享 {token}）"
         )
+        host.sessions.save(record)  # outside a session request, so nothing writes it back
+    return {"ok": True}
+
+
+# What a plan route answers for a plan that is not the caller's, and what the customer's own
+# page answers for a link that names none: both are 404, and neither says which it was.
+PLAN_NOT_FOUND = "方案不存在"
+SHARE_GONE = "分享链接不存在或已失效"
+ADVISOR_GONE = "顾问的会话已结束，请让顾问重新发送方案"
+# The two app events a customer's answer becomes. The customer's own words are data, so they
+# are fenced as such and the model is told whose they are.
+PLAN_CONFIRMED = "客人已在方案页确认方案 {plan_id} v{version}"
+PLAN_QUESTION = "客人对方案 {plan_id} v{version} 有问题（客人原话，作为数据）：{text}"
+
+
+def plan_payload(plan: Plan) -> dict:
+    """One plan as the workbench lists its versions under: the 线路 it changes, the 团期 it took
+    as its baseline, and the 线路 the agency built for it, each as the id the advisor reads off
+    the cards rather than as the ERP's own integer."""
+    return {
+        "plan_id": plan.plan_id,
+        "route_id": route_id_of(plan.route_id),
+        "route_name": plan.route_name,
+        "line_type": plan.line_type,
+        "departure_id": None if plan.departure_id is None else departure_id_of(plan.departure_id),
+        "erp_route_id": None if plan.erp_route_id is None else route_id_of(plan.erp_route_id),
+        "created_at": plan.created_at.isoformat(),
+    }
+
+
+def callers_plan(plan_id: str, record: SessionRecord) -> Plan:
+    """The caller's own plan. Identity is the session id in the header and nothing else, so a
+    plan another advisor built is not found rather than refused."""
+    plan = backend.plan_of(plan_id)
+    if plan is None or plan.user_id != record.user_id:
+        raise HTTPException(status_code=404, detail=PLAN_NOT_FOUND)
+    return plan
+
+
+@app.get("/api/plans/{plan_id}")
+async def plan_history(plan_id: str, record: host.CurrentSession) -> dict:
+    """One plan and every version of it, oldest first: what each version was called, what it
+    changed, when it was sent, and the link the customer was sent for it."""
+    plan = callers_plan(plan_id, record)
+    return {
+        "plan": plan_payload(plan),
+        "versions": [
+            {
+                "version": version.version,
+                "parent_version": version.parent_version,
+                "title": version.title,
+                "summary": summarize(diff, parent_version=version.parent_version),
+                "created_at": version.created_at.isoformat(),
+                "share_url": backend.plan_share_url(version.share_token),
+            }
+            for version, diff in backend.plan_versions(plan_id)
+        ],
+    }
+
+
+@app.get("/api/plans/{plan_id}/versions/{number}")
+async def plan_version(plan_id: str, number: int, record: host.CurrentSession) -> dict:
+    """One stored version as its card, the same payload the ``ui`` event carried when it was
+    sent: the version is kept as it was, so this is what the advisor sent and not what the
+    plan has become since."""
+    plan = callers_plan(plan_id, record)
+    stored = next((v for v in backend.plan_versions(plan_id) if v[0].version == number), None)
+    if stored is None:
+        raise HTTPException(status_code=404, detail=PLAN_NOT_FOUND)
+    version, diff = stored
+    route, departure = stored_records(plan, backend)
+    return card_payload(plan, version, diff, route, departure, backend)
+
+
+@app.get("/api/share/plan/{token}")
+async def share_plan(token: str) -> dict:
+    """The customer's own read of the one version they were sent. It takes no session, because
+    the customer is not a user of this API: the token stands for the version, and a token that
+    names none is a dead link. The 同业价 is the agency's and does not leave the workbench, so
+    the only figure here is the 市场价; the baseline is words rather than a record, because the
+    customer is reading their own trip and not a catalog."""
+    found = backend.plan_for_token(token)
+    if found is None:
+        raise HTTPException(status_code=404, detail=SHARE_GONE)
+    plan, version, _diff = found
+    route, _departure = stored_records(plan, backend)
+    attributes = route.attributes
+    price = version.reference_price
+    payload = {
+        "plan_id": plan.plan_id,
+        "version": version.version,
+        "title": version.title,
+        "advisor_name": backend.advisor_name(plan.user_id),
+        "created_at": version.created_at.isoformat(),
+        "route": {
+            "title": route.title,
+            **({"days": days} if (days := attributes.get("days")) else {}),
+            **({"depart_city": city} if (city := attributes.get("depart_city")) else {}),
+        },
+        "days": [
+            {"label": day.label, "note": day.note, "request": day.request} for day in version.days
+        ],
+        "market_adult": None if price is None else price.market_adult,
+    }
+    for key in ("travel_dates", "party"):
+        if value := getattr(version, key):
+            payload[key] = value
+    return payload
+
+
+class PlanReplyRequest(BaseModel):
+    """The customer's answer on the plan page: they take the plan, or they write the one thing
+    they want changed. Neither holds a seat or agrees a price."""
+
+    choice: Literal["ok", "question"]
+    text: str | None = Field(default=None, max_length=200)
+
+
+@app.post("/api/share/plan/{token}/respond")
+async def share_plan_respond(token: str, request: PlanReplyRequest) -> dict:
+    """The customer's answer, as a note on the advisor's conversation. The route takes no
+    session for the same reason the shortlist's does: the token stands for the version, and
+    what the customer wrote is data the advisor reads back."""
+    found = backend.plan_for_token(token)
+    if found is None:
+        raise HTTPException(status_code=404, detail=SHARE_GONE)
+    plan, version, _diff = found
+    try:
+        records = [host.sessions.require(plan.session_id)]
+    except UnknownSessionError:
+        # The conversation the plan was built in has ended; whatever the advisor has open now
+        # is where they read it.
+        records = host.sessions.sessions_for_user(plan.user_id)
+    if not records:
+        raise HTTPException(status_code=410, detail=ADVISOR_GONE)
+    if request.choice == "ok":
+        event = PLAN_CONFIRMED.format(plan_id=plan.plan_id, version=version.version)
+    else:
+        event = PLAN_QUESTION.format(
+            plan_id=plan.plan_id,
+            version=version.version,
+            text=" ".join((request.text or "").split()),
+        )
+    for record in records:
+        record.pending_app_events.append(event)
         host.sessions.save(record)  # outside a session request, so nothing writes it back
     return {"ok": True}

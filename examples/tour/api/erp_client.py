@@ -3,7 +3,7 @@
 
 """The ERP seam behind the tour advisor, in the B2B 旅行社 ERP's own vocabulary: 线路
 (route families), their dated 团期 (departures), the 同行 customers an order is written
-for, and the order itself. ``ErpClient`` is the eight calls the backend needs; the records
+for, and the order itself. ``ErpClient`` is the nine calls the backend needs; the records
 are frozen dataclasses of plain types, so a real ERP maps onto them without importing
 anything from this example. Every error message is advisor-facing Chinese, because the
 executor relays it into the conversation unchanged.
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 # The ERP's own order statuses; a fresh order is 预留 (0) or, over the seats left, 候补 (5).
 ORDER_STATUS = {0: "预留", 1: "占位", 2: "确认", 3: "取消", 4: "审批中", 5: "候补"}
@@ -103,6 +103,33 @@ class RouteRecord:
     attachment_name: str | None
     attachment_url: str | None
     sale_type: str = ""
+
+
+@dataclass(frozen=True)
+class ItineraryDay:
+    """One day of a 线路's baseline 行程. ``text`` is the day's programme as one paragraph;
+    ``hotel`` is the night's 住宿 and ``meals`` the day's 用餐, each ``None`` where the source
+    states none. The day is the 线路's own and not a 团期's: a dated departure runs it as
+    written, and what a party actually gets is the 计调's to confirm."""
+
+    day_no: int
+    title: str
+    text: str
+    hotel: str | None
+    meals: str | None
+
+
+@dataclass(frozen=True)
+class Itinerary:
+    """A 线路's day-by-day 行程 and where it was read. ``source`` is ``erp`` for the ERP's own
+    structured days and ``attachment`` for days parsed out of the 行程附件 the catalog links,
+    and ``source_ref`` is what identifies that reading — the ERP's ``version``, or the
+    attachment's ETag — so a host that caches one knows whether it is still the same."""
+
+    route_id: int
+    source: Literal["erp", "attachment"]
+    source_ref: str | None
+    days: tuple[ItineraryDay, ...]
 
 
 @dataclass(frozen=True)
@@ -241,6 +268,13 @@ class ErpClient(Protocol):
         """One route's departures inside the window, by date. The ERP's period list
         filters on the route's *name*, so the rows come back by ``route_name`` and are kept
         by ``route_id``: both arguments name the same route."""
+        ...
+
+    async def get_itinerary(self, route_id: int) -> Itinerary | None:
+        """The ERP's own structured itinerary for a 线路, ``None`` where the ERP has none. The
+        agency's API does not carry this endpoint yet (``docs/erp-contract.md`` asks for it),
+        so a client over it answers ``None`` for every 线路; reading the 行程附件 instead is the
+        host's own work (``api/itinerary_source.py``) and not this seam's."""
         ...
 
     async def get_departure(self, period_id: int) -> DepartureRecord | None:

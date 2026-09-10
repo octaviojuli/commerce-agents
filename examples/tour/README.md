@@ -50,7 +50,7 @@ The same file carries the ERP block, which decides what is behind the seam:
 | `TOUR_ERP_ALLOW_PAST` | `1` lists departures that already left, for a beta with no future ones |
 | `TOUR_BRAND_NAME` | the agency's own name, `ACME 旅行社` unset |
 | `TOUR_ASSISTANT_NAME` | what the advisor calls the assistant, `选团助手` unset |
-| `TOUR_STATE_DIR` | where the sessions and the memory are written, `data/.state/` unset |
+| `TOUR_STATE_DIR` | where the sessions, the memory and the parsed 行程附件 are written, `data/.state/` unset |
 | `TOUR_MEMORY_RETENTION_DAYS` | how many days a remembered fact stays readable; unset, no age limit |
 
 Unset `TOUR_ERP_BASE_URL` and `api/main.py` builds `MockErpClient` over `data/`, which is
@@ -128,12 +128,14 @@ with no total and a card that says `儿童价未发布，合计待定`.
 
 ## Try
 
-`scripts/smoke_chat.py --vertical tour` runs the same three turns. The advisor types what
+`scripts/smoke_chat.py --vertical tour` runs the same five turns. The advisor types what
 the customer said, in Chinese:
 
 1. 10月中旬有四位客人计划去新疆伊犁，8–10天，两个大人两个小孩，孩子5岁和9岁，不要购物店。
 2. 那条 10 天的喀拉峻深度线路，10 月 15 号前后有什么团？
 3. 就 10/14 那个团，帮我把 4 个位置锁上。
+4. 就这条线给客人做个定制方案，先把逐日行程摆出来。
+5. 第 5 天多住一晚，其余不动。
 
 The first turn is one `search_products` over 10-11 to 10-20: a shortlist of 纯玩 线路 with
 their 起价 — 5,780 元 for the 8 日小团, 7,880 元 for the 10 日深度 line, 9,680 元 for the
@@ -145,6 +147,15 @@ is `add_to_cart` on `DP-3017`, the 10/14 团期, which still seats four; the ERP
 order and the reply carries the cart line counting down from thirty minutes. Asking for
 more heads than the 团期 has seats is not refused: the ERP writes a 候补 order instead, and
 its cart line says （候补） and does not count down.
+
+The fourth turn is `present_itinerary` on the same 线路 with `DP-3017` as the baseline 团期: v1
+of a new plan, the route's ten 第N天 specs restated a sentence or two a day, the 10/14 团期's own
+figures as the reference price, and 待计调确认 in the note of any day the customer's ask goes
+past what the line carries. The fifth turn asks for a night on day 5, which is v2 of that plan:
+the tool's answer to the fourth turn names the plan id and the version, which is how the model
+knows what to pass back, and the reply names the version the store assigned. A version re-sends
+every day, so `agent_config.py` gives a turn `max_tokens=8192` rather than the repo's 2048: a
+provider that reasons before it answers spends the same budget on the reasoning.
 
 Single prompts worth trying after those turns:
 
@@ -159,14 +170,14 @@ Single prompts worth trying after those turns:
 
 ## What is specific to this example
 
-- `api/erp_client.py`: the `ErpClient` Protocol — eight calls: `search_routes`,
-  `list_departures`, `get_departure`, `search_customers`, `quote`, `create_order`,
-  `list_orders`, `get_order` — with `WindowReader` beside it, the one further call a client
-  offers by having it: `list_window` reads a whole date window's 团期 across every 线路 and
+- `api/erp_client.py`: the `ErpClient` Protocol — nine calls: `search_routes`,
+  `list_departures`, `get_itinerary`, `get_departure`, `search_customers`, `quote`,
+  `create_order`, `list_orders`, `get_order` — with `WindowReader` beside it, the one further
+  call a client offers by having it: `list_window` reads a whole date window's 团期 across every 线路 and
   department, which is how a search weighs many candidates against the window when
   `period/list` takes no route id. And the records they exchange (`RouteQuery`, `RouteRecord`,
-  `DepartureRecord`, `PriceInfo`, `CustomerRecord`, `Quote`, `OrderRequest`, `OrderResult`,
-  `OrderRecord`) as frozen dataclasses of plain types, so a real ERP maps onto them without
+  `Itinerary`, `ItineraryDay`, `DepartureRecord`, `PriceInfo`, `CustomerRecord`, `Quote`,
+  `OrderRequest`, `OrderResult`, `OrderRecord`) as frozen dataclasses of plain types, so a real ERP maps onto them without
   importing this example. `ORDER_STATUS` is the ERP's own six: 预留, 占位, 确认, 取消,
   审批中, 候补. Every `ErpError` message is advisor-facing Chinese, because the executor
   relays it into the conversation unchanged.
@@ -196,6 +207,17 @@ Single prompts worth trying after those turns:
   names any department but the 团期's own is refused with 部门不匹配, which is the guard the
   real ERP enforces with a bare 404. Nothing expires here, because the ERP's own 预留 runs on
   the departure's `reserveHours`.
+- `api/itinerary_source.py`: where a 线路's day-by-day 行程 comes from. A details record carries
+  行程来源 and one spec per day — the day's title, its programme cut to 200 characters, its
+  住宿 and its 用餐 — for at most 20 days, and a 线路 whose days could not be read says 无 there
+  instead of saying nothing. The days are the ERP's own where `get_itinerary` answers with any,
+  and otherwise are parsed out of the .docx 行程附件 the catalog links: `parse_docx` walks the
+  document in order, reads `第 N 天` headers — or `DAY-N` where the file has no Chinese header at
+  all — and stops at the 费用/须知 sections after the last day. `TourBackend` reads one 线路's
+  行程 once per process behind a per-route lock, and `cache_read` / `cache_write` keep the
+  reading as one owner-only JSON file per 线路 under `TOUR_STATE_DIR`, sent back as an ETag so an
+  unchanged attachment is not downloaded again; a fetch or a parse that fails is logged and
+  leaves the record saying 无, because a details read must not fail over an unreadable file.
 - `api/advisor_memory.py`: the memory's subject. The core extracts a customer's one live
   undertaking as `current_project`; an advisor's conversations are their customers' trips one
   after another, and a trip kept as the advisor's own would be read into the next customer's
@@ -299,7 +321,15 @@ Single prompts worth trying after those turns:
   `summaries`, one line per conversation of one advisor, and `transcript`, its messages as
   stored. `display_messages` beside them is the view a person is shown, which is what drops
   the tool exchange and the app-event notes. The section above is what the file holds and how
-  a restart reads it.
+  a restart reads it. The same file also holds the 定制方案 the advisor builds on a published
+  线路 — one row per plan and one row per version, each version under its own share token —
+  because a plan outlives the conversation it was built in.
+- `api/plans.py`: what a plan and one version of it are made of, and the reading of a version
+  against the one before it. `diff_days` aligns two versions on what each day says rather
+  than on where it sits, so a day inserted in the middle is one added day and not a
+  renumbering of every day after it; `summarize` is that diff in the one Chinese line the
+  advisor reads above a version, and `handoff_text` is the plain text they copy to the
+  agency's 计调, which is who prices a custom plan.
 - `api/agent_config.py`: the shopping config, and the one reader of `TOUR_BRAND_NAME`,
   `TOUR_ASSISTANT_NAME` and `TOUR_MEMORY_RETENTION_DAYS`. `enable_fulfillment=False`, because the
   customer joins the group at its 集合地点; `enable_policies=not live`, because the agency's
@@ -325,12 +355,33 @@ Single prompts worth trying after those turns:
   chose becomes an app event on the advisor's conversation, or on their other live sessions
   when that one has ended. `TOUR_SHARE_BASE_URL` is the origin the link points at,
   `http://localhost:3004` by default; the page itself is not part of this example.
+- `api/itinerary.py`: `present_itinerary`, the 定制方案 the advisor builds on one published
+  线路. The model writes the days and names the baseline; the server does the rest. The first
+  call creates the plan and is v1, the baseline restated; every later call sends the whole
+  plan again with `plan_id` and only the asked days changed, and the server numbers the
+  version, reads it against the version it was written against (`base_version`, the latest
+  unless it names one), and marks each day 新增, 修改 or 删除 off that reading. The call is
+  refused unless the baseline is a 线路 the advisor has been shown — a `present_products` card,
+  or a 包团 or 定制 line opened by id, which was never a search result — and a plan is one
+  conversation's: 3 plans per conversation, 30 versions per plan, and a `plan_id` from another
+  conversation is refused. `departure_id` names the 团期 the reference price is read off, and
+  one that is not this 线路's is dropped and named to the model rather than refusing the plan;
+  a plan has no price of its own, because the 定制 difference is the 计调's to quote.
+  `erp_route_id` links the 线路 the agency built in the ERP and adds no version. Each version
+  carries its own share token, so a customer sent v2 keeps reading v2, and the card leaves the
+  advisor with two texts: the customer's link and `plans.py`'s `handoff_text` for the 计调.
+
+      GET  /api/plans/{plan_id}                    the caller's own plan and every version of it
+      GET  /api/plans/{plan_id}/versions/{n}       one stored version as the card it was sent as
+      GET  /api/share/plan/{token}                 the customer's read of the version their link names, 市场价 only
+      POST /api/share/plan/{token}/respond         {choice: ok|question, text?} → an app event on the advisor's conversation
+
 - `api/main.py`: the host. It builds the ERP client from the environment, and `live =
   isinstance(erp, HttpErpClient)` is the switch the table above hangs off: it hands the backend
   the 客户编码, the 门店, the brand and the advisor's mobile, picks the empty memory seed, and
-  builds the config with `live=live`. It creates `TOUR_STATE_DIR` and builds the two stores
-  in it — the sessions and the memory — and holds the two history routes over the session
-  one. It builds the registry the advisors sign in to, holds `POST /api/login`,
+  builds the config with `live=live`. It creates `TOUR_STATE_DIR`, builds the two stores in it
+  — the sessions and the memory — hands the same directory to the backend as the 行程附件
+  cache, and holds the two history routes over the session one. It builds the registry the advisors sign in to, holds `POST /api/login`,
   `POST /api/logout` and `GET /api/advisor` over it, and in live mode installs
   `install_login_guard`, the middleware that answers the demo's own `POST /api/session` with a
   403. It also puts the conversation's 预留 on every cart payload with what is left of each
@@ -344,8 +395,11 @@ per head, the 同业价 an order is booked at (`adult_price`, `child_price`) abo
 customer is shown (`market_adult_price`, `market_child_price`), with the party's total on the
 同业价 and `quote_source` saying which of the two it was made at (or `partial`, where a fare
 the party needs is 未发布 and there is no total), the bag counts each 预留
-down and flips to 已过期 at zero, and `present_shortlist`, `present_guide` and `checkout`
-each have a card. Its `showcase` page renders every card from a snapshot of one advisor
+down and flips to 已过期 at zero, and `present_shortlist`, `present_itinerary`, `present_guide`
+and `checkout` each have a card. The `itinerary` card draws one version of a 定制方案 — the days
+with what this version did to each of them, the baseline's own figures, the customer's link and
+the 计调's copy — and `app/p/[token]/page.tsx` is the customer's own page for the version
+their link names, which reads `GET /api/share/plan/{token}` and answers on it. Its `showcase` page renders every card from a snapshot of one advisor
 search, which `api/tests/test_showcase.py` holds to the live records.
 The page before it is the login (`components/LoginView.tsx`, `lib/auth.ts`): the advisor's own
 ERP 手机号 and 密码, which `POST /api/login` signs in and answers with the session it started.
@@ -404,6 +458,10 @@ A search that matches more lines than it may show is ranked, not cut in the cata
   `confirmCount`, `reserveHours`, the route's own `companyId`, and the `priceInfo` block
   (`adultPrice`, `childPrice`, `elderPrice`, `singleRoomDiff`) the ERP carries only on a
   departure's detail, which is the 市场价.
+- `data/itineraries.json`: the baseline 行程 of the three 线路 the demo scripts and the showcase
+  open — RT-1021, RT-1022, RT-1024 — one entry per day of the route with its 住宿 and its 用餐,
+  in the shape `route/itinerary` is asked for. A 线路 the file writes none for has none, as most
+  of a live catalog does.
 - `data/customers.json`: three 同行 customers in the ERP's customer row shape; the demo books
   for the first, and a live deployment for the one `TOUR_ERP_CUSTOMER_CODE` resolves to.
 - `data/policies.json`: 退改政策, 儿童价规则, 成团规则, 定金规则 — what `search_policies`
@@ -429,7 +487,7 @@ enumerated fields.
 `docs/erp-contract.md` is the agency's API as observed on its beta environment: the login,
 the paging, the error envelope, the seven reads, the one write, and the decisions Phase 4
 took on top of them. `ErpClient` in `api/erp_client.py` is the seam it maps onto.
-`MockErpClient` in `api/mock_erp.py` answers the eight calls from `data/` and
+`MockErpClient` in `api/mock_erp.py` answers the nine calls from `data/` and
 `HttpErpClient` in `api/http_erp.py` answers them over HTTP; what both owe — the ranking,
 the window, the 候补 rule, the validation, the error classes — is stated as tests in
 `api/tests/test_mock_erp.py` and `api/tests/test_http_erp.py`, so a third client is held to
@@ -442,12 +500,13 @@ session id stands for one advisor.
 
 An advisor keeps the workbench open all day and the API restarts under them, so this is the
 one example whose sessions are not in the process. `TOUR_STATE_DIR` — `data/.state/` unset,
-gitignored, created at boot — holds both files:
+gitignored, created at boot — holds all three:
 
 | File | Written by | What is in it |
 |---|---|---|
 | `sessions.sqlite` | `api/store.py`'s `SqliteSessionStore` | one row per conversation (the advisor it belongs to, the session state, the version a write is checked against) and one row per message |
 | `memory-store.json` | the core's `JsonFileMemoryStore` | the facts the post-turn extraction pass keeps about each advisor |
+| `itineraries/{routeId}.json` | `api/itinerary_source.py`'s `cache_write` | one 线路's days as parsed out of its 行程附件, with the URL and the ETag they were read at |
 
 `SqliteSessionStore` is a subclass of `demo_common.sessions.SessionStore` with the six
 storage methods over one SQLite file, which is what that class's docstring describes a
@@ -472,8 +531,11 @@ list row is the number of lines the transcript route returns.
 `scripts/review_sessions.py --state-dir <dir> [--since YYYY-MM-DD] [--out report.md]` reads both
 files and prints one Markdown report for the agency's staff: what the advisors searched for and
 with which conditions, the searches that came back empty or only after the backend relaxed them,
-the calls a gate or the ERP refused, the facts the memory file holds, the destination words
-`data/tag-rules.json` has no rule for, and the answers whose wording is worth a second look. It
+the 定制方案 they built and the days those wrote 待计调确认 into, the calls a gate or the ERP
+refused, the facts the memory file holds, the destination words
+`data/tag-rules.json` has no rule for, and the answers whose wording is worth a second look. The
+方案 section is the one read off the plan tables rather than the conversations, because a plan's
+id is the server's and a call carries it only once the advisor revises the plan. It
 reports only — nothing is written, and the words it lists are candidates to review, because a
 change to the vocabulary or the prompt is made by hand afterwards. The sections and the parsing
 are `api/review.py`, which is where the tests read them.

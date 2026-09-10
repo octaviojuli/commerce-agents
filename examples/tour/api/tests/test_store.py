@@ -4,10 +4,14 @@
 """``SqliteSessionStore`` and the two history routes over it: what a fresh store finds in a
 file another one wrote (which is the restart the advisor sees), the compare-and-set the base
 class runs on ``write_state``, the append and the rewrite of a transcript, one advisor's
-sessions apart from another's, and the display view the routes answer with. The memory file
-is here too, because it lives in the same state directory."""
+sessions apart from another's, and the display view the routes answer with. The 定制方案 and
+their versions are in the same file, so the numbering two writers race on and the share token
+one version answers by are here too, and so is the upgrade a deployment's file goes through.
+The memory file is here as well, because it lives in the same state directory."""
 
 import json
+import sqlite3
+from datetime import timedelta
 
 import pytest
 
@@ -16,7 +20,14 @@ from commerce_common.types import MemoryCategory, MemoryFact
 from demo_common import SESSION_HEADER, SessionConflictError
 from demo_common.host import append_user_turn
 from shopping_agent import Product, ShoppingSessionState
-from tour.api.store import UNTITLED, SessionSummary, SqliteSessionStore, display_messages
+from tour.api.plans import Plan, PlanDay, PlanVersion, diff_days, new_plan_id, new_share_token
+from tour.api.store import (
+    UNTITLED,
+    PlanConflictError,
+    SessionSummary,
+    SqliteSessionStore,
+    display_messages,
+)
 
 ADVISOR = "advisor-of-the-store-suite"
 OTHER = "advisor-of-the-store-suite-2"
@@ -289,3 +300,145 @@ def test_the_messages_route_answers_the_display_view_and_hides_another_advisors(
     }
     assert client.get(path, headers=start(client, OTHER)).status_code == 404
     assert client.get("/api/sessions/nope/messages", headers=mine).status_code == 404
+
+
+# -- the 定制方案 in the same file ---------------------------------------------------------
+
+SESSION = "session-of-the-plans"
+
+
+def plan_of(session_id: str = SESSION, **fields) -> Plan:
+    return Plan(
+        plan_id=new_plan_id(),
+        session_id=session_id,
+        user_id=ADVISOR,
+        route_id=1021,
+        route_name="伊犁北疆环线",
+        line_type="散拼",
+        departure_id=3008,
+        **fields,
+    )
+
+
+def days(*labelled: str) -> list[PlanDay]:
+    return [PlanDay(label=label, note="住四钻") for label in labelled]
+
+
+def version_of(plan: Plan, number: int, *labelled: str) -> PlanVersion:
+    return PlanVersion(
+        plan_id=plan.plan_id,
+        version=number,
+        parent_version=number - 1 or None,
+        title="伊犁八日定制",
+        travel_dates="10月15日—10月22日",
+        party="2大1小",
+        days=days(*labelled),
+        share_token=new_share_token(),
+    )
+
+
+def test_a_plan_and_its_versions_come_back_from_a_fresh_store(store, reopen):
+    plan = plan_of()
+    first = version_of(plan, 1, "第1天 集合", "第2天 赛里木湖")
+    second = version_of(plan, 2, "第1天 集合", "第2天 昭苏", "第3天 赛里木湖")
+    store.create_plan(plan)
+    store.add_version(first, diff_days(None, first.days))
+    store.add_version(second, diff_days(first.days, second.days))
+
+    next_process = reopen()
+    assert next_process.plan(plan.plan_id) == plan
+    assert next_process.plans_for_session(SESSION) == [plan]
+    assert next_process.latest_version(plan.plan_id) == 2
+    held = next_process.versions(plan.plan_id)
+    assert [version.version for version, _ in held] == [1, 2]
+    assert held[1][0] == second
+    # The version's read of the one before it is stored beside it, as it was read then.
+    assert [day.kind for day in held[1][1]] == ["same", "added", "same"]
+    assert next_process.version(plan.plan_id, 1) == held[0]
+    assert next_process.version(plan.plan_id, 3) is None
+
+
+def test_a_share_token_names_one_version_and_the_plan_it_belongs_to(store, reopen):
+    plan = plan_of()
+    first = version_of(plan, 1, "第1天 集合")
+    second = version_of(plan, 2, "第1天 集合", "第2天 赛里木湖")
+    store.create_plan(plan)
+    store.add_version(first, diff_days(None, first.days))
+    store.add_version(second, diff_days(first.days, second.days))
+
+    # The customer sent v1 keeps reading v1 after the advisor sends v2.
+    held_plan, version, diff = reopen().version_by_token(first.share_token)
+    assert (held_plan, version) == (plan, first)
+    assert [day.kind for day in diff] == ["same"]
+    assert reopen().version_by_token(second.share_token)[1].version == 2
+    assert reopen().version_by_token("not-a-token") is None
+
+
+def test_a_version_that_is_not_the_next_one_is_a_conflict(store, reopen):
+    plan = plan_of()
+    first = version_of(plan, 1, "第1天 集合")
+    store.create_plan(plan)
+    store.add_version(first, diff_days(None, first.days))
+    second = version_of(plan, 2, "第1天 集合", "第2天 赛里木湖")
+    store.add_version(second, diff_days(first.days, second.days))
+
+    # Two turns numbering against the same read: the loser is told to number again.
+    loser = version_of(plan, 2, "第1天 集合", "第2天 那拉提")
+    with pytest.raises(PlanConflictError) as raised:
+        reopen().add_version(loser, diff_days(first.days, loser.days))
+    assert (raised.value.plan_id, raised.value.version) == (plan.plan_id, 2)
+    assert reopen().version(plan.plan_id, 2)[0] == second
+    # Nor is a number skipped: v4 does not follow v2.
+    with pytest.raises(PlanConflictError):
+        store.add_version(version_of(plan, 4, "第1天 集合"), [])
+    assert reopen().latest_version(plan.plan_id) == 2
+
+
+def test_a_plan_with_no_version_and_a_plan_that_is_not_there(store):
+    plan = plan_of()
+    store.create_plan(plan)
+    assert store.latest_version(plan.plan_id) == 0
+    assert store.versions(plan.plan_id) == []
+    assert store.plan("PL-nothing") is None
+    assert store.latest_version("PL-nothing") == 0
+    assert store.plans_for_session("no-such-session") == []
+
+
+def test_a_sessions_plans_are_oldest_first_and_only_that_sessions(store, reopen):
+    older = plan_of()
+    newer = plan_of(created_at=older.created_at + timedelta(minutes=5))
+    elsewhere = plan_of(session_id="another-session")
+    for plan in (newer, older, elsewhere):
+        store.create_plan(plan)
+    assert [plan.plan_id for plan in reopen().plans_for_session(SESSION)] == [
+        older.plan_id,
+        newer.plan_id,
+    ]
+    assert reopen().plans_for_session("another-session") == [elsewhere]
+
+
+def test_the_erp_route_the_planner_created_is_recorded_on_the_plan(store, reopen):
+    plan = plan_of()
+    store.create_plan(plan)
+    assert plan.erp_route_id is None
+    store.link_route(plan.plan_id, 9042)
+    assert reopen().plan(plan.plan_id).erp_route_id == 9042
+
+
+def test_a_file_written_without_the_plan_tables_gets_them_when_it_is_opened(store, tmp_path):
+    """The deployment upgrades in place: the sessions the file already holds stay, and the
+    plan tables are there for the first plan built after the restart."""
+    record = store.start(ADVISOR)
+    record.messages.append({"role": "user", "content": OPENING})
+    store.save(record)
+    connection = sqlite3.connect(tmp_path / "sessions.sqlite")
+    connection.executescript("DROP TABLE plans; DROP TABLE plan_versions")
+    connection.close()
+
+    upgraded = SqliteSessionStore(tmp_path / "sessions.sqlite")
+    assert contents(upgraded.require(record.session_id).messages) == [OPENING]
+    plan = plan_of()
+    first = version_of(plan, 1, "第1天 集合")
+    upgraded.create_plan(plan)
+    upgraded.add_version(first, diff_days(None, first.days))
+    assert SqliteSessionStore(tmp_path / "sessions.sqlite").version(plan.plan_id, 1)[0] == first

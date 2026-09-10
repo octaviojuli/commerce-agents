@@ -32,6 +32,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from commerce_common.presentation import PresentationRefused
 from commerce_common.streaming import ToolOutcome
 from demo_common.storefront_fixtures import (
     example_data_dir,
@@ -70,6 +71,7 @@ from .erp_client import (
     ErpNotFound,
     ErpRefused,
     ErpThrottled,
+    Itinerary,
     OrderRecord,
     OrderRequest,
     PriceInfo,
@@ -78,7 +80,19 @@ from .erp_client import (
     RouteRecord,
     WindowReader,
 )
+from .itinerary_source import cache_read, cache_write, fetch_attachment, parse_docx
+from .plans import (
+    DayDiff,
+    Plan,
+    PlanDay,
+    PlanVersion,
+    ReferencePrice,
+    diff_days,
+    new_plan_id,
+    new_share_token,
+)
 from .private_lines import load_private_line_rules
+from .store import PlanConflictError, SqliteSessionStore
 from .tags import UNKNOWN, RouteFacets, normalize
 
 DATA_DIR = example_data_dir(__file__)
@@ -137,6 +151,22 @@ HOLD_TTL_MINUTES = 30
 # in it are, because the choose route reads that token back.
 DEFAULT_SHARE_BASE_URL = "http://localhost:3004"
 SHARE_TOKEN_BYTES = 12
+# How many 定制方案 one conversation may build: a plan is a piece of work on one 线路 for one
+# customer, and a fourth in the same conversation is the next customer's conversation.
+MAX_PLANS_PER_SESSION = 3
+# How many versions one plan may carry: the advisor revises with the customer on the phone,
+# and a plan past this many rounds is a new plan rather than another version.
+MAX_PLAN_VERSIONS = 30
+
+# What the plan tool answers with where the deployment kept no plan store, and the four rules
+# a call to it must pass. All five are advisor-facing Chinese: the executor relays them into
+# the conversation the way it relays the ERP's own refusals.
+NO_PLAN_STORE = "此部署未配置方案库，定制方案无法保存。"
+TOO_MANY_PLANS = f"本会话最多 {MAX_PLANS_PER_SESSION} 个定制方案，请开新会话再建下一个。"
+FOREIGN_PLAN = "该方案不属于本会话，请在建它的会话里改，或在本会话里另建一个。"
+TOO_MANY_VERSIONS = f"该方案最多 {MAX_PLAN_VERSIONS} 版，请另建一个方案。"
+NO_SUCH_VERSION = "该方案没有第 {version} 版，请按最新版改。"
+PLAN_BUSY = "该方案刚被另一轮改过，请再发一次。"
 
 _STATUS_TEXT = {"confirmed": "已成团", "pending": "待成团", "waitlist": "已满候补"}
 # The ERP's six order statuses as the shared enum's eight: everything the agency has not
@@ -156,6 +186,16 @@ _HOTEL_GRADES = {"三": "三钻", "3": "三钻", "四": "四钻", "4": "四钻",
 # How many of a route's raw tags a record carries: the ERP extracts some fifty, an advisor
 # reads a handful, and every one of them rides in a fenced tool result.
 MAX_RAW_TAGS = 12
+# How much of a 线路's baseline 行程 a details record carries. A details result is fenced whole
+# at ``max_fenced_chars`` (12 000), and a route's own fields and its priced 团期 already spend
+# two thirds of that, so the days take what is left: 200 characters of programme per day over
+# at most 20 days keeps a 12-day 线路 inside the fence with its variants intact. What is cut is
+# the tail of a day's own text; the title, the 住宿 and the 用餐 always ride.
+MAX_DAY_CHARS = 200
+MAX_ITINERARY_DAYS = 20
+# What a 线路 whose 行程 could not be read says instead, because an advisor who reads nothing
+# here has to lay the days out against the attachment themselves.
+NO_ITINERARY = "无（行程附件无法解析或缺失，请对照附件手工摆出）"
 # What a policy entry is scored on: its 标题 and 分类 answer a question more directly than a
 # clause buried in the body does.
 _HELP_TITLE_WEIGHT = 3.0
@@ -349,6 +389,26 @@ def _specs(record: RouteRecord, facets: RouteFacets) -> dict[str, str]:
     specs["亮点"] = "、".join(record.features)
     if record.attachment_name:
         specs["行程附件"] = record.attachment_name
+    return specs
+
+
+def _itinerary_specs(record: RouteRecord, itinerary: Itinerary | None) -> dict[str, str]:
+    """The 线路's baseline 行程 as one spec per day, under the line saying where it was read.
+    行程来源 is stated whichever way the reading went, because a day the advisor cannot see
+    here is one they have to open the attachment for, and the record has to say which case it
+    is. The day itself is the 线路's and not the 团期's: what a party actually gets is the
+    计调's to confirm."""
+    if itinerary is None:
+        return {"行程来源": NO_ITINERARY}
+    attachment = f"行程附件 {record.attachment_name or ''}".strip()
+    specs = {"行程来源": "ERP" if itinerary.source == "erp" else attachment}
+    for day in itinerary.days[:MAX_ITINERARY_DAYS]:
+        line = f"{day.title}｜{day.text[:MAX_DAY_CHARS]}"
+        if day.hotel:
+            line += f"｜住宿：{day.hotel}"
+        if day.meals:
+            line += f"｜用餐：{day.meals}"
+        specs[f"第{day.day_no}天"] = line
     return specs
 
 
@@ -877,6 +937,8 @@ class TourBackend(StorefrontBackend):
         store_name: str = "",
         order_store_name: str = "",
         registry: AdvisorRegistry | None = None,
+        state_dir: Path | None = None,
+        plans: SqliteSessionStore | None = None,
     ) -> None:
         """``today`` is for a host that runs on its own clock; the default is the real date.
         ``allow_past`` lets the windows reach behind today, for a test environment whose 团期
@@ -890,9 +952,17 @@ class TourBackend(StorefrontBackend):
         advisor's name and department come from the ERP login rather than from users.json.
 
         ``registry`` is where the logged-in advisors are; with none — the tests, and a host
-        that has not built one — every call goes out on ``erp``."""
+        that has not built one — every call goes out on ``erp``.
+
+        ``state_dir`` is where the parsed 行程附件 are kept between restarts; with none the
+        attachment is parsed again in every process that reads the 线路.
+
+        ``plans`` is where the 定制方案 are kept, which is the same file the sessions are in;
+        with none the deployment builds no plan at all and ``present_itinerary`` says so."""
         self.erp = erp
         self.registry = registry
+        self.plans = plans
+        self._state_dir = state_dir
         self.today: date = today or _utcnow().date()
         self.live = live
         self.customer_id = customer_id
@@ -926,6 +996,11 @@ class TourBackend(StorefrontBackend):
         self._route_facets: dict[int, RouteFacets] = {}
         self._departures: dict[int, DepartureRecord] = {}
         self._quotes: dict[int, Quote | None] = {}
+        # Each 线路's baseline 行程 once it has been read, ``None`` for one that has none, so a
+        # second details read of the same 线路 downloads and parses nothing. One lock per 线路
+        # keeps two conversations opening it at the same moment to one reading between them.
+        self._itineraries: dict[int, Itinerary | None] = {}
+        self._itinerary_locks: dict[int, asyncio.Lock] = {}
         # The listing snapshot the host's catalog routes read; `load_listings` fills both.
         self.products: dict[str, ProductDetails] = {}
         self._variants: dict[str, ProductDetails] = {}
@@ -1565,15 +1640,66 @@ class TourBackend(StorefrontBackend):
 
     # -- details -------------------------------------------------------------------------
 
-    def _details(self, record: RouteRecord, family: Product) -> ProductDetails:
-        """One route's family as a details record: the route's own free text and the specs its
-        tags normalise into, both read off the record and costing no call. The variants, where
-        the caller has any, are the caller's to fill in."""
+    def _details(
+        self, record: RouteRecord | None, family: Product, itinerary: Itinerary | None
+    ) -> ProductDetails:
+        """One 线路's family, or one of its 团期, as a details record: the route's own free
+        text, the specs its tags normalise into — both read off the record and costing no call
+        — and the baseline 行程 the caller read, day by day. The variants, where the caller has
+        any, are the caller's to fill in."""
+        if record is None:
+            return ProductDetails(**family.model_dump(), long_description=None, specs={})
         return ProductDetails(
             **family.model_dump(),
             long_description="\n".join(record.features)[:1200] or None,
-            specs=_specs(record, self._facets(record)),
+            specs=_specs(record, self._facets(record)) | _itinerary_specs(record, itinerary),
         )
+
+    async def _itinerary(self, erp: ErpClient, record: RouteRecord) -> Itinerary | None:
+        """The 线路's baseline 行程, read once per process: the ERP's own days where it has
+        them, the 行程附件 parsed where it does not. The lock is what keeps two conversations
+        opening the same 线路 at once to one download between them."""
+        if record.route_id in self._itineraries:
+            return self._itineraries[record.route_id]
+        async with self._itinerary_locks.setdefault(record.route_id, asyncio.Lock()):
+            if record.route_id not in self._itineraries:
+                self._itineraries[record.route_id] = await self._read_itinerary(erp, record)
+            return self._itineraries[record.route_id]
+
+    async def _read_itinerary(self, erp: ErpClient, record: RouteRecord) -> Itinerary | None:
+        """One reading of a 线路's 行程. Nothing here raises: the attachment is a file on a
+        server neither this host nor the ERP owns, and a details read the advisor is waiting on
+        must not fail because it is unreachable, oversized or not a readable .docx — such a
+        route reads 行程来源：无 and the advisor opens the attachment themselves."""
+        try:
+            found = await erp.get_itinerary(record.route_id)
+        except ErpError as error:
+            log.warning("tour: route %s itinerary: %s", record.route_id, error)
+            found = None
+        if found is not None or not record.attachment_url:
+            return found
+        url = record.attachment_url
+        cached = cache_read(self._state_dir, record.route_id, url) if self._state_dir else None
+        try:
+            fetched = await fetch_attachment(url, etag=cached[1] if cached else None)
+            if fetched is None:
+                # Unchanged since the cached reading, or unreachable; either way, what is
+                # already known about this 线路 is the best answer there is.
+                return cached[0] if cached else None
+            days = parse_docx(fetched[0])
+        except (ValueError, OSError) as error:
+            log.warning("tour: route %s attachment not read: %s", record.route_id, error)
+            return cached[0] if cached else None
+        if not days:
+            log.warning("tour: route %s attachment names no 第N天", record.route_id)
+            return None
+        itinerary = Itinerary(record.route_id, "attachment", fetched[1], tuple(days))
+        if self._state_dir:
+            try:
+                cache_write(self._state_dir, itinerary, url, fetched[1])
+            except OSError as error:
+                log.warning("tour: route %s itinerary not cached: %s", record.route_id, error)
+        return itinerary
 
     async def _route_details(
         self,
@@ -1604,7 +1730,8 @@ class TourBackend(StorefrontBackend):
             rows = nearest[:MAX_VARIANTS]
         rows = sorted(rows, key=lambda row: row.depart_date)
         await self._prices(erp, rows, middle, prices)
-        details = self._details(record, self._family(record, rows, context, "exact", None))
+        family = self._family(record, rows, context, "exact", None)
+        details = self._details(record, family, await self._itinerary(erp, record))
         details.variants = [self._variant(row, record, context) for row in rows]
         return details
 
@@ -1613,7 +1740,8 @@ class TourBackend(StorefrontBackend):
     ) -> ProductDetails | None:
         """The one departure, in the same two calls a route's variants take: its detail for the
         市场价 and the seat counts, and its 同业价 for the customer this deployment books for. A
-        departure the ERP has no price row for keeps the 市场价 it carries."""
+        departure the ERP has no price row for keeps the 市场价 it carries. It reads its 线路's
+        baseline 行程 as a route's details do, out of the same per-process cache."""
         row = await erp.get_departure(period_id)
         if row is None:
             return None
@@ -1621,11 +1749,8 @@ class TourBackend(StorefrontBackend):
         self._quotes[row.period_id] = await self._quote(erp, row)
         record = await self._route(erp, row.route_id)
         variant = self._variant(row, record, context)
-        return ProductDetails(
-            **variant.model_dump(),
-            long_description=("\n".join(record.features)[:1200] or None) if record else None,
-            specs=_specs(record, self._facets(record)) if record else {},
-        )
+        itinerary = await self._itinerary(erp, record) if record else None
+        return self._details(record, variant, itinerary)
 
     async def get_product_details(
         self, session: ShoppingSessionContext, product_id: str
@@ -1956,8 +2081,8 @@ class TourBackend(StorefrontBackend):
         线路, and the workbench's home page reads this snapshot whole to name the directions
         the catalog sells — so a live snapshot is the families alone, out of the reads one
         search already makes: the route list, and the window's 团期 read once for every route
-        in it. It costs no call per route and carries no variant and no price beyond the
-        route's 起价; a 团期 id the host asks for is read from the ERP by the conversation
+        in it. It costs no call per route and carries no variant, no 行程 and no price beyond
+        the route's 起价; a 团期 id the host asks for is read from the ERP by the conversation
         instead. An ERP that refuses or is down leaves the snapshot empty rather than stopping
         the host from booting. This is also where the deployment's 同行 customer is resolved,
         because that costs one ERP call too."""
@@ -1976,7 +2101,12 @@ class TourBackend(StorefrontBackend):
                 for record in await self._search(self.erp, stated, fetched):
                     rows = await self._list(self.erp, record, window, fetched)
                     family = self._family(record, rows, context, "exact", None)
-                    listings[family.product_id] = self._details(record, family)
+                    snapshot = self._details(record, family, None)
+                    # No 行程 either, for the same reason there is no variant and no price: it
+                    # is a read per 线路, and a 行程附件 is a download on top of it. A snapshot
+                    # record says nothing about the 行程 rather than saying there is none.
+                    snapshot.specs.pop("行程来源", None)
+                    listings[family.product_id] = snapshot
             else:
                 for record in await self._search(self.erp, stated):
                     details = await self._route_details(self.erp, record.route_id, context)
@@ -2056,6 +2186,131 @@ class TourBackend(StorefrontBackend):
     def share_record(self, token: str) -> ShareRecord | None:
         """The shortlist behind a link's token, for the route the customer's page calls."""
         return self._shares.get(token)
+
+    # -- the 定制方案 the advisor builds on a published 线路 ---------------------------------
+
+    def _plan_store(self) -> SqliteSessionStore:
+        """Where the plans are kept. A deployment that configured none builds no plan, rather
+        than one that is gone at the next restart."""
+        if self.plans is None:
+            raise PresentationRefused(NO_PLAN_STORE)
+        return self.plans
+
+    async def create_plan(
+        self, session: ShoppingSessionContext, route: Product, departure: Product | None
+    ) -> Plan:
+        """A plan on one published 线路, with the 团期 the advisor opened as its baseline. The
+        line's own kind rides along, because a 包团 or 定制 baseline is not on general sale and
+        the 计调 has to read that off the plan."""
+        store = self._plan_store()
+        if len(store.plans_for_session(session.session_id)) >= MAX_PLANS_PER_SESSION:
+            raise PresentationRefused(TOO_MANY_PLANS)
+        route_id = _erp_id(route.product_id, ROUTE_PREFIX)
+        if route_id is None:
+            raise PresentationRefused(f"{route.product_id} 不是线路编号，定制方案要建在 RT- 上。")
+        plan = Plan(
+            plan_id=new_plan_id(),
+            session_id=session.session_id,
+            user_id=session.user_id,
+            route_id=route_id,
+            route_name=route.title,
+            line_type=route.attributes.get("line_type") or None,
+            departure_id=(
+                None if departure is None else _erp_id(departure.product_id, DEPARTURE_PREFIX)
+            ),
+        )
+        store.create_plan(plan)
+        return plan
+
+    async def add_plan_version(
+        self,
+        session: ShoppingSessionContext,
+        plan: Plan,
+        days: list[PlanDay],
+        *,
+        title: str,
+        travel_dates: str | None,
+        party: str | None,
+        reference_price: ReferencePrice | None,
+        base_version: int | None,
+    ) -> tuple[PlanVersion, list[DayDiff]]:
+        """One card as the next version of ``plan``, with its reading of the version it was
+        written against — the latest, or the one ``base_version`` names. The number is taken
+        and checked inside the store's own write, so two turns of one conversation racing to
+        revise the same plan do not both become v3: the loser numbers again against what the
+        winner wrote, and gives up rather than replacing the card the winner sent."""
+        store = self._plan_store()
+        if plan.session_id != session.session_id:
+            raise PresentationRefused(FOREIGN_PLAN)
+        for _ in range(2):
+            latest = store.latest_version(plan.plan_id)
+            if latest >= MAX_PLAN_VERSIONS:
+                raise PresentationRefused(TOO_MANY_VERSIONS)
+            parent, parent_days = None, None
+            if latest:
+                parent = base_version or latest
+                stored = store.version(plan.plan_id, parent)
+                if stored is None:
+                    raise PresentationRefused(NO_SUCH_VERSION.format(version=parent))
+                parent_days = stored[0].days
+            diff = diff_days(parent_days, days)
+            version = PlanVersion(
+                plan_id=plan.plan_id,
+                version=latest + 1,
+                parent_version=parent,
+                title=title,
+                travel_dates=travel_dates,
+                party=party,
+                days=days,
+                reference_price=reference_price,
+                share_token=new_share_token(),
+            )
+            try:
+                store.add_version(version, diff)
+            except PlanConflictError:
+                continue
+            return version, diff
+        raise PresentationRefused(PLAN_BUSY)
+
+    async def link_plan_route(
+        self, session: ShoppingSessionContext, plan_id: str, erp_route_id: str
+    ) -> Plan:
+        """Record the 线路 the agency built in the ERP for this plan. It is the plan's and not
+        a version's, so nothing is versioned here."""
+        store = self._plan_store()
+        plan = store.plan(plan_id)
+        if plan is None or plan.session_id != session.session_id:
+            raise PresentationRefused(FOREIGN_PLAN)
+        route_id = _erp_id(erp_route_id, ROUTE_PREFIX)
+        if route_id is None:
+            raise PresentationRefused(f"{erp_route_id} 不是线路编号，请用 ERP 里的 RT- 编号。")
+        store.link_route(plan_id, route_id)
+        return plan.model_copy(update={"erp_route_id": route_id})
+
+    def plan_share_url(self, token: str) -> str:
+        """The customer's link to one version. The token stands for the version, so a customer
+        sent v2 keeps reading v2 after the advisor sends v3."""
+        base = os.environ.get("TOUR_SHARE_BASE_URL", DEFAULT_SHARE_BASE_URL).rstrip("/")
+        return f"{base}/p/{token}"
+
+    def plan_of(self, plan_id: str) -> Plan | None:
+        return None if self.plans is None else self.plans.plan(plan_id)
+
+    def plan_versions(self, plan_id: str) -> list[tuple[PlanVersion, list[DayDiff]]]:
+        return [] if self.plans is None else self.plans.versions(plan_id)
+
+    def plan_for_token(self, token: str) -> tuple[Plan, PlanVersion, list[DayDiff]] | None:
+        return None if self.plans is None else self.plans.version_by_token(token)
+
+    def advisor_name(self, user_id: str) -> str:
+        """Who the customer's page says made their plan: the name the ERP login carries, the
+        fixture profile's where there is no login, and nothing at all for an id neither
+        knows."""
+        login = None if self.registry is None else self.registry.get(user_id)
+        if login is not None:
+            return login.name
+        profile = self._users.get(user_id)
+        return (profile.display_name or "") if profile is not None else ""
 
     def recent_orders(self, limit: int = 6) -> list[Order]:
         """The cross-user feed a merchant portal would show. This example has no portal, and

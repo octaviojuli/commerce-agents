@@ -4,7 +4,8 @@
 import { AgentApi } from "web-shared";
 import type { Product } from "./types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8004";
+/** Where the tour API answers; the customer's pages read it on the server, so it is exported. */
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8004";
 
 export const api = new AgentApi(API_URL, "/api");
 

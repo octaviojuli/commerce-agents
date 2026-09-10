@@ -146,6 +146,18 @@ VERTICAL_TURNS: dict[str, list[dict[str, Any]]] = {
             "expect_tools": {"add_to_cart"},
             "expect_events": {"cart_update", "turn_complete"},
         },
+        {
+            "message": "就这条线给客人做个定制方案，先把逐日行程摆出来。",
+            "expect_tools": {"present_itinerary"},
+            "expect_events": {"ui", "turn_complete"},
+            "forbid_tools": {"add_to_cart"},
+        },
+        {
+            "message": "第 5 天多住一晚，其余不动。",
+            "expect_tools": {"present_itinerary"},
+            "expect_events": {"ui", "turn_complete"},
+            "forbid_tools": {"add_to_cart"},
+        },
     ],
 }
 

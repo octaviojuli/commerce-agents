@@ -19,7 +19,7 @@
  * by whole weeks from that day, while `periodId`, and so the `DP-` id, stays put.
  */
 
-import type { CartPayload, CheckoutPayload, ComparisonPayload, GuidePayload, OrderStatusPayload, PlanPayload, Product, ProductsPayload, ShortlistPayload } from "./types";
+import type { CartPayload, CheckoutPayload, ComparisonPayload, GuidePayload, ItineraryPayload, OrderStatusPayload, PlanPayload, Product, ProductsPayload, ShortlistPayload } from "./types";
 
 // --- Routes (线路), as search returns them ---
 
@@ -276,6 +276,131 @@ const shortlist_streaming: ShortlistPayload = {
   items: shortlist.items.slice(0, 1),
 };
 
+/**
+ * The second version of a 定制方案 built on RT-1022 for a party of 2 大 1 小: the customer asked
+ * for a day on the grassland, which is the added day, and to skip the 伊宁 rest day, which is the
+ * removed one; the 第 7 天 note was rewritten to cut its driving. The prices are the baseline
+ * 团期's own — a 定制 line is priced by the 计调, not here.
+ */
+const itinerary: ItineraryPayload = {
+  plan_id: "PL-7f3c2a91",
+  version: 2,
+  parent_version: 1,
+  title: "伊犁定制 11 日 · 喀拉峻多住一天",
+  travel_dates: "2026-10-14 至 2026-10-24",
+  party: "2大1小（8岁）",
+  route: KALAJUN_10,
+  departure: DEPARTURE_1014,
+  days: [
+    {
+      label: "第 1 天 乌鲁木齐集合",
+      note: "全天接机，住机场附近酒店，晚上把路况和海拔讲一遍。",
+      request: false,
+      change: "same",
+      changed_fields: [],
+    },
+    {
+      label: "第 2 天 乌鲁木齐—赛里木湖",
+      note: "走果子沟大桥进伊犁，傍晚到赛里木湖看日落。",
+      request: false,
+      change: "same",
+      changed_fields: [],
+    },
+    {
+      label: "第 3 天 赛里木湖—特克斯",
+      note: "上午环湖，下午翻山到特克斯，住喀拉峻山下。",
+      request: false,
+      change: "same",
+      changed_fields: [],
+    },
+    {
+      label: "第 4 天 喀拉峻空中草原",
+      note: "东西喀拉峻各半天，五花草甸和鳄鱼湾都留足时间。",
+      request: false,
+      change: "same",
+      changed_fields: [],
+    },
+    {
+      label: "第 5 天 喀拉峻牧场一日",
+      note: "客人要的一天：上午跟牧民转场，下午草原自由活动，全天不安排车程。",
+      request: true,
+      change: "added",
+      changed_fields: [],
+    },
+    {
+      label: "第 6 天 喀拉峻—琼库什台",
+      note: "沿库尔代河谷进琼库什台，住木屋民宿。",
+      request: false,
+      change: "same",
+      changed_fields: [],
+    },
+    {
+      label: "第 7 天 琼库什台—夏塔",
+      note: "改成早出发走夏塔古道口，中午河谷野餐，比原方案少两个小时车程。",
+      request: false,
+      change: "changed",
+      changed_fields: ["note"],
+    },
+    {
+      label: "第 8 天 夏塔—昭苏",
+      note: "昭苏油菜花田与格登碑，傍晚在马场拍天马。",
+      request: false,
+      change: "same",
+      changed_fields: [],
+    },
+    {
+      label: "第 9 天 昭苏—伊宁",
+      note: "经琼博拉森林回伊宁，晚上逛六星街。",
+      request: false,
+      change: "same",
+      changed_fields: [],
+    },
+    {
+      label: "第 10 天 伊宁—乌鲁木齐",
+      note: "上午薰衣草园，下午高铁回乌鲁木齐。",
+      request: false,
+      change: "same",
+      changed_fields: [],
+    },
+    {
+      label: "第 11 天 乌鲁木齐送机",
+      note: "按航班送机，时间富余可加大巴扎半日。",
+      request: false,
+      change: "same",
+      changed_fields: [],
+    },
+  ],
+  removed_days: [
+    {
+      index: 5,
+      label: "第 6 天 伊宁市区休整",
+      note: "原方案在伊宁休整半天，客人说不想回城。",
+    },
+  ],
+  summary: "+1 天（第 5 天）；改 1 天（第 7 天）；删 1 天（原第 6 天）",
+  reference_price: {
+    tong_ye_adult: 7880,
+    market_adult: 7880,
+    quote_source: "customer",
+    party_total: 20740,
+  },
+  erp_route_id: "RT-1188",
+  handoff_text:
+    "定制方案 PL-7f3c2a91 v2（基线 RT-1022 伊犁·喀拉峻草原深度 10 日，团期 XJ-YLKL-20261014-001）\n" +
+    "人数：2大1小（8岁）　日期：2026-10-14 至 2026-10-24（11 天）\n" +
+    "改动：第 5 天新增喀拉峻牧场一日（客人要求，不安排车程）；第 7 天改走夏塔古道口，减两小时车程；删原第 6 天伊宁市区休整。\n" +
+    "请按 11 天重新核算车导、住宿与门票差价，回报同业价。",
+  share_url: "http://localhost:3004/p/Qm7pT2vXbN9kLr4s",
+};
+
+// The same call mid-stream: the head of the plan is written, and no version, marks or link yet.
+const itinerary_streaming: ItineraryPayload = {
+  title: itinerary.title,
+  travel_dates: itinerary.travel_dates,
+  party: itinerary.party,
+  days: itinerary.days.slice(0, 6).map(({ label, note }) => ({ label, note })),
+};
+
 const comparison: ComparisonPayload = {
   title: "三条伊犁线的差别在哪儿",
   entries: [
@@ -425,6 +550,8 @@ export const SHOWCASE = {
   departures,
   shortlist,
   shortlist_streaming,
+  itinerary,
+  itinerary_streaming,
   comparison,
   plan,
   guide,
