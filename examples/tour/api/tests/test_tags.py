@@ -324,6 +324,8 @@ def test_the_rules_cover_the_agencys_own_catalog():
         # The more specific walk wins over the one its name also contains.
         ("HU16-B线-经典西欧法意瑞+欧洲花园奥地利+比利时王国", [], "西欧多国"),
         ("MU5-法瑞德新欧洲金三角8晚11天3-4星", [], "德法意瑞"),
+        # One 卢森堡 on a 德法意瑞 walk does not make it 西欧多国.
+        ("X3-10晚-CA-德法瑞意+卢森堡+莫奈花园10 晚 12 天", [], "德法意瑞"),
         ("E6-【轻奢臻品】爱尔兰+英格兰英伦双岛巡游", [], "英爱"),
         ("MU9-MU-【欧洲壹号】伊比利亚狂曲+西葡深度", [], "西葡"),
         # A name that says nothing falls back to the tags.
