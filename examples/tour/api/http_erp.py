@@ -1,7 +1,7 @@
 # Copyright 2026 Anthropic PBC
 # SPDX-License-Identifier: Apache-2.0
 
-"""``ErpClient`` over the B2B 旅行社 ERP's own HTTP API (``docs/erp-contract.md``): the eight
+"""``ErpClient`` over the B2B 旅行社 ERP's own HTTP API (``docs/erp-contract.md``): the nine
 calls as requests — and the window read that spares a search a call per 线路 — the ERP's JSON
 as the records in ``erp_client.py``, and its HTTP statuses as the exceptions the executor
 relays. Field mapping and error mapping only — no seat arithmetic, no ranking, no status
@@ -77,17 +77,21 @@ _KEYS: dict[str, str | tuple[str, ...]] = {
     "total_amount": ("totalAmount", "orderAmount"),
 }  # fmt: skip
 _PRICE_KEYS = ("adultPrice", "childPrice", "elderPrice", "singleRoomDiff")
+# The ERP's own four periods of an itinerary day, in the order it writes them.
+_DAY_PERIODS = ("morning", "midday", "afternoon", "evening")
 # What a field whose type states no ``None`` becomes when the ERP leaves it out of a row.
 _ZEROS: dict[str, Any] = {
     "int": 0, "float": 0.0, "str": "", "bool": False, "tuple[str, ...]": (),
     "date": EPOCH.date(), "datetime": EPOCH, "PriceInfo": erp.PriceInfo(0.0, 0.0, 0.0, 0.0),
 }  # fmt: skip
 # The ERP's status is its error class, its Chinese ``message`` is kept as written, and a 5xx is
-# an outage; anything unlisted below 500 is the seam's own error.
+# an outage; anything unlisted below 500 is the seam's own error. A 405 is an endpoint this
+# deployment's ERP does not carry — ``route/itinerary`` is asked for and not yet built — and
+# reads as nothing found, which is what ``_optional_data`` answers a caller with.
 _ERRORS: dict[int, tuple[type[erp.ErpError], str]] = {
     400: (erp.ErpRefused, REFUSED), 401: (erp.ErpAuth, AUTH_FAILED),
     403: (erp.ErpAuth, AUTH_FAILED), 404: (erp.ErpNotFound, NOT_FOUND),
-    429: (erp.ErpThrottled, THROTTLED),
+    405: (erp.ErpNotFound, NOT_FOUND), 429: (erp.ErpThrottled, THROTTLED),
 }  # fmt: skip
 
 
@@ -167,6 +171,21 @@ def _value(kind: str, value: Any) -> Any:
     return {"int": int, "float": float, "str": str}[kind.split(" ")[0]](value)
 
 
+def _day(row: dict[str, Any]) -> erp.ItineraryDay:
+    """One ``route/itinerary`` day row as an ``ItineraryDay``. The ERP writes a day in its own
+    four periods — 上午, 中午, 下午, 晚上 — and one text is what the advisor reads back, so the
+    periods it filled in are joined in order and the empty ones are left out. ``transport`` has
+    nowhere to go in an ``ItineraryDay`` and is not read."""
+    periods = (str(row.get(key) or "").strip() for key in _DAY_PERIODS)
+    return erp.ItineraryDay(
+        day_no=int(row.get("dayNo") or 0),
+        title=str(row.get("title") or "").strip(),
+        text="；".join(period for period in periods if period),
+        hotel=str(row.get("hotel") or "").strip() or None,
+        meals=str(row.get("meals") or "").strip() or None,
+    )
+
+
 def _record(cls: type[R], row: dict[str, Any]) -> R:
     """The dataclass's own fields drive the mapping: each names its ERP key and, in its
     annotation, how the value is read."""
@@ -178,7 +197,7 @@ def _record(cls: type[R], row: dict[str, Any]) -> R:
 
 
 class HttpErpClient:
-    """The eight ``ErpClient`` calls against ``base_url`` (the ERP's ``/aicli`` root), as the
+    """The nine ``ErpClient`` calls against ``base_url`` (the ERP's ``/aicli`` root), as the
     salesperson ``mobile`` names, and the ``WindowReader`` call beside them. The ERP picks the
     department the login lands in, and a write-side call switches into the 团期's. Every listing
     read is paged to exhaustion, and one window's 团期 are read once and held for a moment.
@@ -409,12 +428,18 @@ class HttpErpClient:
             rows.extend(page_rows)
         return rows
 
-    async def _optional(self, cls: type[R], path: str, params: dict[str, Any]) -> R | None:
-        """A record the ERP may not have: its 404 is no record rather than an error."""
+    async def _optional_data(self, path: str, params: dict[str, Any]) -> Any:
+        """A read the ERP may have no answer to: its 404 — and its 405, which is what an
+        endpoint the deployment's ERP does not carry answers — is nothing found rather than an
+        error, so the caller reads ``None`` and carries on."""
         try:
-            data = await self._request("GET", path, params)
+            return await self._request("GET", path, params)
         except erp.ErpNotFound:
             return None
+
+    async def _optional(self, cls: type[R], path: str, params: dict[str, Any]) -> R | None:
+        """A record the ERP may not have, mapped by its own fields where there is one."""
+        data = await self._optional_data(path, params)
         return _record(cls, data) if data else None
 
     async def search_routes(self, q: erp.RouteQuery) -> list[erp.RouteRecord]:
@@ -460,6 +485,28 @@ class HttpErpClient:
         records = [_record(erp.DepartureRecord, row) for row in rows]
         self._windows[key] = (time.time(), records)
         return records
+
+    async def get_itinerary(self, route_id: int) -> erp.Itinerary | None:
+        """The 线路's structured 行程. The agency's API does not carry ``route/itinerary`` yet —
+        it is asked for in ``docs/erp-contract.md`` — so in production this answers a 404 or a
+        405 and the call reads ``None``, which is also what a 线路 with no days reads. The
+        行程附件 the catalog links is the backend's to read (``api/itinerary_source.py``) and not
+        this client's: field mapping and nothing else."""
+        data = await self._optional_data("/route/itinerary", {"routeId": route_id})
+        if not data:
+            return None
+        days = tuple(_day(row) for row in data.get("days") or ())
+        version = data.get("version")
+        return (
+            erp.Itinerary(
+                route_id=int(data.get("routeId") or route_id),
+                source="erp",
+                source_ref=None if version is None else str(version),
+                days=days,
+            )
+            if days
+            else None
+        )
 
     async def get_departure(self, period_id: int) -> erp.DepartureRecord | None:
         return await self._optional(erp.DepartureRecord, "/period/detail", {"periodId": period_id})

@@ -142,6 +142,32 @@ async def test_the_fixture_carries_departures_that_have_not_formed_yet(erp: Mock
     assert any(row.available_seats == 0 for row in rows)
 
 
+@pytest.mark.parametrize(("route_id", "days"), [(1021, 8), (1022, 10), (1024, 8)])
+async def test_the_three_routes_the_demo_opens_carry_a_day_per_day_of_the_route(
+    erp: MockErpClient, route_id: int, days: int
+):
+    itinerary = await erp.get_itinerary(route_id)
+    assert itinerary is not None
+    assert (itinerary.route_id, itinerary.source, itinerary.source_ref) == (route_id, "erp", None)
+    assert [day.day_no for day in itinerary.days] == list(range(1, days + 1))
+    # Every day states what it includes; only the last, a 送站 day, has no night to state.
+    assert all(day.title and day.text and day.meals for day in itinerary.days)
+    assert all(day.hotel for day in itinerary.days[:-1])
+
+
+async def test_a_route_the_fixture_writes_no_itinerary_for_has_none(erp: MockErpClient):
+    assert await erp.get_itinerary(1041) is None
+    assert await erp.get_itinerary(9999) is None
+
+
+async def test_a_route_that_stays_two_nights_names_the_same_hotel_twice(erp: MockErpClient):
+    itinerary = await erp.get_itinerary(1021)
+    assert itinerary is not None
+    hotels = [day.hotel for day in itinerary.days if day.hotel]
+    assert any(hotel.startswith("那拉提 · 河谷牧歌度假酒店") for hotel in hotels)
+    assert sum("连住" in (day.hotel or "") for day in itinerary.days) == 1
+
+
 async def test_search_customers_finds_the_trade_customer_by_name(erp: MockErpClient):
     (customer,) = await erp.search_customers("北京")
     assert (customer.customer_id, customer.customer_type) == (CUSTOMER, 1)

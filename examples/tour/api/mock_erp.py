@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """The tour example's ``ErpClient`` over the ERP-shaped fixtures in ``data/``: 线路 ranked
-against the advisor's text, their 团期 inside a date window, the 同行 customers an order is
-written for, and an in-memory order book. Departure dates move forward by whole weeks from
+against the advisor's text, their 团期 inside a date window, the baseline 行程 of the three
+线路 that carry one, the 同行 customers an order is written for, and an in-memory order book. Departure dates move forward by whole weeks from
 ``dates_anchored_to`` and each ``periodCode`` is rebuilt from the shifted date, so a demo
 booted any week still has departures ahead of today while ``periodId`` never moves. The rules
 here are the ERP's own and no more: a party over the seats left becomes a 候补 rather than a
@@ -131,9 +131,31 @@ def _departure_record(row: dict[str, Any], *, detail: bool) -> erp.DepartureReco
     )
 
 
+def _itinerary(route_id: int, days: list[dict[str, Any]]) -> erp.Itinerary:
+    """A fixture 线路's days as the record the ERP's own endpoint would answer with. The
+    fixture carries no version, so there is no ``source_ref`` to compare a cached reading
+    against; a live ERP's does."""
+    return erp.Itinerary(
+        route_id=route_id,
+        source="erp",
+        source_ref=None,
+        days=tuple(
+            erp.ItineraryDay(
+                day_no=int(row["dayNo"]),
+                title=str(row["title"]),
+                text=str(row["text"]),
+                hotel=row.get("hotel") or None,
+                meals=row.get("meals") or None,
+            )
+            for row in days
+        ),
+    )
+
+
 class MockErpClient:
-    """An ``ErpClient`` backed by ``data/routes.json``, ``data/departures.json`` and
-    ``data/customers.json``, with the orders it writes kept in memory."""
+    """An ``ErpClient`` backed by ``data/routes.json``, ``data/departures.json``,
+    ``data/itineraries.json`` and ``data/customers.json``, with the orders it writes kept in
+    memory."""
 
     def __init__(
         self,
@@ -159,6 +181,12 @@ class MockErpClient:
             row.setdefault("reserveCount", 0)
             row.setdefault("waitlistCount", 0)
             self._departures[row["periodId"]] = row
+        # Only the three 线路 the demo scripts and the showcase open carry days; the rest have
+        # none, as most of a live catalog does.
+        self._itineraries: dict[int, erp.Itinerary] = {
+            row["routeId"]: _itinerary(row["routeId"], row["days"])
+            for row in load_json(data_dir, "itineraries.json")["itineraries"]
+        }
         self._customers: dict[int, dict[str, Any]] = {
             row["customerId"]: dict(row)
             for row in load_json(data_dir, "customers.json")["customers"]
@@ -195,6 +223,11 @@ class MockErpClient:
         rows = self._window(route_id, depart_from, depart_to)
         rows.sort(key=lambda row: row["departDate"])
         return [_departure_record(row, detail=False) for row in rows]
+
+    async def get_itinerary(self, route_id: int) -> erp.Itinerary | None:
+        """The 线路's baseline 行程 from ``data/itineraries.json``, ``None`` for a 线路 the
+        fixture writes none for — which is what a live ERP answers for most of its catalog."""
+        return self._itineraries.get(route_id)
 
     async def get_departure(self, period_id: int) -> erp.DepartureRecord | None:
         row = self._departures.get(period_id)
