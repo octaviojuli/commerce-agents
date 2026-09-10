@@ -139,7 +139,10 @@ def build_shopping_config(*, live: bool = False) -> ShoppingAgentConfig:
             "占位; the advisor does that in the ERP's own backstage — there is no App, and the "
             "word must not appear in an answer, because the advisor works in the ERP and the "
             "customer only ever sees a 分享清单. State the expanded date window back to the "
-            "advisor once."
+            "advisor once. Every result carries catalog_matches, the number of 线路 that met "
+            "the request in the window; when it exceeds the results shown, say how many there "
+            "are and ask the advisor to narrow by country, departure city, dates or days "
+            "before opening one."
         ),
         # Nothing ships: the customer joins the group at its 集合地点, which the route's
         # specs carry, so the fulfillment tool is not registered at all.

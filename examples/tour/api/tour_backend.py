@@ -113,8 +113,9 @@ MAX_POLICIES = 3
 MIN_RESULTS = 2
 RELAX_WINDOW_DAYS = 7
 RELAX_DAYS_SPAN = 2
-# How many routes the broad pass may add. Every route kept costs a departure list and up to
-# ``MAX_LISTING_PRICES`` priced 团期, and the model is handed a shortlist either way.
+# How many routes a search may keep. Every route kept costs a departure list and up to
+# ``MAX_LISTING_PRICES`` priced 团期, and the model is handed a shortlist either way; the
+# count of what it was cut from travels with it as ``catalog_matches``.
 MAX_BROAD_MATCHES = 8
 # Our own hold window on a 预留 order, whatever the departure's ``reserve_hours`` says: the
 # advisor is told the seats are theirs for half an hour, and the line drops after that.
@@ -633,6 +634,9 @@ class Fetched:
     routes: dict[tuple[str, date, date], list[RouteRecord]] = field(default_factory=dict)
     departures: dict[tuple[int, date, date], list[DepartureRecord]] = field(default_factory=dict)
     windows: dict[tuple[date, date], dict[int, list[DepartureRecord]]] = field(default_factory=dict)
+    # How many routes the last pass found meeting the stated request inside its window, the
+    # ones past ``MAX_BROAD_MATCHES`` included: what the shortlist was cut from.
+    matched: int = 0
 
 
 @dataclass
@@ -993,11 +997,14 @@ class TourBackend(StorefrontBackend):
         comes back through a relaxation step, with a note naming its nearest date.
 
         The ERP's own search is fuzzy on the 线路 name, and a destination its editors never
-        wrote into a name matches nothing there however far the window is relaxed. So when the
-        named query is not a shortlist, the broad read brings back the window's whole catalog
-        and every route that carries the destination anywhere else it is written is kept. Those
-        routes do meet what the advisor asked for, so they are exact matches, not relaxed
-        ones, and the day count, 纯玩 and the hotel standard filter them the same way.
+        wrote into a name matches nothing there however far the window is relaxed: 欧洲 names
+        three of the thirty-odd lines the 欧洲部 sells in a month. So the named query is never
+        the shortlist on its own. The broad read brings back the window's whole catalog, and
+        every route that carries the destination anywhere else it is written is kept, up to
+        ``MAX_BROAD_MATCHES`` in the catalog's own order; the count of all of them, kept or
+        not, is left on ``fetched.matched`` so the shortlist can say what it was cut from.
+        Those routes do meet what the advisor asked for, so they are exact matches, not
+        relaxed ones, and the day count, 纯玩 and the hotel standard filter them the same way.
 
         ``fetched`` is one search run's own reads. A caller that passes none — a pasted id, the
         boot snapshot — takes the named query alone and reads no departures."""
@@ -1007,17 +1014,19 @@ class TourBackend(StorefrontBackend):
         if fetched is None:
             return fits
         found = [record for record in fits if await self._departs(erp, record, window, fetched)]
-        if not stated.text or len(found) >= MIN_RESULTS:
+        if not stated.text:
             return found
         seen = {record.route_id for record in found}
+        matched = len(found)
         for record in await self._broad(erp, window, fetched, read=broad_read):
-            if len(found) >= MAX_BROAD_MATCHES:
-                break
             facets = self._facets(record)
             if record.route_id in seen or not _mentions(record, facets, stated.text):
                 continue
             if _fits(record, facets, stated) and await self._departs(erp, record, window, fetched):
-                found.append(record)
+                matched += 1
+                if len(found) < MAX_BROAD_MATCHES:
+                    found.append(record)
+        fetched.matched = matched
         return found
 
     async def _list(
@@ -1301,6 +1310,10 @@ class TourBackend(StorefrontBackend):
             None,
             fetched=fetched,
         )
+        # What the stated request matched before the cut, so the model can say a continent
+        # is more than eight lines; the relaxation steps below count nothing, since they
+        # run only when this number is short of a shortlist.
+        matched = max(fetched.matched, len(found))
         relaxed = stated
         for widen, match in _RELAXATIONS:
             if len(found) >= MIN_RESULTS:
@@ -1326,6 +1339,8 @@ class TourBackend(StorefrontBackend):
                     p.attributes["family"] != "yes",
                 )
             )
+        for product in found[:limit]:
+            product.attributes["catalog_matches"] = str(matched)
         return found[:limit]
 
     # -- details -------------------------------------------------------------------------

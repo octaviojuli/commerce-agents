@@ -46,7 +46,8 @@ const XINJIANG_8: Product = {
     budget: "预算约5800—6600元",
     tags: "纯玩|小团|亲子|轻徒步|零购物|四钻|8座商务车|伊犁|乌鲁木齐出发|赛里木湖|那拉提草原|喀拉峻",
     features: "赛里木湖|那拉提草原|喀拉峻|薰衣草田|果子沟大桥|8 座车不超 8 人，全程零购物，赛里木湖与那拉提各住一晚，适合带孩子的家庭。",
-    match: "exact"
+    match: "exact",
+    catalog_matches: "3"
   },
   in_stock: true,
   short_description: "8 座车不超 8 人，全程零购物，赛里木湖与那拉提各住一晚，适合带孩子的家庭。",
@@ -78,7 +79,8 @@ const KALAJUN_10: Product = {
     budget: "",
     tags: "深度游|摄影|纯玩|小团|零购物|四钻|6座商务车|伊犁|乌鲁木齐出发|喀拉峻|琼库什台|夏塔古道",
     features: "喀拉峻|琼库什台|夏塔古道|唐布拉百里画廊|独库公路|6 人小车走透伊犁，喀拉峻两晚、琼库什台一晚，早晚光线全留给拍照。",
-    match: "exact"
+    match: "exact",
+    catalog_matches: "3"
   },
   in_stock: true,
   short_description: "6 人小车走透伊犁，喀拉峻两晚、琼库什台一晚，早晚光线全留给拍照。",
@@ -110,7 +112,8 @@ const LUXURY_8: Product = {
     budget: "预算约9800—1.1万元",
     tags: "高端|纯玩|小团|老人友好|零购物|五钻|6座商务车|伊犁|乌鲁木齐出发|赛里木湖|那拉提草原|喀拉峻",
     features: "赛里木湖|那拉提草原|喀拉峻|伊宁六星街|全程五钻酒店与 6 座商务车，每日车程控制在 4 小时内，含双导服务。",
-    match: "exact"
+    match: "exact",
+    catalog_matches: "3"
   },
   in_stock: true,
   short_description: "全程五钻酒店与 6 座商务车，每日车程控制在 4 小时内，含双导服务。",
