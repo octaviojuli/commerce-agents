@@ -183,6 +183,11 @@ singleRoomDiffCount, storeId?, storeName?, contactName, contactMobile, remark?}`
   `public_sale_types` makes the line private whatever the name says, and the name becomes the
   fallback for a row that carries none.
 
+- **The 行程附件 is a public link.** `routeAttachmentUrl` is an object-store URL that answers
+  without a token, under a hashed file name; `routeAttachmentName` is the name the agency's
+  staff gave the file. The workbench never links the store: `api/attachments.py` reads the
+  file on the advisor's session and answers it under its own name.
+
 ## Beta observations
 
 - `GET /order/price` answers a bare nginx HTML 404, not the JSON envelope, for a departure

@@ -37,6 +37,8 @@ const SECTIONS: { component: string; id?: string; payload: unknown; status?: UIS
   },
   // A request too broad to shortlist: one question, the catalog's groups as chips.
   { component: "focus", payload: SHOWCASE.focus },
+  // The 行程附件 the advisor asked for, as downloads under the agency's own file names.
+  { component: "attachments", payload: SHOWCASE.attachments },
   // The 团期 the advisor sends the customer, with the link they answer on.
   { component: "shortlist", payload: SHOWCASE.shortlist },
   // The same call still streaming: one 团期 in, and no share link until it finishes.
