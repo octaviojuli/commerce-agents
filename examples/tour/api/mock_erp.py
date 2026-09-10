@@ -103,6 +103,7 @@ def _route_record(row: dict[str, Any]) -> erp.RouteRecord:
         image_url=row.get("firstImageUrl"),
         attachment_name=row.get("routeAttachmentName"),
         attachment_url=row.get("routeAttachmentUrl"),
+        sale_type=str(row.get("saleType") or ""),
     )
 
 

@@ -84,7 +84,9 @@ class RouteRecord:
     fifty tags naming the destination, the departure city, the hotel standard, 购物, what the
     price includes and every attraction on the way — written in whatever words the extractor
     found and carrying its mistakes, so it is evidence and not a specification.
-    ``price_tags`` is the budget band the ERP puts on the route's 团期 (预算约9999—1万元)."""
+    ``price_tags`` is the budget band the ERP puts on the route's 团期 (预算约9999—1万元).
+    ``sale_type`` is the ERP's ``saleType``, the field asked of it for who may sell the line;
+    ``""`` until the ERP carries it, and ``api/private_lines.py`` reads the name meanwhile."""
 
     route_id: int
     route_code: str
@@ -100,6 +102,7 @@ class RouteRecord:
     image_url: str | None
     attachment_name: str | None
     attachment_url: str | None
+    sale_type: str = ""
 
 
 @dataclass(frozen=True)

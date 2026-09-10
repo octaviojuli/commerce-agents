@@ -212,6 +212,13 @@ Single prompts worth trying after those turns:
   advisors `data/users.json` names, all reading through the one `MockErpClient`, and any
   password, because a fixture has none to check against. The section above is what a login is
   and what it is not.
+- `api/private_lines.py`: which 线路 are not on general sale. The catalog carries, beside what
+  anyone may sell, the 包团 a customer chartered, the 会销 one salesperson runs and the 定制
+  built for one party, and the ERP has no field saying which is which. `PrivateLineRules`
+  reads the name for the words `data/private-lines.json` lists (包团, 会销, 定制, 包机, 团建,
+  考察, 独立成团), and the ERP's `saleType` ahead of the name once the ERP carries it. A private
+  line is not a search result and not in the boot listing snapshot; it opens by its id and by
+  its full name, and its record then carries `line_type` so the model says what it is.
 - `api/tags.py`: `normalize`, the ERP's free-text 行程标签 as the attributes an advisor filters
   on — `destinations`, `shopping` (`none` / `some` / `unknown`), `hotel_grade`, `family`,
   `departure_cities`, `direct_flight`, `inclusions`, `budget`. A 线路 carries some fifty tags
@@ -377,6 +384,9 @@ The filter keys the model writes into `filters.attributes` on every search:
   from the itinerary attachment and the `periodPriceTags` budget band. There is no
   destination, hotel, vehicle, shopping or child-age *field*, because the ERP has none; those
   are tags, and `api/tags.py` is what reads them.
+- `data/private-lines.json`: the words a 线路 not on general sale carries in its name, and
+  the `saleType` values that mean public once the ERP sends the field; `api/private_lines.py`
+  reads it.
 - `data/tag-rules.json`: the controlled vocabulary those tags are normalised with, one list
   of rules per attribute. The destinations are the agency's own catalog — Europe country by
   country off the attractions the extraction writes down (埃菲尔铁塔, 罗马, 琉森, 新天鹅堡,
