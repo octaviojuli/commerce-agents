@@ -142,11 +142,12 @@ export default function HoldPanel({
   const index = productIndex ?? catalog;
   const { seconds, byProduct } = useHoldClock(cart);
   const items = cart?.items ?? [];
-  const people = cart?.item_count ?? 0;
+  // The header counts the lines this panel lists and nothing else: a head count read off the
+  // cart payload stands there before the lines it belongs to have loaded.
   return (
     <BagPanel
       title="占位"
-      count={`${items.length} 个团期 · ${people} 人`}
+      count={`${items.length} 个团期`}
       isEmpty={items.length === 0}
       empty={
         <>

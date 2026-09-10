@@ -18,11 +18,12 @@ import {
   routeSpecs,
   routeTags,
   tradePerHead,
+  tradePriceLabel,
 } from "@/lib/format";
 import type { Product, ProductsPayload } from "@/lib/types";
 import { MismatchNote, SeatsPill, SkeletonCard, SpecGrid, StatusPill, Tag } from "./shared";
 
-/** A route: what the ERP's catalog says about it, its tags, and its 起价. */
+/** A route: what the ERP's catalog says about it, its tags, and its 同业起价. */
 function RouteCard({ product }: { product: Product }) {
   const attrs = product.attributes ?? {};
   const tags = routeTags(product);
@@ -51,10 +52,12 @@ function RouteCard({ product }: { product: Product }) {
       {soldOut || product.price > 0 ? (
         <div className="mt-auto flex items-end justify-between gap-2 pt-1">
           <span className="text-[12px] text-(--ink-soft)">{soldOut ? "窗口内无余位" : ""}</span>
-          {/* A route the window never priced carries no 起价, and says nothing rather than 0. */}
+          {/* The cheapest 同业价 the window quoted, which is what this route costs the
+              agency; the catalog states no 市场价 起价, so nothing stands beside it. A route
+              the window never priced carries none at all, and says nothing rather than 0. */}
           {product.price > 0 ? (
             <span className="whitespace-nowrap text-right">
-              <span className="tg-label mr-1">起价</span>
+              <span className="tg-label mr-1">同业起价</span>
               <span className="tg-num text-[18px] font-bold text-(--accent)">
                 {formatYuan(product.price)}
               </span>
@@ -73,7 +76,7 @@ function DepartureCard({ product }: { product: Product }) {
   const quote = partyQuote(product);
   const trade = tradePerHead(product);
   const market = marketPerHead(product);
-  const source = quoteSourceText(attrs.quote_source);
+  const source = quoteSourceText(product);
   return (
     <>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -83,11 +86,12 @@ function DepartureCard({ product }: { product: Product }) {
       </div>
       <SpecGrid specs={departureSpecs(product)} cols={1} />
       <div className="mt-auto flex flex-col gap-1 pt-1">
-        {/* Both of the ERP's prices, each named: the 同业价 the order is booked at, and the
-            市场价 the customer is shown. A 团期 the ERP has only listed has no 同业价 yet. */}
+        {/* Both of the ERP's prices, each named: the price the order is booked at, which is
+            the 同业价 unless the ERP answered with its 市场价 and said so, and the 市场价 the
+            customer is shown. A 团期 the ERP has only listed has no quote of its own yet. */}
         {trade ? (
           <span className="tg-num text-[12.5px] text-(--ink-2)">
-            <span className="tg-label mr-1">同业价</span>
+            <span className="tg-label mr-1">{tradePriceLabel(product)}</span>
             {trade}
           </span>
         ) : attrs.quote_source === "list" ? (

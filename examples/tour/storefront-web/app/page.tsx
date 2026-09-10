@@ -10,19 +10,19 @@ import HoldBar from "@/components/HoldBar";
 import HoldPanel from "@/components/HoldPanel";
 import HomeView from "@/components/views/HomeView";
 import { api, UNREACHABLE } from "@/lib/api";
+import { ASSISTANT, BRAND } from "@/lib/brand";
 import { TOUR_COPY } from "@/lib/copy";
 import { formatYuan } from "@/lib/format";
 import type { CartPayload } from "@/lib/types";
 
-const ASSISTANT = "选团助手";
-
+/** The agency's own name, which `lib/brand.ts` takes from the deployment. */
 function Wordmark() {
   return (
     <span className="pr-1 text-[17px] font-semibold tracking-[-0.01em] text-(--ink)">
       <span aria-hidden className="mr-1.5 text-[13px] text-(--accent)">
         ◆
       </span>
-      ACME 旅行社
+      {BRAND}
     </span>
   );
 }
