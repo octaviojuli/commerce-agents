@@ -243,7 +243,7 @@ Single prompts worth trying after those turns:
   its full name, and its record then carries `line_type` so the model says what it is.
 - `api/tags.py`: `normalize`, the ERP's free-text 行程标签 as the attributes an advisor filters
   on — `destinations`, `shopping` (`none` / `some` / `unknown`), `hotel_grade`, `family`,
-  `departure_cities`, `direct_flight`, `inclusions`, `budget`. A 线路 carries some fifty tags
+  `departure_cities`, `direct_flight`, `inclusions`, `budget`, `region`. A 线路 carries some fifty tags
   the ERP auto-extracted from its itinerary attachment (斯里兰卡, 上海出发, 网评5钻酒店,
   纯玩无购物, 含签证, and forty attraction names), written in whatever words the extractor
   found and carrying its mistakes, so the facets are evidence and not a specification: an
@@ -428,6 +428,10 @@ The filter keys the model writes into `filters.attributes` on every search:
 | `hotel_level` | 四钻, 五钻; matched against the normalised `hotel_grade`, in every spelling the ERP's editors use (五钻, 5钻, 五星, 5星, 4+5钻) |
 | `departure_city` | the city the group leaves from, against the tags (上海出发, 昆明直飞) and the ERP's own `departCityName`; it is not relaxed, because a customer cannot fly from a city the line does not leave |
 | `family` | `yes` sorts the 线路 whose tags claim 亲子 to the front of the shortlist and drops nothing, because a family will take a line that never wrote the word down |
+| `region` | a 线路系 from `tag-rules.json`'s region vocabulary (德法意瑞, 西欧多国, 英爱, 西葡, 北欧, 东欧巴尔干, 意大利一地 …), matched either way round against the line's `region`; a line filed nowhere is not admitted |
+| `price_max` | a ceiling on the 起价 in yuan; a 起价 the ERP has not published (0) is not over it |
+
+A search that matches more lines than it may show is ranked, not cut in the catalog's order: a 团期 the party fits into first, then the nearest to the middle of the window in three-day buckets, then 已成团, then the destination written in the name, then a published and lower 起价; at most two lines of one 线路系 take the cut before the rest of the ranking fills it. Every result carries `catalog_matches`, the number the cut came from. Above six matches the executor appends a 目录概览 to the tool result — the total and the matched lines grouped by 线路系, 出发城市, 天数, 起价 and 成团, each value but the last one the model sends back as a filter — and the model is told to state the total, ask one narrowing question with those values as chips, and present cards only once the advisor has narrowed.
 
 ## Data
 
