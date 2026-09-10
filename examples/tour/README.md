@@ -272,10 +272,19 @@ the party needs is 未发布 and there is no total), the bag counts each 预留
 down and flips to 已过期 at zero, and `present_shortlist`, `present_guide` and `checkout`
 each have a card. Its `showcase` page renders every card from a snapshot of one advisor
 search, which `api/tests/test_showcase.py` holds to the live records.
+The page before it is the login (`components/LoginView.tsx`, `lib/auth.ts`): the advisor's own
+ERP 手机号 and 密码, which `POST /api/login` signs in and answers with the session it started.
+The browser remembers that session id and nothing else, so a reload asks `GET /api/advisor`
+whether it is still an advisor's before it resumes anything; a `logged_in: false`, or a 401 from
+any other request, drops the id and puts the login screen back up with 登录已过期 on it. 退出登录
+in the app bar is `POST /api/logout`. The app bar carries the advisor's name and the 门店 the
+ERP gave them, which is where the greeting's eyebrow used to say it.
 Its 历史会话 drawer (`components/SessionPanel.tsx`, `lib/sessions.ts`) lists the advisor's
 earlier conversations from `GET /api/sessions`, reopens one by sending that session's id
 with the stored transcript replayed above the live one, and remembers the last session per
-browser, reopening it when the advisor's own list still carries it.
+browser, reopening it when the advisor's own list still carries it. 新会话 asks
+`POST /api/sessions/new` for another conversation for the advisor already signed in, and falls
+back to `POST /api/session` where that route is absent, which is the deployment on the fixtures.
 
 The filter keys the model writes into `filters.attributes` on every search:
 
