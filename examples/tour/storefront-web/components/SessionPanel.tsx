@@ -137,6 +137,11 @@ export function SessionDrawer({
               这一条回复结束后可以换会话。
             </p>
           ) : null}
+          {session.startError ? (
+            <p role="alert" className="mt-2 text-[12px] leading-snug text-(--danger)">
+              {session.startError}
+            </p>
+          ) : null}
         </div>
         <div className="panel-scroll min-h-0 flex-1 overflow-y-auto px-2.5 py-2.5">
           {session.sessions === null ? (

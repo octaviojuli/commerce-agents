@@ -66,13 +66,13 @@ function DestinationRow({ destinations }: { destinations: string[] }) {
   );
 }
 
-export default function HomeView({ advisorName, store }: { advisorName: string; store?: string }) {
+/** The advisor's own name greets them; the 门店 they book through is in the app bar. */
+export default function HomeView({ advisorName }: { advisorName: string }) {
   const catalog = useCatalogIndex(fetchProducts);
   const destinations = catalogDestinations(Object.values(catalog));
   return (
     <div className="flex flex-col gap-5">
       <Greeting
-        eyebrow={store}
         title={
           <h1 className="text-[30px] font-semibold leading-tight tracking-[-0.02em] text-(--ink) sm:text-[38px]">
             {advisorName}，这单客人想去哪儿？
