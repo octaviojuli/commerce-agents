@@ -29,7 +29,7 @@ from demo_common import (
 )
 from shopping_agent_runtime import ShoppingAgent
 
-from .agent_config import build_shopping_config
+from .agent_config import brand_name, build_shopping_config
 from .erp_client import ErpClient
 from .http_erp import HttpErpClient
 from .mock_erp import MockErpClient
@@ -37,6 +37,9 @@ from .shortlist import build_shortlist_extension
 from .tour_backend import DATA_DIR, TourBackend, TourToolExecutor, first_advisor_mobile
 
 load_demo_env(DATA_DIR.parent)
+
+# The 同行 customer the fixtures book for; a live deployment names its own by 客户编码.
+MOCK_CUSTOMER_ID = 4101
 
 
 def build_erp() -> ErpClient:
@@ -53,25 +56,36 @@ def build_erp() -> ErpClient:
 
 
 erp = build_erp()
-# One 同行 customer per deployment, and the advisor's own mobile as every order's contact;
-# the mock knows only its own customers.json, so TOUR_ERP_CUSTOMER_ID applies to the real ERP.
+# Whether the ERP behind the seam is the agency's own. Everything that is a fixture in the
+# demo and the deployment's own against a real ERP hangs off this one line: the advisor's
+# identity and department come from the ERP login rather than from users.json, the 同行
+# customer is resolved from TOUR_ERP_CUSTOMER_CODE (the ERP's csCode) instead of being an id
+# in the environment, an order is written through the 门店 TOUR_ERP_STORE_NAME names, the
+# store's name is TOUR_BRAND_NAME, no memory is seeded, and the policy tool is not registered,
+# because the agency's rules are in a knowledge base this deployment does not read.
 # TOUR_ERP_ALLOW_PAST lists departures that already left, for a beta with no future ones.
+live = isinstance(erp, HttpErpClient)
 backend = TourBackend(
     erp,
-    customer_id=int(os.environ.get("TOUR_ERP_CUSTOMER_ID", "4101"))
-    if isinstance(erp, HttpErpClient)
-    else 4101,
+    customer_id=0 if live else MOCK_CUSTOMER_ID,
+    customer_code=os.environ.get("TOUR_ERP_CUSTOMER_CODE", "").strip(),
     contact_mobile=os.environ.get("TOUR_ERP_MOBILE") or first_advisor_mobile(),
     allow_past=os.environ.get("TOUR_ERP_ALLOW_PAST") == "1",
+    live=live,
+    store_name=brand_name() if live else "",
+    order_store_name=os.environ.get("TOUR_ERP_STORE_NAME", "").strip(),
 )
 agent = ShoppingAgent(
     backend=backend,
     skills_dir=REPO_ROOT / "shopping-agent" / "skills",
-    config=build_shopping_config(),
+    config=build_shopping_config(live=live),
     memory_store=InMemoryMemoryStore(),
     extra_presentation_tools=[build_shortlist_extension()],
     executor_class=TourToolExecutor,
 )
+# The seeded habits are this example's own invention, so a live deployment starts with an
+# empty memory and the advisor's own facts are the ones the conversation extracts.
+MEMORY_SEED = DATA_DIR / ("memory-seed-empty.json" if live else "memory-seed.json")
 
 
 def holds_payload(record: SessionRecord) -> dict:
@@ -96,7 +110,7 @@ host = build_storefront_host(
     example_root=DATA_DIR.parent,
     backend=backend,
     agent=agent,
-    memory_seeder=MemorySeeder(DATA_DIR / "memory-seed.json"),
+    memory_seeder=MemorySeeder(MEMORY_SEED),
     cart_extras=holds_payload,
 )
 app = host.app

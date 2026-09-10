@@ -10,8 +10,9 @@
  * tags and features its editors wrote and the attributes `api/tags.py` normalised the ERP's
  * itinerary tags into (`destination`, `shopping`, `hotel_grade`, `family`, `departure_cities`,
  * `inclusions`, `budget`), and a 团期 carries its 团号, 余位, 成团人数, the 同业价
- * this party was quoted at (`adult_price`, `party_quote_total`) and the 市场价 beside it
- * (`market_adult_price`), which is the customer's own price. A route's 起价 is the cheapest 同业价
+ * this party was quoted at (`adult_price`, `party_quote_total`, under the ERP's own
+ * `price_type`) and the 市场价 beside it (`market_adult_price`), which is the customer's own
+ * price. A route's 起价 is the cheapest 同业价
  * in that window and a 团期's 报价 is made for that party, so both are a snapshot of that one read.
  * `api/tests/test_showcase.py` replays it and holds these literals to it, on a backend pinned to
  * `data/routes.json`'s `dates_anchored_to` (2026-09-06): `data/departures.json` shifts its dates
@@ -146,7 +147,8 @@ const DEPARTURE_1007: Product = {
     market_child_price: "4980",
     party_quote_total: "25720",
     quote_party: "2大2小",
-    quote_source: "customer"
+    quote_source: "customer",
+    price_type: "同行价"
   },
   in_stock: true,
   short_description: "余位 4/6，已成团，同业价 2大2小合计 25720 元（市场价成人 7880 元）",
@@ -180,7 +182,8 @@ const DEPARTURE_1014: Product = {
     market_child_price: "4980",
     party_quote_total: "25720",
     quote_party: "2大2小",
-    quote_source: "customer"
+    quote_source: "customer",
+    price_type: "同行价"
   },
   in_stock: true,
   short_description: "余位 5/6，待成团，同业价 2大2小合计 25720 元（市场价成人 7880 元）",
@@ -214,7 +217,8 @@ const DEPARTURE_1021: Product = {
     market_child_price: "4980",
     party_quote_total: "25120",
     quote_party: "2大2小",
-    quote_source: "customer"
+    quote_source: "customer",
+    price_type: "同行价"
   },
   in_stock: true,
   short_description: "余位 5/6，待成团，同业价 2大2小合计 25120 元（市场价成人 7580 元）",

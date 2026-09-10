@@ -83,8 +83,29 @@ singleRoomDiffCount, storeId?, storeName?, contactName, contactMobile, remark?}`
   department alone, so an order written after a switch does not come back in it. A known gap:
   the cart reads each order by id, which does answer, and the advisor sees the rest in the
   ERP.
-- **One customer per deployment for now.** `TOUR_ERP_CUSTOMER_ID` names the 同行 customer
-  every quote and order is made for; picking a customer in conversation comes later.
+- **One customer per deployment for now, named by its code.** `TOUR_ERP_CUSTOMER_CODE` is the
+  customer's `csCode` (`HS00994`), and `load_listings` resolves it through `customer/list` at
+  boot to exactly one `CustomerRecord`; picking a customer in conversation comes later. A code
+  that is unset, unknown, shared by several rows or unreadable leaves the deployment with no
+  customer: the error is logged at boot, the reads all still answer, `order/price` is not
+  called at all so every record falls back to the departure's 市场价 (`quote_source=list`), and
+  a write is refused with `未配置下单客户（TOUR_ERP_CUSTOMER_CODE）`. The internal `customerId`
+  is not a deployment setting: an id typed into an environment file names a different customer
+  on the next environment, and the code does not.
+- **A 同行 order needs a 门店, and it is the deployment's.** `TOUR_ERP_STORE_NAME` is the
+  `storeName` every order carries; unset, the write is refused with
+  `未配置下单门店（TOUR_ERP_STORE_NAME）` rather than falling back to anything. `TOUR_BRAND_NAME`
+  and `TOUR_ASSISTANT_NAME` are what the agency and the assistant are called.
+- **The advisor's identity comes from the login.** `userInfo.userName` is the advisor's name
+  and `userInfo.companyName` the department the login landed in; `companies` is how many the
+  account reads across. Against a live ERP those three are the whole profile the model is
+  handed — there are no habits and no 门店 preference — and no memory is seeded, because a
+  seeded habit is one the advisor never wrote.
+- **政策 are not answered here.** The agency keeps 退改, 儿童价, 成团, 定金 and 发票 rules in its
+  own knowledge base, and this API reads none of it, so `search_policies` is not registered
+  against a live ERP (`enable_policies=False`) and the search notes tell the model to say the
+  rule has to come from the 门店 or the ERP. A rule stated from memory is the one mistake an
+  advisor cannot catch.
 - **The customer book is one department's, and not always the login one's.** `customer/list`
   answers for the token's department alone, and in production the department the login lands
   in keeps no customers at all. So `search_customers` asks on the login token first and, while
@@ -104,8 +125,15 @@ singleRoomDiffCount, storeId?, storeName?, contactName, contactMobile, remark?}`
   the vocabulary in `data/tag-rules.json`, and the backend filters on those. `periodTags` and
   `periodPriceTags` carry a budget band on a few routes (预算约9999—1万元) and
   `periodHolidayTags` is empty; `RouteRecord` keeps `itineraryTags` as `itinerary_tags` and
-  `periodPriceTags` as `price_tags`, and a row without either maps to an empty tuple.
-- **A search reads the window's 团期 once, not each route's.** `period/list` takes no route
+  `periodPriceTags` as `price_tags`, and a row without either maps to an empty tuple. The
+  vocabulary is the production catalog's own: over a whole `route/list` of 269 线路, 232 carry
+  the extraction and the destination rules place 231 of those. Because a rule matches by
+  substring, a place name that sits inside another place's name goes to whichever rule is
+  listed first — 罗马尼亚 and 布加勒斯特 above 罗马 and 加勒, 都柏林 above 柏林, 菲斯特 above
+  菲斯, 马拉喀什 above 喀什 — and a tag naming a dish or a square is a negative, because
+  土耳其烤肉卷 is a meal on 65 European lines and 西班牙广场 is in Rome.
+- **A search reads the window's 团期 once, not each route's** (`WindowReader.list_window`, the
+  one call beside the eight). `period/list` takes no route
   id, so weighing every candidate 线路 against the window would cost a call apiece — and the
   candidates are the window's whole catalog whenever the destination is written only in the
   tags. The backend reads `period/list` for the window alone, pages it, groups it by `routeId`
@@ -148,6 +176,20 @@ singleRoomDiffCount, storeId?, storeName?, contactName, contactMobile, remark?}`
 - The department the login lands in keeps no customers and sells no 团期 inside the window. A
   keyword the advisor searches customers by is therefore answered by another department, and a
   quote is always a switch away.
+- **A 0 in a price row is 未发布, not free.** Of twelve `order/price` reads across five
+  departments, seven answered `childPrice: 0`, nine `elderPrice: 0` and eight
+  `singleRoomDiff: 0` — the department has published an adult fare and nothing else. So a fare
+  the party actually needs at 0 makes the record `quote_source=partial` with no
+  `party_quote_total`, and the card says `儿童价未发布，合计待定`; an adults-only party is
+  unaffected by the same row. `priceType` is worth reading and carrying: the same endpoint
+  answers 同行价 on some departures and 市场价 on others.
+- **Three fields a beta catalog leaves at 0 or wrong.** In one 680-row `period/list`: 32 rows
+  carry `routeId: 0`, which belongs to no 线路 that can be named, priced or booked, so those
+  rows are dropped from a window read and id 0 is never looked up; 2 rows carry
+  `minGroupSize: 0` with `confirmCount: 0`, which states no 最低成团人数 rather than needing
+  nobody, so the 团期 is 待成团 and not 已成团; and 162 rows have a `days` that is not
+  `returnDate - departDate + 1`, so a 线路's length is the record's own `days` and is never
+  counted off the dates.
 - `GET /route/list` applies `departDateStart`/`departDateEnd` loosely: a week's query answers
   with 线路 that have no 团期 inside it at all — five 斯里兰卡 lines for 10-01..10-07, of which
   `period/list` shows two departing in October. The window on a route search is therefore a
