@@ -38,6 +38,18 @@ export function dateLabel(iso?: string | null): string | null {
   return `${ymd[1]}/${ymd[2]} ${weekday}`;
 }
 
+/**
+ * "2026年9月10日" — the day a customer's page says a plan was made on, read off the timestamp's
+ * own date so neither the reader's clock nor the server's moves it.
+ */
+export function fullDateLabel(iso: string): string {
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (ymd) return `${Number(ymd[1])}年${Number(ymd[2])}月${Number(ymd[3])}日`;
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  return `${at.getFullYear()}年${at.getMonth() + 1}月${at.getDate()}日`;
+}
+
 function clock(at: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${pad(at.getHours())}:${pad(at.getMinutes())}`;
@@ -101,12 +113,17 @@ const QUOTE_SOURCE: Record<string, string> = {
  * the 市场价, so the note under the total names that price rather than the settlement one.
  * A word this side does not know is not shown at all, because the keys are English.
  */
+export function quoteSourceLabel(source?: string, priceType?: string): string | null {
+  // The 定制方案 card reads the same two keys off a plan's reference price rather than a record.
+  if (!source) return null;
+  if (source === "customer") return priceType === "市场价" ? "按市场价" : "按同业价";
+  return QUOTE_SOURCE[source] ?? null;
+}
+
+/** The same words for a 团期, off the two keys the record carries them in. */
 export function quoteSourceText(product: Product): string | null {
   const attrs = product.attributes ?? {};
-  const source = attrs.quote_source;
-  if (!source) return null;
-  if (source === "customer") return attrs.price_type === "市场价" ? "按市场价" : "按同业价";
-  return QUOTE_SOURCE[source] ?? null;
+  return quoteSourceLabel(attrs.quote_source, attrs.price_type);
 }
 
 /**
@@ -268,4 +285,58 @@ export function seatsTone(product: Product): "gone" | "tight" | "open" | null {
   if (!Number.isFinite(left)) return null;
   if (left <= 0) return "gone";
   return left <= 2 || product.in_stock === false ? "tight" : "open";
+}
+
+const DIGITS = "零一二三四五六七八九";
+
+/** "十五" → 15, over the range a 行程 is written in: 一 to 三十. */
+function chineseNumber(text: string): number | null {
+  const digit = (char: string) => DIGITS.indexOf(char);
+  const tens = text.indexOf("十");
+  if (tens < 0) {
+    const value = digit(text);
+    return value > 0 ? value : null;
+  }
+  const high = tens === 0 ? 1 : digit(text.slice(0, tens));
+  const low = tens === text.length - 1 ? 0 : digit(text.slice(tens + 1));
+  if (high <= 0 || low < 0) return null;
+  return high * 10 + low;
+}
+
+const DAY_MARKERS: [RegExp, (match: string) => number | null][] = [
+  [/第\s*(\d+)\s*天/, (match) => Number(match)],
+  [new RegExp(`第\\s*([${DIGITS.slice(1)}十]+)\\s*天`), chineseNumber],
+  [/\bD\s*(\d+)/i, (match) => Number(match)],
+];
+
+/**
+ * The day a 行程 line is written for: "第 5 天", "第五天" and "D5" all read as 5. A label with
+ * no marker in it has none, and the card falls back to the day's place in the list.
+ */
+export function planDayNumber(label: string): number | null {
+  for (const [pattern, read] of DAY_MARKERS) {
+    const match = pattern.exec(label);
+    if (!match) continue;
+    const value = read(match[1]);
+    if (value != null && Number.isFinite(value) && value > 0 && value <= 60) return value;
+  }
+  return null;
+}
+
+/**
+ * How many 天 a free-text date range covers, counting both ends: "2026-10-14 至 2026-10-23" is
+ * 10 天, and so is "10月14日–10月23日". A range this side cannot read — one date, a month name,
+ * a spell of prose — sizes nothing, and the card streams without a day count.
+ */
+export function planDaySpan(travelDates?: string): number | null {
+  if (!travelDates) return null;
+  const inRange = (days: number) => (days >= 1 && days <= 60 ? days : null);
+  const iso = travelDates.match(/\d{4}-\d{2}-\d{2}/g);
+  if (iso && iso.length >= 2) {
+    return inRange(Math.round((Date.parse(iso[1]) - Date.parse(iso[0])) / 86_400_000) + 1);
+  }
+  const pair = /(\d{1,2})\s*日?\s*[–—\-~至到]\s*(?:\d{1,2}\s*月\s*)?(\d{1,2})\s*日?/.exec(
+    travelDates,
+  );
+  return pair ? inRange(Number(pair[2]) - Number(pair[1]) + 1) : null;
 }

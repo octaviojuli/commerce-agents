@@ -44,6 +44,15 @@ const SECTIONS: { component: string; id?: string; payload: unknown; status?: UIS
     payload: SHOWCASE.shortlist_streaming,
     status: "partial",
   },
+  // One version of a 定制方案: what it changed, what the 计调 still has to price, and the link.
+  { component: "itinerary", payload: SHOWCASE.itinerary },
+  // The same call still streaming: the days written so far, with the rest of them sized.
+  {
+    component: "itinerary",
+    id: "itinerary-streaming",
+    payload: SHOWCASE.itinerary_streaming,
+    status: "partial",
+  },
   { component: "comparison", payload: SHOWCASE.comparison },
   { component: "plan", payload: SHOWCASE.plan },
   { component: "guide", payload: SHOWCASE.guide },

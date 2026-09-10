@@ -12,6 +12,7 @@ import type {
   CheckoutPayload,
   ComparisonPayload,
   GuidePayload,
+  ItineraryPayload,
   OrderStatusPayload,
   PlanPayload,
   ProductsPayload,
@@ -20,6 +21,7 @@ import type {
 import BookingStatusCard from "./BookingStatusCard";
 import ComparisonSpread from "./ComparisonSpread";
 import HistoryMark from "./HistoryMark";
+import ItineraryTimeline from "./ItineraryTimeline";
 import PlanChecklist from "./PlanChecklist";
 import PolicyCard from "./PolicyCard";
 import QuoteSheet from "./QuoteSheet";
@@ -36,6 +38,8 @@ export default function GenerativeBlock({ block, status }: GenerativeBlockProps)
       return <ShortlistCard payload={payload as ShortlistPayload} partial={partial} />;
     case "comparison":
       return <ComparisonSpread payload={payload as ComparisonPayload} partial={partial} />;
+    case "itinerary":
+      return <ItineraryTimeline payload={payload as ItineraryPayload} partial={partial} />;
     case "plan":
       return <PlanChecklist payload={payload as PlanPayload} partial={partial} />;
     case "guide":
