@@ -45,7 +45,7 @@ from demo_common import (
 )
 from shopping_agent_runtime import ShoppingAgent
 
-from .advisors import AdvisorLogin, AdvisorRegistry, FixtureAdvisorRegistry
+from .advisors import NEED_LOGIN, AdvisorLogin, AdvisorRegistry, FixtureAdvisorRegistry
 from .agent_config import brand_name, build_shopping_config
 from .erp_client import ErpAuth, ErpClient, ErpError, ErpThrottled
 from .http_erp import HttpErpClient
@@ -271,6 +271,19 @@ async def current_advisor(record: host.CurrentSession) -> dict:
             "departments": 0,
         }
     return {"logged_in": True, **advisor_payload(login)}
+
+
+@app.post("/api/sessions/new")
+async def new_session(record: host.CurrentSession) -> dict:
+    """Another conversation for the advisor already signed in. The credentials are not in the
+    browser to start one with, and the demo's own start route names a principal, so a 新会话
+    is asked for on the session the advisor holds and opened under the same ERP employee. A
+    login that is gone — a restart, its eight hours, a logout — is a 401 in the same words the
+    conversation uses, and the workbench goes back to its sign-in screen."""
+    if registry.get(record.user_id) is None:
+        raise HTTPException(status_code=401, detail=NEED_LOGIN)
+    fresh = host.sessions.start(record.user_id)
+    return {"session_id": fresh.session_id}
 
 
 @app.get("/api/sessions")

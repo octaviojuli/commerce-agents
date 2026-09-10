@@ -71,6 +71,7 @@ writes one line — `advisor login ok user=erp-6`, or `advisor login failed stat
     POST /api/login    {mobile, password} → {session_id, advisor{user_id, name, department, departments}}
     GET  /api/advisor   whether that advisor still holds a token, and who the ERP says they are
     POST /api/logout    drop the token; the conversation stays
+    POST /api/sessions/new  another conversation for the same advisor → {session_id}; 401 once the token is gone
 
 A refusal is the ERP's own: 401 with its Chinese message for a wrong password, 429 for the
 throttle it owns — ten failures per mobile and IP lock the account for fifteen minutes, so
@@ -343,8 +344,8 @@ Its 历史会话 drawer (`components/SessionPanel.tsx`, `lib/sessions.ts`) lists
 earlier conversations from `GET /api/sessions`, reopens one by sending that session's id
 with the stored transcript replayed above the live one, and remembers the last session per
 browser, reopening it when the advisor's own list still carries it. 新会话 asks
-`POST /api/sessions/new` for another conversation for the advisor already signed in, and falls
-back to `POST /api/session` where that route is absent, which is the deployment on the fixtures.
+`POST /api/sessions/new` for another conversation for the advisor already signed in; a 401
+from it is a login that is over, and puts the sign-in screen back up.
 
 The filter keys the model writes into `filters.attributes` on every search:
 

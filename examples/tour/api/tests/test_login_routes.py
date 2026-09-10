@@ -80,6 +80,22 @@ def test_a_logout_drops_the_token_and_the_session_stays(main, client, signed_out
     assert main.host.sessions.require(headers[SESSION_HEADER]).user_id == ADVISOR
 
 
+def test_a_new_session_is_the_same_advisors(main, client, signed_out):
+    headers = {SESSION_HEADER: login(client).json()["session_id"]}
+    fresh = client.post("/api/sessions/new", headers=headers).json()["session_id"]
+    assert fresh != headers[SESSION_HEADER]
+    assert main.host.sessions.require(fresh).user_id == ADVISOR
+    # The login is the advisor's, not the session's: the new one is signed in as well.
+    assert client.get("/api/advisor", headers={SESSION_HEADER: fresh}).json()["logged_in"]
+
+
+def test_a_new_session_needs_a_login_that_still_stands(client, signed_out):
+    headers = {SESSION_HEADER: login(client).json()["session_id"]}
+    client.post("/api/logout", headers=headers)
+    refused = client.post("/api/sessions/new", headers=headers)
+    assert refused.status_code == 401 and refused.json()["detail"] == NEED_LOGIN
+
+
 def test_a_session_no_login_stands_behind_is_not_signed_in(client):
     headers = {SESSION_HEADER: client.post("/api/session", json={}).json()["session_id"]}
     assert client.get("/api/advisor", headers=headers).json()["logged_in"] is False
