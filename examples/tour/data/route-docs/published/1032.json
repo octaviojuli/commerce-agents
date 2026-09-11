@@ -1,0 +1,323 @@
+{
+  "schema_version": "1.0",
+  "route_id": 1032,
+  "route_code": "KNJD",
+  "name": "喀纳斯经典 6 日中巴团",
+  "department": "ACME 旅行社 新疆部",
+  "sale_type": "公开",
+  "summary": {
+    "days": 6,
+    "nights": 5,
+    "depart_city": "乌鲁木齐",
+    "countries": [
+      "新疆"
+    ],
+    "region": "喀纳斯"
+  },
+  "cover": {
+    "airline": "",
+    "hotel_standard": "全程当地三钻酒店",
+    "meal_standard": "含 5 早 4 正",
+    "highlights": [
+      "北疆入门价位团，景点齐全、节奏平缓，含 1 个特产购物店。",
+      "喀纳斯湖",
+      "禾木村",
+      "五彩滩"
+    ],
+    "fields": {
+      "交通": "旅游用车"
+    }
+  },
+  "transport": [],
+  "days": [
+    {
+      "day": 1,
+      "title": "乌鲁木齐",
+      "places": [
+        "乌鲁木齐"
+      ],
+      "distances_km": [],
+      "transport": "",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "不含",
+          "included": false
+        },
+        "lunch": {
+          "text": "不含",
+          "included": false
+        },
+        "dinner": {
+          "text": "不含",
+          "included": false
+        }
+      },
+      "hotel": {
+        "name": "乌鲁木齐 · 当地酒店",
+        "or_similar": true,
+        "grade": "三钻"
+      },
+      "text": "乌鲁木齐集合，接站后送酒店办理入住，晚上开行前说明会。"
+    },
+    {
+      "day": 2,
+      "title": "乌鲁木齐—喀纳斯湖",
+      "places": [
+        "乌鲁木齐",
+        "喀纳斯湖"
+      ],
+      "distances_km": [],
+      "transport": "",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "喀纳斯湖",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "喀纳斯湖 · 当地酒店",
+        "or_similar": true,
+        "grade": "三钻"
+      },
+      "text": "早餐后前往喀纳斯湖，全天在喀纳斯湖游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 3,
+      "title": "喀纳斯湖—禾木村",
+      "places": [
+        "喀纳斯湖",
+        "禾木村"
+      ],
+      "distances_km": [],
+      "transport": "",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "喀纳斯湖",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "禾木村",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "禾木村 · 当地酒店",
+        "or_similar": true,
+        "grade": "三钻"
+      },
+      "text": "早餐后前往禾木村，全天在禾木村游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 4,
+      "title": "禾木村—五彩滩",
+      "places": [
+        "禾木村",
+        "五彩滩"
+      ],
+      "distances_km": [],
+      "transport": "",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "禾木村",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "五彩滩",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "五彩滩 · 当地酒店",
+        "or_similar": true,
+        "grade": "三钻"
+      },
+      "text": "早餐后前往五彩滩，全天在五彩滩游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 5,
+      "title": "五彩滩—乌尔禾魔鬼城",
+      "places": [
+        "五彩滩",
+        "乌尔禾魔鬼城"
+      ],
+      "distances_km": [],
+      "transport": "",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "五彩滩",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "乌尔禾魔鬼城",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "北屯特产店",
+          "kind": "购物",
+          "duration": "60 分钟",
+          "ticket_included": null
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "乌尔禾魔鬼城 · 当地酒店",
+        "or_similar": true,
+        "grade": "三钻"
+      },
+      "text": "早餐后前往乌尔禾魔鬼城，全天在乌尔禾魔鬼城游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 6,
+      "title": "乌鲁木齐",
+      "places": [
+        "乌鲁木齐"
+      ],
+      "distances_km": [],
+      "transport": "",
+      "overnight": "home",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "路餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "不含",
+          "included": false
+        }
+      },
+      "hotel": null,
+      "text": "早餐后返回乌鲁木齐，送站，行程结束。"
+    }
+  ],
+  "inclusions": [
+    "行程所列景点首道门票",
+    "全程用车与司导服务",
+    "行程所列住宿，按两人一间安排",
+    "行程所列餐食",
+    "旅行社责任险"
+  ],
+  "exclusions": [
+    "往返大交通（另行报价）",
+    "单房差",
+    "个人消费与自费项目",
+    "因不可抗力产生的额外费用"
+  ],
+  "shopping": [
+    {
+      "name": "北屯特产店",
+      "day": 5,
+      "duration": "60 分钟"
+    }
+  ],
+  "optional": [],
+  "policies": {
+    "single_room": "单房差按团期公布价收取，指定单房需在报名时提出。",
+    "child": "2 岁以下不占床按儿童价，2 岁以上占床按成人价。",
+    "visa": "国内线路无需签证，请携带身份证原件；儿童携带户口本。",
+    "cancellation": "出发前 15 日以上取消退全款，14—8 日扣 30%，7 日内扣 60%。",
+    "deposit": "报名时收取每人 1000 元定金，出发前 10 日付清尾款。"
+  },
+  "notices": [
+    "行程顺序可能因天气与路况调整，景点不减少。"
+  ],
+  "source": {
+    "attachment_name": "",
+    "attachment_url": "",
+    "etag": null,
+    "bytes": 0,
+    "parsed_at": "2026-08-20T09:00:00Z",
+    "parser": "fixture"
+  },
+  "quality": {
+    "completeness": 1.0,
+    "needs_review": [],
+    "reviewed_by": "产品部 · 林薇",
+    "reviewed_at": "2026-08-20T09:00:00Z"
+  }
+}

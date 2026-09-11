@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 import pytest
 
 from shopping_agent import SearchFilters, ShoppingSessionContext
-from tour.api.mock_erp import MockErpClient, _route_record
+from tour.api.mock_erp import MockErpClient
 from tour.api.route_doc import (
     Cover,
     Day,
@@ -27,7 +27,6 @@ from tour.api.route_doc import (
 )
 from tour.api.route_docs import RouteDocStore, hotel_grade, itinerary_of, meals_included
 from tour.api.tests.test_tour_backend import TODAY, FakeClock, build
-from tour.api.tour_backend import Request, _preference_notes
 
 ROUTE = 1021  # 伊犁北疆环线 8 日纯玩小团; its tags say 纯玩无购物 and 四钻
 YILI = {"destination": "伊犁", "depart_from": "2026-10-11", "depart_to": "2026-10-20"}
@@ -155,31 +154,26 @@ async def test_a_reviewed_document_says_so(tmp_path, session):
     )
 
 
-async def test_the_document_decides_纯玩_and_the_hotel_standard_ahead_of_the_tags(
-    tmp_path, session
-):
+async def test_the_document_decides_纯玩_and_the_hotel_standard(tmp_path, session):
     """RT-1021's tags claim 纯玩无购物 and 四钻; its document lists one 购物店 and states 五钻,
-    and the document is the attachment's own word."""
+    and the document is the catalog — the tags filter nothing."""
     _write(tmp_path, "selected", _doc())
     backend = build(MockErpClient(today=TODAY, now=FakeClock()))
     backend._route_docs = RouteDocStore.load(tmp_path)
     pure = await backend.search_products(
         session, "伊犁", SearchFilters(attributes={**YILI, "no_shopping": "yes"})
     )
-    # The other 伊犁 lines make a shortlist, so nothing is relaxed and RT-1021 is simply out.
-    assert f"RT-{ROUTE}" not in [p.product_id for p in pure]
-    # The note a relaxed record would carry names the document, not the tags.
-    record = _route_record(backend.erp._routes[ROUTE])
-    stated = Request(text="伊犁", depart_from=TODAY, depart_to=TODAY, no_shopping=True)
-    assert _preference_notes(record, backend._facets(record), stated, backend._doc(record)) == [
-        "行程附件列出 1 家购物店"
-    ]
+    assert [p.product_id for p in pure] == []
+    selling = await backend.search_products(session, "伊犁", SearchFilters(attributes=dict(YILI)))
+    assert [p.product_id for p in selling] == [f"RT-{ROUTE}"]
+    assert selling[0].attributes["shopping_stops"] == "1"
+    assert selling[0].attributes["doc"] == "draft"
+    assert selling[0].labels == ["购物店1家", "五钻", "优选东航", "解析稿"]
     five = await backend.search_products(
         session, "伊犁", SearchFilters(attributes={**YILI, "hotel_level": "五钻"})
     )
-    assert f"RT-{ROUTE}" in [p.product_id for p in five if p.attributes["match"] == "exact"]
+    assert [p.product_id for p in five] == [f"RT-{ROUTE}"]
     four = await backend.search_products(
         session, "伊犁", SearchFilters(attributes={**YILI, "hotel_level": "四钻"})
     )
-    four_exact = [p.product_id for p in four if p.attributes["match"] == "exact"]
-    assert f"RT-{ROUTE}" not in four_exact
+    assert [p.product_id for p in four] == []

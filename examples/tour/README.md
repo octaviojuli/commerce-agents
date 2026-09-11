@@ -137,16 +137,17 @@ the customer said, in Chinese:
 4. 就这条线给客人做个定制方案，先把逐日行程摆出来。
 5. 第 5 天多住一晚，其余不动。
 
-The first turn is one `search_products` over 10-11 to 10-20: a shortlist of 纯玩 线路 with
-their 起价 — 5,780 元 for the 8 日小团, 7,880 元 for the 10 日深度 line, 9,680 元 for the
-五钻轻奢 one — and the 天数, 住宿标准 and 车型 that separate them, all read off the 标签 and
-亮点 the ERP's editors wrote. The second turn names the 10 日深度 line, the only ten-day
-route in the catalog, and is `get_product_details` on `RT-1022`: its 团期 over the searched
-window and a week either side, each with 余位, 成团状态 and a 2大2小 total. The third turn
-is `add_to_cart` on `DP-3017`, the 10/14 团期, which still seats four; the ERP writes a 预留
-order and the reply carries the cart line counting down from thirty minutes. Asking for
-more heads than the 团期 has seats is not refused: the ERP writes a 候补 order instead, and
-its cart line says （候补） and does not count down.
+The first turn is one `search_products` over 10-11 to 10-20: the three 纯玩 线路 whose
+documents meet it, with their 起价 — 5,580 元 for the 8 日小团, 7,580 元 for the 10 日深度 line,
+9,480 元 for the 五钻轻奢 one — the 天数, 住宿标准, 购物店 and 逐日路线 that separate them, all
+read off the agency's own 线路文档, and the 团期 each sells in those dates beside them, because
+the advisor gave the customer's window. The second turn names the 10 日深度 line, the only
+ten-day route in the catalog, and is `present_departures` on `RT-1022`: its 团期 in the
+searched window, each with its weekday, whether it is 可报名, 已成团 or 满员 for this party,
+and the 同业价 per adult. The third turn is `add_to_cart` on `DP-3017`, the 10/14 团期, which
+still seats four; the ERP writes a 预留 order and the reply carries the cart line counting
+down from thirty minutes. Asking for more heads than the 团期 has seats is not refused: the
+ERP writes a 候补 order instead, and its cart line says （候补） and does not count down.
 
 The fourth turn is `present_itinerary` on the same 线路 with `DP-3017` as the baseline 团期: v1
 of a new plan, the route's ten 第N天 specs restated a sentence or two a day, the 10/14 团期's own
@@ -159,6 +160,8 @@ provider that reasons before it answers spends the same budget on the reasoning.
 
 Single prompts worth trying after those turns:
 
+- 这条线的逐日行程发我看看 — `present_route_days`: the whole 行程 of the 线路 named, day by
+  day, with the flights, the 费用包含 and the 购物店 under it.
 - 把 10/14 和 10/21 两个团做成清单发给客人 — `present_shortlist`: a card with both 团期,
   their 2大2小 totals, and a 客人链接 the advisor copies; the link's token never reaches
   the model.
@@ -220,6 +223,16 @@ Single prompts worth trying after those turns:
   reads off one ahead of the tags: the 行程, the card's 参考航班 / 购物店 / 费用包含 / 单房差
   规格, the `doc` / `shopping_stops` / `meals_included` / `doc_hotel_grade` / `flights`
   attributes, and the 纯玩 and hotel-standard filters.
+- `api/catalog.py`: `Catalog`, the reviewed documents as the catalog a search runs over.
+  `RouteFacts` is one document as a search reads it — the countries, the 线路系, the length,
+  the city it leaves from, the 酒店标准 and its 钻 grade, the 购物店 and 自费 counts, the 门票
+  and 赠送 counts, the places its days pass through, the sights it names, the cover's first
+  三 亮点, whether a reviewer signed it, and the feature words (观鲸, 一价全含, 国泰, 纯玩 …)
+  that tell one version of a trip from another — with the 起价 and the cover photo of the ERP
+  catalog row beside them. `match` is the whole filter; `chips` groups the matches by 目的地,
+  天数, 出发城市, 出发月份, 酒店标准, 纯玩, 特色 and 起价, each value one the model sends back
+  as a filter; `ambiguous` and `differences` say when a handful of matches are one trip sold
+  several ways and what tells them apart.
 - `api/itinerary_source.py`: where a 线路's day-by-day 行程 comes from. A details record carries
   行程来源 and one spec per day — the day's title, its programme cut to 200 characters, its
   住宿 and its 用餐 — for at most 20 days, and a 线路 whose days could not be read says 无 there
@@ -254,9 +267,11 @@ Single prompts worth trying after those turns:
   考察, 独立成团), and the ERP's `saleType` ahead of the name once the ERP carries it. A private
   line is not a search result and not in the boot listing snapshot; it opens by its id and by
   its full name, and its record then carries `line_type` so the model says what it is.
-- `api/tags.py`: `normalize`, the ERP's free-text 行程标签 as the attributes an advisor filters
-  on — `destinations`, `shopping` (`none` / `some` / `unknown`), `hotel_grade`, `family`,
-  `departure_cities`, `direct_flight`, `inclusions`, `budget`, `region`. A 线路 carries some fifty tags
+- `api/tags.py`: `normalize`, the ERP's free-text 行程标签 as attributes — `destinations`,
+  `shopping` (`none` / `some` / `unknown`), `hotel_grade`, `family`, `departure_cities`,
+  `direct_flight`, `inclusions`, `budget`, `region`. The search no longer reads them: what a
+  线路 contains is its document's word. They are what a details record's 规格 and the boot
+  listing snapshot are built from, for a 线路 the advisor opened or pasted. A 线路 carries some fifty tags
   the ERP auto-extracted from its itinerary attachment (斯里兰卡, 上海出发, 网评5钻酒店,
   纯玩无购物, 含签证, and forty attraction names), written in whatever words the extractor
   found and carrying its mistakes, so the facets are evidence and not a specification: an
@@ -274,23 +289,24 @@ Single prompts worth trying after those turns:
   resolved per call, with `请先登录 ERP 账号` where there is no live login and the deployment's
   own account lent to nobody. A 线路 is a family and its
   团期 are that family's variants, so search stays a shortlist of lines and the seats and
-  quotes come from one details call. The advisor's destination is matched against 线路 names
-  and against the attributes `api/tags.py` normalises a line's tags into, because the ERP
-  catalog has no destination field; the day count, 纯玩, the hotel standard and the departure
-  city are filtered on this side against those attributes for the same reason, and 亲子 orders
-  the shortlist instead of filtering it. The facets are computed once per 线路 and carried on
-  every record: a card's labels are the hotel standard, 纯玩, 亲子, the departure city and the
-  first inclusions rather than the first four raw tags, its specs carry 酒店 / 购物 / 出发城市 /
-  包含 where the tags say them, and a relaxed record's note says what the tags state
-  (`标签标注四钻，要求五钻`) or that they state nothing (`未标注五钻`). The ERP's own search
-  reads the name alone, and its editors do not write every destination into one — 欧洲 names
-  no route and 欧洲部 sells them all — so a named query that returns fewer than two routes is
-  followed by one broad read of the window, whose routes are kept when the destination is in
-  a tag, a 亮点, the selling department or the departure city, and those count as exact
-  matches; the read is cached per window, so the four relaxation steps below share it, as they
-  share the named query and each route's departure list. A route the ERP's loose date filter
-  returns with no 团期 inside the window at all is dropped from the pass, whichever pass it is,
-  because a card built from one carries no date, no seat count and no price. A quoted departure costs
+  quotes come from one details call or from the 团期卡. The search itself is the documents
+  (`api/catalog.py`) and not the ERP's catalog: the destination is matched against a line's
+  countries, its 线路系, its name, the department that sells it, the places its days pass
+  through and the sights it names, and the day count, 纯玩, the hotel standard, the departure
+  city, the 线路系 and the 起价 ceiling filter on what the document states; 亲子 orders the
+  shortlist instead of filtering it. A 线路 the agency has no document for is not searched at
+  all, and a request the documents do not meet returns nothing rather than something near it.
+  A card is the document's own fields — `route_code`, `days`, `nights`, `depart_city`,
+  `countries`, `region`, `airline`, `hotel_standard`, `meal_standard`, `shopping_stops`,
+  `optional_count`, `ticket_count`, `gift_count`, `places`, `highlights`, `doc` — with
+  `attachment` where the catalog links one, and its labels are 纯玩 or 购物店N家, the hotel
+  standard, the airline and 已复核 or 解析稿. The ERP is asked for the dynamic half alone: the
+  window's 团期 are read once for the whole search, and while the conversation has stated
+  dates every card carries the ones it sells in them as `departures`
+  (`2026-10-03:可报名|2026-10-05:已成团|2026-10-08:满员`, 截止 once the date has passed) and the
+  window as `departures_window`. The ERP catalog row behind a document is read once, for the
+  起价 and the cover photo; a matched line the process has no row for is still offered, at
+  起价未知. A quoted departure costs  because a card built from one carries no date, no seat count and no price. A quoted departure costs
   two ERP calls — its detail for the 市场价 and the seat counts, `order/price` in its own
   department for the 同业价 — so a listing prices at most six of them and a route's details at
   most twelve, nearest the middle of the window first and four at a time. A variant is priced
@@ -320,15 +336,17 @@ Single prompts worth trying after those turns:
   card is held with `route_first`, so the advisor picks off the 线路 cards and a route's 团期
   open only after that; a 团期 id and a route id the advisor pasted are not gated, and the
   record of what was presented lives on the backend, because the executor is rebuilt each turn.
-- When fewer than two 线路 are quotable, the search widens in four steps and each relaxed
-  route says in Chinese what it misses: the date window by a week (`match=adjacent_date`,
-  `无 10/3–10/8 团期，最近为 10/2`), then the day count by two either way, then the hotel
-  standard and 纯玩 (`match=similar_route`, `未标注五钻`), then the advisor's dates for the whole
-  default window, which answers a stated week the destination has no 团期 in with the nearest
-  one it does (`match=adjacent_date`, `无 10/1–10/7 团期，最近为 11/2`). Each step keeps the one
-  before it, and the note is measured against everything the advisor stated. The last step
-  spends one route query and the departure lists behind it: its broad pass is what the steps
-  above already read.
+- The two cards the documents alone answer are `api/route_days.py` and the 团期 half of
+  `api/departures.py`. `present_route_days` is one 线路's 逐日行程, whole: the heading the
+  document states, the flights of the first day that flies and of the last, every day with its
+  places, its sights and their 门票, the three meals, the night's hotel, and the 费用包含,
+  费用不含, 购物店, 自费项目, the policy sentences and the attachment's own file name under
+  them. It is refused for an id this session has not shown and for a 线路 with no document.
+  `present_departures` is the 团期卡: the ERP's own dates for one 线路 inside a window — the
+  advisor's, else the one the conversation is working in, else the default — capped at twelve
+  nearest its middle, each row its date, its weekday, 可报名 / 已成团 / 满员 / 截止 for this
+  party, and the 同业价 per adult where the ERP quoted one. Every 团期 it shows enters the
+  session's provenance and counts as presented, so a 占位 order and a 分享清单 may name it.
 - `api/store.py`: `SqliteSessionStore`, the shared `SessionStore` with its six storage
   methods over one SQLite file, and the two reads the history routes answer from —
   `summaries`, one line per conversation of one advisor, and `transcript`, its messages as
@@ -365,14 +383,18 @@ Single prompts worth trying after those turns:
   `GET /api/attachments/{product_id}` (a 线路 or one of its 团期) on the advisor's session, and
   this host reads the file and answers it under that name, with a 30 MB ceiling. The route
   record's `attachment` attribute tells the model a document exists; no card offers it unasked.
-- `api/focus.py`: `present_focus`, the 聚焦卡. A search that matched more 线路 than it may
-  show leaves an overview on the backend; the model writes one narrowing question and names
-  the dimension, and the card's chips are that overview's groups with their counts, each tap
-  sending `只看<维度>：<值>` into the conversation as the advisor's words. Up to three results
-  may stand on the card as a foothold while the match is twelve or fewer. The card is refused
-  when the last search fits a shortlist and after the advisor has narrowed once, and while the
-  overview stands and no card has asked, `TourToolExecutor` holds a `present_products` of more
-  than three picks (`FOCUS_FIRST_GATE`) the way it holds a route opened before its card.
+- `api/focus.py`: `present_focus`, the 聚焦卡. A search that matched more lines than a
+  shortlist, one that matched a handful of versions of one trip, or one that matched nothing
+  at all leaves an overview on the backend; the model writes one narrowing question and names
+  the dimension (目的地, 天数, 出发城市, 出发月份, 酒店标准, 纯玩, 特色, 起价), and the card's
+  chips are that overview's groups with their counts, each tap sending `只看<维度>：<值>` into
+  the conversation as the advisor's words. Up to three results may stand on the card as a
+  foothold while the match is twelve or fewer. The card is refused when the last search fits a
+  shortlist. Up to twelve matches the cards and the chips go together and nothing is held;
+  above twelve `TourToolExecutor` holds `present_products` (`FOCUS_FIRST_GATE`) the way it
+  holds a route opened before its card, and the card then carries the question alone. An
+  overview over versions of one trip holds nothing, because those lines are the cards the
+  question is asked over.
 - `api/shortlist.py`: `present_shortlist`, the presentation extension for the customer's list. The model names
   one to five 团期 it has seen and writes the title; the server joins each to its 线路, names
   in Chinese the ids it dropped for want of provenance, refuses the call when nothing is
@@ -417,21 +439,28 @@ Single prompts worth trying after those turns:
   403. It also puts the conversation's 预留 on every cart payload with what is left of each
   thirty-minute window. A 候补 order is not a hold and carries no countdown.
 
-`storefront-web/` is the advisor's workbench, Chinese throughout: 线路 cards read the
-trade-offs an advisor reads out off a family's attributes (`days`, `depart_city`, `tags`,
-`features`, `match`, `mismatch`), 团期 cards read a variant's (`depart_date`, `seats_left`,
+`storefront-web/` is the advisor's workbench, Chinese throughout: 线路 cards read what the
+reviewed document states about a line (`days`, `nights`, `depart_city`, `countries`, `airline`,
+`hotel_standard`, `meal_standard`, `shopping_stops`, `optional_count`, `ticket_count`,
+`gift_count`, `places`, `doc`, `match`, `mismatch`) and, on a dated search, the 团期 it sells in
+the window (`departures`, `departures_window`), 团期 cards read a variant's (`depart_date`, `seats_left`,
 `seats_total`, `group_status`, `party_quote_total`, `quote_party`) and name both of its prices
 per head, the 同业价 an order is booked at (`adult_price`, `child_price`) above the 市场价 the
 customer is shown (`market_adult_price`, `market_child_price`), with the party's total on the
 同业价 and `quote_source` saying which of the two it was made at (or `partial`, where a fare
 the party needs is 未发布 and there is no total), the bag counts each 预留
-down and flips to 已过期 at zero, and `present_focus`, `present_attachments`, `present_shortlist`,
-`present_itinerary`, `present_guide` and `checkout` each have a card. The `itinerary` card draws one version of a
+down and flips to 已过期 at zero, and `present_focus`, `present_attachments`, `present_route_days`,
+`present_departures`, `present_shortlist`, `present_itinerary`, `present_guide` and `checkout`
+each have a card. The `route_days` card draws one 线路 as its 逐日行程: every day of the
+document open at once, the 去程 and 回程 as flight strips, and the 费用包含, 费用不含, 购物店,
+自费项目 and 须知 folded under them. The `departures` card draws the 团期 one 线路 sells inside a
+window, each row its date, what it is open for and its 同业价. The `itinerary` card draws one version of a
 定制方案 — the days with what this version did to each of them, the baseline's own figures, the
 customer's link and the 计调's copy — and `app/p/[token]/page.tsx` is the customer's own page
 for the version their link names, which reads `GET /api/share/plan/{token}` and answers on it.
-Its `showcase` page renders every card from a snapshot of one advisor search, which
-`api/tests/test_showcase.py` holds to the live records.
+Its `showcase` page renders every card: the 线路 and 团期 records of a snapshot of one advisor
+search, which `api/tests/test_showcase.py` holds to the live records, and the document cards
+from fixtures written for them.
 The page before it is the login (`components/LoginView.tsx`, `lib/auth.ts`): the advisor's own
 ERP 手机号 and 密码, which `POST /api/login` signs in and answers with the session it started.
 The browser remembers that session id and nothing else, so a reload asks `GET /api/advisor`
@@ -450,19 +479,33 @@ The filter keys the model writes into `filters.attributes` on every search:
 
 | Key | Value |
 |---|---|
-| `destination` | the customer's destination as text; the ERP matches it against 线路 names, and this side matches it against the normalised destinations, the raw tags, the 亮点, the selling department and the departure city, because the catalog has no destination field |
+| `destination` | the customer's destination as text, matched against the document's countries, its 线路系, the line's name, the department that sells it, the places its days pass through and the sights it names; a distinctive word (观鲸, 一价全含) narrows one family of a trip, and places joined with · must all be on the line |
 | `depart_from`, `depart_to` | ISO dates; the ERP's own date filter, and the window this and every later quote is made for |
-| `days_min`, `days_max` | whole days; filtered here, since the ERP has no day filter |
+| `days_min`, `days_max` | whole days, against the document's own 天数 |
 | `adults`, `children` | the party every quote is made for, and the split `add_to_cart` writes onto the order |
 | `child_ages` | pipe-separated, `5\|9`; kept on the session's `SearchContext` and filters nothing, because the ERP states no minimum age |
-| `no_shopping` | `yes` keeps the 线路 whose tags say 纯玩 (`shopping=none`) and drops the ones that say 购物; a 线路 whose tags say neither falls back to the words in its name |
-| `hotel_level` | 四钻, 五钻; matched against the normalised `hotel_grade`, in every spelling the ERP's editors use (五钻, 5钻, 五星, 5星, 4+5钻) |
-| `departure_city` | the city the group leaves from, against the tags (上海出发, 昆明直飞) and the ERP's own `departCityName`; it is not relaxed, because a customer cannot fly from a city the line does not leave |
-| `family` | `yes` sorts the 线路 whose tags claim 亲子 to the front of the shortlist and drops nothing, because a family will take a line that never wrote the word down |
-| `region` | a 线路系 from `tag-rules.json`'s region vocabulary (德法意瑞, 西欧多国, 英爱, 西葡, 北欧, 东欧巴尔干, 意大利一地 …), matched either way round against the line's `region`; a line filed nowhere is not admitted |
-| `price_max` | a ceiling on the 起价 in yuan; a 起价 the ERP has not published (0) is not over it |
+| `no_shopping` | `yes` keeps the 线路 whose document lists no 购物店 at all |
+| `hotel_level` | 四钻, 五钻; matched against the grade the document's 酒店标准 states, in every spelling the attachments use (五钻, 5钻, 五星, 5星) |
+| `departure_city` | the city the group leaves from, as the document's `summary` states it |
+| `family` | `yes` sorts the 线路 whose document claims 亲子 to the front of the shortlist and drops nothing, because a family will take a line that never wrote the word down |
+| `region` | a 线路系 (德法意瑞, 西欧多国, 英爱, 西葡, 北欧, 东欧巴尔干, 意大利一地 …), matched either way round against the document's own `region`; a line filed nowhere is not admitted |
+| `price_max` | a ceiling on the ERP's 起价 in yuan; a 起价 it has not published (0) is not over it |
 
-A search that matches more lines than it may show is ranked, not cut in the catalog's order: a 团期 the party fits into first, then the nearest to the middle of the window in three-day buckets, then 已成团, then the destination written in the name, then a published and lower 起价; at most two lines of one 线路系 take the cut before the rest of the ranking fills it. Every result carries `catalog_matches`, the number the cut came from. Above six matches the executor appends a 目录概览 to the tool result — the total and the matched lines grouped by 线路系, 出发城市, 天数, 起价 and 成团, each value but the last one the model sends back as a filter — and the model is told to state the total, put one narrowing question on a `present_focus` card whose chips are those values, and present cards only once the advisor has narrowed; a shortlist over that overview is held.
+Matches are ranked, not left in the catalog's order: the reviewed documents first, then a
+line of exactly the length asked for, then the lower published 起价, then the name. Every
+result carries `catalog_matches`, the number of 线路 that met the request. Above five matches
+the executor appends a 目录概览 to the tool result — the total and the matches grouped by
+目的地 (one value per line: the 线路系 it is filed under, else its countries joined), 天数,
+出发城市, 出发月份, 酒店标准, 纯玩, 特色 (观鲸, 一价全含, 国泰 — the words that tell one version
+of a trip from another) and 起价, each value one the model sends back as a filter. Between six
+and twelve matches that is cards and chips together: the cards are the answer and the model
+ends the reply with a `present_focus` question over those groups. Above twelve it is the
+question alone, and a shortlist over that overview is held until it has been asked.
+Two to five matches that are the same countries over the same number of days are one trip
+sold several ways: the overview stands for those too, names the dimensions that differ first,
+and the model asks which the customer wants rather than choosing. A search that matched
+nothing leaves the whole catalog's own groups instead, so the model can offer a direction it
+does sell.
 
 ## Data
 
@@ -473,6 +516,10 @@ A search that matches more lines than it may show is ranked, not cut in the cata
   from the itinerary attachment and the `periodPriceTags` budget band. There is no
   destination, hotel, vehicle, shopping or child-age *field*, because the ERP has none; those
   are tags, and `api/tags.py` is what reads them.
+- `data/route-docs/published/`: the fixture catalog's own 线路文档, one per 线路 in
+  `routes.json` — the documents the search runs over when the deployment has none of its own
+  under `TOUR_STATE_DIR`. An agency's are written there by `scripts/parse_attachments.py` and
+  moved into `route-docs/published/` once the product staff have checked them.
 - `data/route-schema.json`: the JSON Schema of `RouteDoc`, written by
   `scripts/parse_attachments.py --schema` and held to the model by `api/tests/test_route_doc.py`.
 - `data/private-lines.json`: the words a 线路 not on general sale carries in its name, and

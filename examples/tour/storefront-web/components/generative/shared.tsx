@@ -6,7 +6,16 @@
 /** The pieces the cards share: the specs an advisor reads out, and the state of a 团期. */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { formatYuan, mismatchNote, seatsTone, statusText, type Spec } from "@/lib/format";
+import {
+  dayLabel,
+  formatYuan,
+  mismatchNote,
+  routeCover,
+  routeHeadline,
+  seatsTone,
+  statusText,
+  type Spec,
+} from "@/lib/format";
 import type { Product } from "@/lib/types";
 
 const COPIED_MS = 2000;
@@ -50,12 +59,12 @@ const STATUS_TONE: Record<string, string> = {
 // the first few characters and hands the rest to the title.
 const MAX_TAG_CHARS = 12;
 
-export function Tag({ text }: { text: string }) {
+export function Tag({ text, tone }: { text: string; tone?: string }) {
   const short = text.length > MAX_TAG_CHARS ? `${text.slice(0, MAX_TAG_CHARS)}…` : text;
   return (
     <span
       title={text}
-      className="rounded-full bg-(--well) px-2 py-0.5 text-[11.5px] text-(--ink-2)"
+      className={`rounded-full px-2 py-0.5 text-[11.5px] ${tone ?? "bg-(--well) text-(--ink-2)"}`}
     >
       {short}
     </span>
@@ -73,6 +82,68 @@ export function StatusPill({ status, detail }: { status?: string; detail?: strin
       {label}
       {detail ? <span className="tg-num ml-1 font-bold">{detail}</span> : null}
     </span>
+  );
+}
+
+const DEPARTURE_TONE: Record<string, string> = {
+  可报名: "bg-(--accent-soft) text-(--accent-ink)",
+  已成团: "bg-(--ok-soft) text-(--ok)",
+  满员: "bg-(--danger-soft) text-(--danger)",
+  截止: "bg-(--well) text-(--ink-faint)",
+};
+
+/** The ground a 团期's state is shown on, wherever it is shown. */
+export function departureTone(status?: string): string {
+  return DEPARTURE_TONE[status ?? ""] ?? "bg-(--well) text-(--ink-2)";
+}
+
+/**
+ * One sellable 团期 as a pill: the day it leaves and what it is open for, tinted by the state.
+ * The route card's footer row and the 团期 card both read it, so the colours mean one thing.
+ */
+export function DeparturePill({
+  date,
+  status,
+  weekday,
+}: {
+  date?: string | null;
+  status?: string;
+  weekday?: string;
+}) {
+  const day = dayLabel(date);
+  const tone = departureTone(status);
+  return (
+    <span
+      className={`tg-num inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${tone}`}
+    >
+      {day ?? date}
+      {weekday ? <span className="font-normal opacity-80">{weekday}</span> : null}
+      {status ? <span className="font-semibold">{status}</span> : null}
+    </span>
+  );
+}
+
+/**
+ * The picture a 线路 card carries until the agency's own photos are in: a soft wash named for
+ * the first country the line covers. The angle and the wash come off the record's id, so one
+ * route keeps one picture wherever the card is drawn.
+ */
+export function CoverBlock({ product, className = "" }: { product: Product; className?: string }) {
+  const name = routeCover(product);
+  let hash = 0;
+  for (const char of product.product_id) hash = (hash * 31 + char.charCodeAt(0)) % 360;
+  return (
+    <div
+      aria-hidden
+      className={`flex items-end justify-start overflow-hidden rounded-(--radius) p-2.5 ${className}`}
+      style={{
+        background: `linear-gradient(${120 + (hash % 120)}deg, var(--accent-soft), var(--well) 72%)`,
+      }}
+    >
+      <span className="truncate text-[15px] font-bold tracking-[0.06em] text-(--accent-ink) opacity-70">
+        {name}
+      </span>
+    </div>
   );
 }
 
@@ -127,14 +198,23 @@ export function MismatchNote({ product }: { product: Product }) {
   );
 }
 
-/** A route or 团期 named on a plan step. */
+/** A route or 团期 named on a plan step, or a foothold under a 聚焦卡's chips. */
 export function MiniProductCard({ product }: { product: Product }) {
+  const headline = routeHeadline(product);
   return (
     <div className="tg-card tg-lift min-w-0 px-3 py-2">
-      <div className="truncate text-[13.5px] font-semibold text-(--ink)">{product.title}</div>
-      <div className="tg-num mt-0.5 text-[13px] font-bold text-(--accent)">
-        {formatYuan(product.price)}
+      <div className="truncate text-[13.5px] font-semibold text-(--ink)" title={product.title}>
+        {product.title}
       </div>
+      {headline ? (
+        <div className="mt-0.5 truncate text-[12px] leading-snug text-(--ink-soft)">{headline}</div>
+      ) : null}
+      {/* A 线路 the window never priced carries no 起价, and says nothing rather than ¥0. */}
+      {product.price > 0 ? (
+        <div className="tg-num mt-0.5 text-[13px] font-bold text-(--accent)">
+          {formatYuan(product.price)}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -143,9 +223,10 @@ export function MiniProductCard({ product }: { product: Product }) {
 export function SkeletonCard({ horizontal = false }: { horizontal?: boolean }) {
   return (
     <div
-      className={`tg-card flex flex-col gap-2 p-3.5 ${horizontal ? "w-full" : "w-64 shrink-0"}`}
+      className={`tg-card flex flex-col gap-2 p-3.5 ${horizontal ? "w-full" : "w-72 shrink-0"}`}
       aria-hidden
     >
+      <div className="ac-skeleton aspect-[4/3] w-full rounded-(--radius)" />
       <div className="ac-skeleton h-4 w-4/5 rounded" />
       <div className="ac-skeleton h-3 w-3/5 rounded" />
       <div className="ac-skeleton h-3 w-full rounded" />

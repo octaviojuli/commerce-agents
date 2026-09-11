@@ -36,6 +36,7 @@ from tour.api.erp_client import (
     Quote,
 )
 from tour.api.mock_erp import MockErpClient
+from tour.api.route_docs import RouteDocStore
 from tour.api.tests.test_itinerary_source import docx, paragraph, table
 from tour.api.tour_backend import ROUTE_FIRST_GATE, TourBackend, TourToolExecutor, _number
 
@@ -75,8 +76,17 @@ class FakeClock:
         return self.current
 
 
-def build(erp: MockErpClient) -> TourBackend:
-    return TourBackend(erp, today=TODAY, customer_id=CUSTOMER_ID, contact_mobile=MOBILE)
+def build(erp: MockErpClient, *, documents: bool = True) -> TourBackend:
+    """The backend over the fixture catalog. ``documents=False`` is a deployment with no 线路
+    文档 at all: nothing is searchable, and a 线路's 行程 is read from the ERP or parsed out of
+    its 行程附件, which is what the fixtures did before the catalog was documents."""
+    return TourBackend(
+        erp,
+        today=TODAY,
+        customer_id=CUSTOMER_ID,
+        contact_mobile=MOBILE,
+        route_docs=None if documents else RouteDocStore(),
+    )
 
 
 @pytest.fixture
@@ -124,210 +134,162 @@ def ids(products) -> list[str]:
     return [product.product_id for product in products]
 
 
-# -- search ------------------------------------------------------------------------------
+# -- search: the 线路文档 are the catalog ---------------------------------------------------
 
 
-async def test_search_returns_route_families_for_the_stated_window(backend, session):
+async def test_search_returns_the_lines_whose_document_meets_the_request(backend, session):
+    """The advisor's request is answered off the agency's reviewed 线路文档: the countries,
+    the length, the 购物店 and the hotel standard are the document's, and every card states
+    them. The ERP is asked for the dates alone."""
     products = await search_yili(backend, session)
     assert set(ids(products)) == {"RT-1021", "RT-1022", "RT-1024"}
-    # RT-1023 carries neither 纯玩 nor 零购物 in its name or its tags, and nothing relaxes
-    # far enough to add it.
+    # RT-1023's document lists two 购物店, so 纯玩 rules it out; nothing relaxes it back in.
     for product in products:
         assert product.variant_of is None
-        assert product.options["depart_date"]
         assert product.attributes["match"] == "exact"
-        assert product.category == "tour"
-        assert product.currency == "CNY"
+        assert product.attributes["doc"] == "reviewed"
+        assert product.attributes["countries"] == "新疆"
+        assert product.attributes["region"] == "伊犁"
+        assert product.attributes["shopping_stops"] == "0"
         assert product.attributes["depart_city"] == "乌鲁木齐"
+        assert product.attributes["catalog_matches"] == "3"
+        assert product.category == "tour" and product.currency == "CNY"
     route = next(product for product in products if product.product_id == ROUTE)
-    # The window holds 10/13 (no seats) and 10/17 (four), so the family is the cheaper of
-    # the two list prices and is in stock for the 2 大 2 小 party.
-    assert route.options["depart_date"] == ["2026-10-13", "2026-10-17"]
-    assert route.price == 5780.0
-    assert route.in_stock is True
-    assert route.labels == ["四钻酒店", "纯玩无购物", "亲子", "乌鲁木齐出发"]
-    assert route.attributes["tags"].startswith("纯玩|小团")
-    assert route.attributes["destination"] == "伊犁"
+    assert route.attributes["days"] == "8" and route.attributes["nights"] == "7"
+    assert route.attributes["places"].startswith("乌鲁木齐|赛里木湖")
+    assert route.attributes["hotel_standard"].startswith("全程当地四钻酒店")
+    assert route.price == 5580.0  # the ERP's 起价, which is the only figure a card quotes
+    assert route.labels == ["纯玩", "四钻", "已复核"]
     # The two dates are the span the advisor means, whichever order they state them in.
     backwards = await search_yili(
         backend, session, depart_from="2026-10-20", depart_to="2026-10-11"
     )
-    assert [(p.product_id, p.attributes["match"]) for p in backwards] == [
-        (product.product_id, "exact") for product in products
-    ]
+    assert ids(backwards) == ids(products)
 
 
-async def test_a_destination_no_route_name_carries_is_found_on_the_rest_of_the_line(
-    backend, erp, session
-):
-    """The ERP searches 线路 names, and its editors do not put the destination in every one:
-    on the agency's own catalog 欧洲 names no route and 欧洲部 sells them all. So a named query
-    that is not a shortlist is followed by one broad read of the window, and a route carrying
-    the destination anywhere else — here the department — is an exact match, not a relaxed
-    one. The broad read is made once per window, so the relaxation steps add no calls."""
-    route = erp._routes[1051]
-    route["routeName"] = "茶卡盐湖·环线 5 日亲子小团"
-    route["features"] = ["茶卡盐湖", "塔尔寺", "黑马河日出"]
-    assert "青海" not in route["routeName"] + "".join(route["features"])
-    assert "青海" in route["companyName"]
-    broad: list[str] = []
-    original = erp.search_routes
+async def test_a_line_the_agency_has_no_document_for_is_not_searched(erp, session):
+    """The document is what the agency has checked; a 线路 without one is not offered at all,
+    whatever its name and its tags say."""
+    backend = build(erp, documents=False)
+    assert await search_yili(backend, session) == []
+    overview = backend.overview(session.session_id)
+    assert overview is not None and overview.empty
 
-    async def counted(query):
-        broad.append(query.route_name)
-        return await original(query)
 
-    erp.search_routes = counted
-    products = await search(
-        backend,
-        session,
-        "青海湖",
-        destination="青海",
-        depart_from="2026-10-05",
-        depart_to="2026-10-20",
-    )
-    assert ids(products) == ["RT-1051"]
-    assert products[0].attributes["match"] == "exact"
-    assert "mismatch" not in products[0].attributes
-    assert products[0].brand == "ACME 旅行社 青海部"
-    # The stated window and the widened one, and nothing more: the four relaxation steps
-    # share what the widened one already fetched, and the last of them reads no window of
-    # its own.
-    assert broad.count("") == 2
+async def test_stated_dates_put_the_sellable_departures_on_the_card(backend, session):
+    """Once the advisor has given the customer's dates, every 线路 card carries the 团期 that
+    run in them and what the advisor may do with each — dates and state only, because seats
+    and prices are the 团期卡's."""
+    products = await search_yili(backend, session)
+    route = next(product for product in products if product.product_id == ROUTE)
+    assert route.attributes["departures"] == "2026-10-13:满员|2026-10-17:已成团"
+    assert route.attributes["departures_window"] == "2026-10-11..2026-10-20"
+    assert route.options["depart_date"] == ["2026-10-13", "2026-10-17"]
+    # The party is what 满员 is measured against: 10/17 has four seats left, so a party of
+    # six does not fit into it.
+    six = await search_yili(backend, session, adults="6", children="0")
+    larger = next(product for product in six if product.product_id == ROUTE)
+    assert larger.attributes["departures"] == "2026-10-13:满员|2026-10-17:满员"
+
+
+async def test_a_search_with_no_dates_carries_none_and_the_window_is_remembered(backend, session):
+    """A card states sellable 团期 only against dates the advisor gave: with none the card is
+    the line alone. The dates the conversation did state stand for the searches after it."""
+    undated = await search(backend, session, "伊犁", destination="伊犁")
+    assert ids(undated) and all("departures" not in p.attributes for p in undated)
+    await search_yili(backend, session)
+    again = await search(backend, session, "伊犁", destination="伊犁", days_min="8", days_max="8")
+    assert all(p.attributes["departures_window"] == "2026-10-11..2026-10-20" for p in again)
 
 
 async def test_a_hotel_standard_is_matched_however_the_advisor_spells_it(backend, session):
-    """The ERP states the standard only as a word in the name or the tags, and 五钻, 5钻,
-    五星 and 5星 are the same standard."""
+    """The standard is the one the document states, and 五钻, 5钻, 五星 and 5星 are all 五钻."""
     for level in ("五钻", "5钻", "五星", "5星"):
-        products = await search_yili(backend, session, hotel_level=level)
-        exact = [p.product_id for p in products if p.attributes["match"] == "exact"]
-        assert exact == ["RT-1024"], level
+        assert ids(await search_yili(backend, session, hotel_level=level)) == ["RT-1024"], level
+
+
+async def test_a_departure_city_keeps_only_the_lines_that_leave_from_it(backend, session):
+    products = await search(backend, session, "", depart_from="2026-10-01", depart_to="2026-10-31")
+    assert len(ids(products)) > 1
+    from_kashgar = await search(
+        backend,
+        session,
+        "",
+        departure_city="喀什",
+        depart_from="2026-10-01",
+        depart_to="2026-10-31",
+    )
+    assert ids(from_kashgar) == ["RT-1041"]
+    assert from_kashgar[0].attributes["depart_city"] == "喀什"
+
+
+async def test_a_region_narrows_the_shortlist_and_a_price_ceiling_too(backend, session):
+    """The 线路系 a chip offered goes back as ``region``; ``price_max`` is a ceiling on the
+    ERP's 起价, and a 起价 the ERP has not published (0) is not over it."""
+    products = await search(backend, session, "新疆", destination="新疆", region="喀纳斯")
+    assert ids(products) and all(p.attributes["region"] == "喀纳斯" for p in products)
+    cheap = await search(backend, session, "新疆", destination="新疆", price_max="4000")
+    assert ids(cheap) == ["RT-1032"]
+
+
+async def test_a_destination_is_matched_on_everything_the_document_names(backend, session):
+    """Not the 线路 name alone: the countries, the 线路系, the department that sells the line,
+    the places its days pass through and the sights it names all answer a destination — and a
+    destination written as several places has to be carried in full."""
+    by_place = await search(backend, session, "白哈巴", destination="白哈巴")
+    assert ids(by_place) == ["RT-1031"]
+    by_region = await search(backend, session, "南疆", destination="南疆")
+    assert ids(by_region) == ["RT-1041"]
+    by_department = await search(backend, session, "青海部", destination="青海部")
+    assert ids(by_department) == ["RT-1051"]
+    joined = await search(backend, session, "", destination="喀纳斯·禾木村")
+    assert set(ids(joined)) == {"RT-1031", "RT-1032"}
+    assert ids(await search(backend, session, "", destination="冰岛")) == []
+
+
+async def test_no_shopping_reads_the_documents_own_purchase_stops(backend, session):
+    """A line whose document lists a 购物店 is selling one, whatever its name says."""
+    selling = await search(backend, session, "伊犁", destination="伊犁", days_min="9", days_max="9")
+    assert ids(selling) == ["RT-1023"]
+    assert selling[0].attributes["shopping_stops"] == "2"
+    assert selling[0].labels[0] == "购物店2家"
+    pure = await search(
+        backend, session, "伊犁", destination="伊犁", days_min="9", days_max="9", no_shopping="yes"
+    )
+    assert ids(pure) == []
 
 
 async def test_a_private_line_is_not_a_search_result(backend, erp, session):
     """The catalog carries the 包团 a customer chartered and the 会销 one salesperson runs
     beside what anyone may sell, and the ERP has no field saying which is which. So the name
-    is read (``data/private-lines.json``), and such a line is kept out of every shortlist —
-    the named pass and the broad one — and out of the boot listing snapshot."""
+    is read (``data/private-lines.json``), and such a line is kept out of every shortlist."""
     before = await search_yili(backend, session, no_shopping="")
     assert "RT-1023" in ids(before)
     erp._routes[1023]["routeName"] = "王鑫包团-伊犁定制行程 9 日"
+    backend._routes.clear()
     products = await search_yili(backend, session, no_shopping="")
     assert "RT-1023" not in ids(products)
     assert "RT-1021" in ids(products)
-    await backend.load_listings()
-    assert "RT-1023" not in backend.products and "RT-1021" in backend.products
 
 
 async def test_a_private_line_opens_by_its_id_and_by_its_full_name(backend, erp, session):
     """The salesperson whose 会销 it is can still work it: pasted by id or named in full it is
     the record it always was, and ``line_type`` says what it is so the model says so."""
     erp._routes[1023]["routeName"] = "王鑫包团-伊犁定制行程 9 日"
+    backend._routes.clear()
     details = await backend.get_product_details(session, "RT-1023")
     assert details is not None and details.attributes["line_type"] == "包团"
-    products = await search(
-        backend,
-        session,
-        "王鑫包团-伊犁定制行程 9 日",
-        depart_from="2026-10-11",
-        depart_to="2026-10-20",
-    )
-    # The mock scores every 伊犁 line against the name; the ERP's own substring match answers
-    # the one line. Either way the named line is offered, and says what it is.
-    named = next(p for p in products if p.product_id == "RT-1023")
-    assert named.attributes["line_type"] == "包团"
-    # A line on general sale carries no line_type at all.
+    named = await search(backend, session, "", destination="王鑫包团-伊犁定制行程 9 日")
+    # The document keeps the line's catalogued name; either name opens it.
+    assert ids(named) == ["RT-1023"] and named[0].attributes["line_type"] == "包团"
     public = await search_yili(backend, session)
     assert all("line_type" not in p.attributes for p in public)
 
 
-async def test_the_erps_sale_type_is_read_ahead_of_the_name(backend, erp, session):
-    """Once the ERP carries ``saleType``, it decides: a plainly named line it calls 包团 is
-    private, and a 包团-named line it calls public is on sale."""
-    erp._routes[1022]["saleType"] = "包团"
-    erp._routes[1023]["routeName"] = "王鑫包团-伊犁定制行程 9 日"
-    erp._routes[1023]["saleType"] = "公开"
-    products = await search_yili(backend, session, no_shopping="")
-    assert "RT-1022" not in ids(products)
-    assert "RT-1023" in ids(products)
-
-
-async def test_the_cut_is_ranked_not_the_catalogs_order(backend, erp, session, monkeypatch):
-    """A 团期 the party fits into comes first, then the nearest to the middle of the window,
-    then 已成团 before 待成团; the ERP's own order, which is the newest 线路 first, decides
-    nothing. And a cut smaller than the matches takes at most two lines of one 线路系."""
-    products = await search(
-        backend,
-        session,
-        "新疆",
-        destination="新疆",
-        depart_from="2026-10-11",
-        depart_to="2026-10-20",
-        adults="2",
-    )
-    assert len(products) >= 4
-    # Hand every 团期 of RT-1032 the party cannot fit into: it ranks last however near.
-    for row in erp._departures.values():
-        if row["routeId"] == 1032:
-            row["availableSeats"] = 1
-    products = await search(
-        backend,
-        session,
-        "新疆",
-        destination="新疆",
-        depart_from="2026-10-11",
-        depart_to="2026-10-20",
-        adults="2",
-    )
-    assert ids(products)[-1] == "RT-1032"
-    # Cut to three of the seven, 伊犁's four lines take at most two seats in it.
-    monkeypatch.setattr(tour_backend, "MAX_BROAD_MATCHES", 3)
-    cut = await search(
-        backend,
-        session,
-        "新疆",
-        destination="新疆",
-        depart_from="2026-10-11",
-        depart_to="2026-10-20",
-        adults="2",
-    )
-    regions = [p.attributes["region"] for p in cut]
-    assert len(cut) == 3 and regions.count("伊犁") <= 2, regions
-    assert all(p.attributes["catalog_matches"] == "7" for p in cut)
-
-
-async def test_a_region_narrows_the_shortlist_and_a_price_ceiling_too(backend, session):
-    """The 线路系 an overview offered goes back as ``region`` and holds; ``price_max`` is a
-    ceiling on the 起价, and a 起价 the ERP has not published (0) is not over it."""
-    products = await search(
-        backend,
-        session,
-        "新疆",
-        destination="新疆",
-        depart_from="2026-10-11",
-        depart_to="2026-10-20",
-        region="喀纳斯",
-    )
-    assert ids(products) and all(p.attributes["region"] == "喀纳斯" for p in products)
-    cheap = await search(
-        backend,
-        session,
-        "新疆",
-        destination="新疆",
-        depart_from="2026-10-11",
-        depart_to="2026-10-20",
-        price_max="4000",
-    )
-    # The ceiling is on the ERP's 起价, which the fixtures put under 4000 on one 新疆 line.
-    assert ids(cheap) == ["RT-1032"]
-
-
-async def test_too_many_matches_hand_the_model_an_overview_not_a_shortlist(backend, session):
-    """Above ``OVERVIEW_ABOVE`` matches the executor appends the 目录概览 to the search
-    result: the total, the groups by 线路系, 出发城市, 天数, 起价 and 成团, each value one the
-    model sends back as a filter, and the instruction to ask one narrowing question. A search
-    that fits carries none."""
+async def test_a_request_wider_than_a_shortlist_hands_the_model_an_overview(backend, session):
+    """Above ``OVERVIEW_ABOVE`` matches the executor appends the 目录概览 to the search result:
+    the total, the groups over every dimension that splits the set, each value one the model
+    sends back as a filter, and the instruction to ask one narrowing question."""
     tour = executor(backend, session)
     filters = {
         "attributes": {
@@ -340,120 +302,64 @@ async def test_too_many_matches_hand_the_model_an_overview_not_a_shortlist(backe
         "search_products", {"query": "新疆", "filters": filters, "limit": 2}
     )
     text = outcome.result_text
-    assert "目录概览" in text and "上面只是其中 2 条的样本" in text
-    assert "按线路系（filter region）" in text and "伊犁 4" in text
-    assert "按出发城市（filter departure_city）" in text
+    assert "目录概览：共 7 条线路符合" in text and "上面是其中 2 条" in text
+    assert "按目的地（filter region/destination）：伊犁 4、喀纳斯 2、南疆 1" in text
     assert "按天数（filter days_min/days_max）" in text
-    assert "present_focus with ONE narrowing question" in text
+    assert "按酒店标准（filter hotel_level）" in text and "按纯玩（filter no_shopping）" in text
+    assert "end the reply with present_focus asking ONE narrowing question" in text
     overview = backend.overview(session.session_id)
-    assert overview is not None and overview.total > overview.shown == 2
+    assert overview is not None and overview.total == 7 and overview.shown == 2
     # Narrowed to one 线路系, the search fits and the overview is gone.
-    narrowed = {"attributes": {**filters["attributes"], "region": "伊犁"}}
+    narrowed = {"attributes": {**filters["attributes"], "region": "喀纳斯"}}
     outcome = await tour.dispatch("search_products", {"query": "新疆", "filters": narrowed})
     assert "目录概览" not in outcome.result_text
     assert backend.overview(session.session_id) is None
 
 
-async def test_the_named_matches_are_never_the_whole_shortlist(backend, erp, session):
-    """On the agency's catalog, 欧洲 names three of the thirty-odd lines the 欧洲部 departs
-    in a month. So two name matches do not close the search: the broad pass runs whenever a
-    destination is stated, a line that carries it only in its tags is kept beside the named
-    ones, and every result says how many lines met the request before the cut."""
-    route = erp._routes[1024]
-    route["routeName"] = "五钻轻奢 8 日私享小团"
-    assert "伊犁" not in route["routeName"]
-    products = await search_yili(backend, session, days_min="8", days_max="10")
-    exact = [p.product_id for p in products if p.attributes["match"] == "exact"]
-    assert "RT-1024" in exact and "RT-1021" in exact
-    assert {p.attributes["catalog_matches"] for p in products} == {str(len(exact))}
-
-
-async def test_a_destination_only_the_normalised_tags_carry_is_found(backend, erp, session):
-    """The ERP's extraction of the itinerary is where a destination usually is, and it writes
-    the place names rather than the region: 禾木村 and 白哈巴 are 喀纳斯, and ``tag-rules.json``
-    is what says so. Nothing else on this line says 喀纳斯 at all, so the ERP's own name search
-    misses it and the broad pass keeps it on the normalised destination."""
-    route = erp._routes[1031]
-    route["routeName"] = "禾木秋色 7 日纯玩"
-    route["features"] = ["禾木村", "白哈巴", "五彩滩"]
-    route["itineraryTags"] = [
-        "禾木村",
-        "白哈巴",
-        "五彩滩",
-        "乌鲁木齐出发",
-        "四钻酒店",
-        "纯玩无购物",
-    ]
-    assert "喀纳斯" not in str(route)
-    products = await search(backend, session, "喀纳斯", destination="喀纳斯")
-    found = next(product for product in products if product.product_id == "RT-1031")
-    assert found.attributes["match"] == "exact"
-    assert found.attributes["destination"] == "喀纳斯"
-
-
-async def test_no_shopping_reads_the_shopping_tag_before_the_names_wording(backend, session):
-    """A line whose extraction lists a market is selling one, whatever its name says, and one
-    whose extraction says 纯玩无购物 is 纯玩 even where the name does not."""
-    products = await search_yili(backend, session)
-    # RT-1023's itinerary tags carry 市集购物, so the filter drops it.
-    assert "RT-1023" not in ids(products)
-    assert all(product.attributes["shopping"] == "none" for product in products)
-    relaxed = await search(
-        backend, session, "喀纳斯", destination="喀纳斯", no_shopping="yes", hotel_level="五钻"
-    )
-    selling = next(product for product in relaxed if product.product_id == "RT-1032")
-    assert selling.attributes["shopping"] == "some"
-    assert "标签标注含购物" in selling.attributes["mismatch"]
-
-
-async def test_a_line_whose_tags_name_no_hotel_standard_is_only_a_relaxed_match(backend, session):
-    """RT-1051 stays at a 民宿 and its tags name no 钻 standard. That is not a no, so the line
-    is not an exact match for 四钻 and the note says the tags do not state it."""
+async def test_versions_of_one_trip_are_put_back_to_the_advisor(backend, session):
+    """Two 8-day 新疆 lines to the same country are one trip sold twice, and the customer has
+    to say which: the overview stands even at two matches and names what tells them apart."""
     products = await search(
-        backend, session, "青海湖", destination="青海", hotel_level="四钻", adults="2"
+        backend, session, "新疆", destination="新疆", days_min="8", days_max="8"
     )
-    found = next(product for product in products if product.product_id == "RT-1051")
-    assert found.attributes["hotel_grade"] == "unknown"
-    assert found.attributes["match"] == "similar_route"
-    assert found.attributes["mismatch"] == "未标注四钻"
+    assert set(ids(products)) == {"RT-1021", "RT-1024"}
+    overview = backend.overview(session.session_id)
+    assert overview is not None and overview.ambiguous
+    assert overview.dimensions == ("酒店标准",)
+    assert list(overview.groups)[0] == "酒店标准"
+    assert "只差在酒店标准" in overview.text()
+    assert "versions of one trip" in overview.text()
 
 
-async def test_a_departure_city_keeps_only_the_lines_that_leave_from_it(backend, session):
-    """The city is a tag on the itinerary (上海出发, 昆明直飞) and a field on the 线路; either
-    one answers, and a line leaving from anywhere else is not offered at all."""
-    products = await search(backend, session, "", depart_from="2026-10-01", depart_to="2026-10-31")
-    assert len(ids(products)) > 1
-    from_kashgar = await search(
-        backend,
-        session,
-        "",
-        departure_city="喀什",
-        depart_from="2026-10-01",
-        depart_to="2026-10-31",
-    )
-    assert ids(from_kashgar) == ["RT-1041"]
-    assert from_kashgar[0].attributes["departure_cities"] == "喀什"
+async def test_nothing_in_the_catalog_matched_offers_the_directions_it_sells(backend, session):
+    """A request the documents do not meet returns nothing — never the nearest thing — and
+    the chips beside it are the catalog's own, so the advisor can offer another direction."""
+    products = await search(backend, session, "冰岛", destination="冰岛", days_min="14")
+    assert products == []
+    overview = backend.overview(session.session_id)
+    assert overview is not None and overview.empty and overview.total == 0
+    assert overview.groups["目的地"][0] == ("伊犁", 4)
+    assert "没有符合条件的线路" in overview.text()
 
 
 async def test_family_orders_the_shortlist_and_filters_nothing(backend, session):
-    """A party with children is a preference and not a condition: the lines whose tags claim
-    亲子 come first, and the rest stay on the shortlist for the advisor to weigh."""
+    """A party with children is a preference and not a condition: the lines whose document
+    claims 亲子 come first, and the rest stay on the shortlist for the advisor to weigh."""
     window = {"depart_from": "2026-10-01", "depart_to": "2026-10-31"}
     plain = await search(backend, session, "", **window)
     preferred = await search(backend, session, "", family="yes", **window)
     assert set(ids(preferred)) == set(ids(plain))
-    claimed = [p.product_id for p in preferred if p.attributes["family"] == "yes"]
-    assert ids(preferred)[: len(claimed)] == claimed
-    assert ids(plain)[: len(claimed)] != claimed
+    # 青海湖·茶卡 5 日亲子小团 is the one line whose document claims 亲子, and it leads.
+    assert ids(preferred)[0] == "RT-1051"
 
 
-async def test_a_cards_labels_are_what_the_line_claims_not_its_first_tags(backend, session):
-    """The raw tags are dozens of attraction names, so the badges are the normalised
-    attributes in the order an advisor reads them out."""
-    products = await search_yili(backend, session)
+async def test_a_cards_labels_are_what_the_document_states(backend, session):
+    """The badges are 购物, the hotel standard, the airline where the document names one, and
+    whether the document is the agency's word or the parser's draft."""
+    products = await search_yili(backend, session, no_shopping="")
     labels = {product.product_id: product.labels for product in products}
-    assert labels["RT-1024"] == ["五钻酒店", "纯玩无购物", "乌鲁木齐出发", "含景点首道门票"]
-    assert labels["RT-1021"][:3] == ["四钻酒店", "纯玩无购物", "亲子"]
+    assert labels["RT-1024"] == ["纯玩", "五钻", "已复核"]
+    assert labels["RT-1023"] == ["购物店2家", "四钻", "已复核"]
     assert all(len(found) <= 4 for found in labels.values())
 
 
@@ -515,7 +421,9 @@ async def test_a_departure_id_is_quoted_at_the_customers_own_price(backend, sess
 # -- 行程来源: the baseline day-by-day itinerary --------------------------------------------
 
 
-async def test_route_details_carry_the_erps_own_days_under_the_source_line(backend, session):
+async def test_route_details_carry_the_erps_own_days_under_the_source_line(erp, session):
+    """A deployment with no 线路文档: the ERP's own days are the baseline 行程."""
+    backend = build(erp, documents=False)
     details = await backend.get_product_details(session, ROUTE)
     assert details.specs["行程来源"] == "ERP"
     assert [key for key in details.specs if key.startswith("第")] == [
@@ -527,15 +435,15 @@ async def test_route_details_carry_the_erps_own_days_under_the_source_line(backe
     assert "｜用餐：早餐：酒店；午餐：镇上小馆；晚餐：酒店合菜" in day
 
 
-async def test_a_departure_carries_its_own_routes_days(backend, session):
+async def test_a_departure_carries_its_own_routes_days(erp, session):
+    backend = build(erp, documents=False)
     details = await backend.get_product_details(session, OPEN)
     assert details.specs["行程来源"] == "ERP"
     assert details.specs["第1天"].startswith("乌鲁木齐集合｜")
 
 
-async def test_a_route_with_no_itinerary_at_all_says_so_rather_than_saying_nothing(
-    backend, session
-):
+async def test_a_route_with_no_itinerary_at_all_says_so_rather_than_saying_nothing(erp, session):
+    backend = build(erp, documents=False)
     details = await backend.get_product_details(session, "RT-1041")
     assert details.specs["行程来源"] == tour_backend.NO_ITINERARY
     assert not [key for key in details.specs if key.startswith("第")]
@@ -549,7 +457,8 @@ async def test_search_results_carry_no_day_specs(backend, session):
         assert "行程来源" not in product.attributes
 
 
-async def test_a_days_text_is_capped_and_at_most_twenty_days_ride(backend, session):
+async def test_a_days_text_is_capped_and_at_most_twenty_days_ride(erp, session):
+    backend = build(erp, documents=False)
     long_day = "程" * (tour_backend.MAX_DAY_CHARS + 400)
     backend._itineraries[1021] = Itinerary(
         1021,
@@ -577,7 +486,7 @@ class CountingItineraries(MockErpClient):
 
 async def test_a_second_read_of_one_route_asks_the_erp_for_its_days_once(session):
     erp = CountingItineraries(today=TODAY, now=FakeClock())
-    backend = build(erp)
+    backend = build(erp, documents=False)
     await backend.get_product_details(session, ROUTE)
     await backend.get_product_details(session, ROUTE)
     await backend.get_product_details(session, OPEN)
@@ -586,7 +495,7 @@ async def test_a_second_read_of_one_route_asks_the_erp_for_its_days_once(session
 
 async def test_two_sessions_opening_one_route_at_once_read_its_days_once(session, other_session):
     erp = CountingItineraries(today=TODAY, now=FakeClock())
-    backend = build(erp)
+    backend = build(erp, documents=False)
     await asyncio.gather(
         backend.get_product_details(session, ROUTE),
         backend.get_product_details(other_session, ROUTE),
@@ -647,6 +556,7 @@ def attachment_backend(monkeypatch, state_dir, fetched, seen: list) -> TourBacke
         customer_id=CUSTOMER_ID,
         contact_mobile=MOBILE,
         state_dir=state_dir,
+        route_docs=RouteDocStore(),
     )
 
 
@@ -836,132 +746,7 @@ async def test_a_route_that_runs_every_day_is_trimmed_around_the_searched_window
     )
 
 
-# -- relaxation --------------------------------------------------------------------------
-
-
-async def test_a_window_with_no_departures_offers_the_nearest_date(backend, session):
-    products = await search(
-        backend,
-        session,
-        "青海湖",
-        destination="青海",
-        depart_from="2026-10-03",
-        depart_to="2026-10-08",
-    )
-    assert ids(products) == ["RT-1051"]
-    assert products[0].attributes["match"] == "adjacent_date"
-    assert products[0].attributes["mismatch"] == "无 10/3–10/8 团期，最近为 10/2"
-
-
-async def test_a_day_count_nothing_matches_offers_the_nearest_length(backend, session):
-    products = await search(
-        backend, session, "南疆", destination="南疆", days_min="12", days_max="12"
-    )
-    assert ids(products) == ["RT-1041"]
-    assert products[0].attributes["match"] == "similar_route"
-    assert products[0].attributes["mismatch"] == "天数 11 天，超出要求的 12–12 天"
-
-
-async def test_dropping_a_preference_names_the_one_it_dropped(backend, session):
-    products = await search(
-        backend, session, "喀纳斯", destination="喀纳斯", hotel_level="五钻", no_shopping="yes"
-    )
-    notes = {product.product_id: product.attributes["mismatch"] for product in products}
-    assert set(notes) == {"RT-1031", "RT-1032"}
-    assert all(product.attributes["match"] == "similar_route" for product in products)
-    # The tags name a standard on both, so the note says which one, not that it is missing.
-    assert notes["RT-1031"] == "标签标注四钻，要求五钻"
-    assert notes["RT-1032"] == "标签标注三钻，要求五钻；标签标注含购物"
-
-
-async def test_a_relaxed_route_names_every_condition_it_misses(backend, session):
-    """RT-1031 is admitted by the step that drops the preferences, and it misses the window
-    too; the advisor reads the whole list back, so the note carries both."""
-    products = await search(
-        backend,
-        session,
-        "喀纳斯",
-        destination="喀纳斯",
-        depart_from="2026-10-03",
-        depart_to="2026-10-05",
-        hotel_level="五钻",
-        no_shopping="yes",
-    )
-    notes = {product.product_id: product.attributes["mismatch"] for product in products}
-    assert notes["RT-1031"] == "无 10/3–10/5 团期，最近为 10/1；标签标注四钻，要求五钻"
-    # RT-1032 does depart on 10/3, so the window is not one of the conditions it misses.
-    assert notes["RT-1032"] == "标签标注三钻，要求五钻；标签标注含购物"
-
-
-async def test_a_window_the_catalog_has_no_departure_in_offers_the_default_window(backend, session):
-    """The week before the earliest 团期 the catalog holds. Widening by a week reaches nothing
-    either, so the fourth step searches the whole default window: what the advisor can act on
-    is the nearest date the line runs, not an empty shortlist."""
-    products = await search(
-        backend,
-        session,
-        "青海湖",
-        destination="青海",
-        depart_from="2026-09-06",
-        depart_to="2026-09-07",
-    )
-    assert ids(products) == ["RT-1051"]
-    assert products[0].attributes["match"] == "adjacent_date"
-    assert products[0].attributes["mismatch"] == "无 9/6–9/7 团期，最近为 9/18"
-    # The default window's own 团期, so the dates say when the line actually runs.
-    assert products[0].options["depart_date"][0] == "2026-09-18"
-    assert products[0].options["depart_date"][-1] == "2026-11-02"
-
-
-async def test_the_exact_matches_come_before_the_relaxed_ones(backend, session):
-    """Whichever step admitted them: the advisor reads the shortlist from the top, and a line
-    that meets the window they stated is the first thing they should read."""
-    products = await search(backend, session, "", depart_from="2026-11-02", depart_to="2026-11-02")
-    matches = [product.attributes["match"] for product in products]
-    assert matches[0] == "exact" and matches.count("exact") == 1
-    assert set(matches[1:]) == {"adjacent_date"}
-
-
-class LooseDates(MockErpClient):
-    """``route/list`` as the production ERP answers it: its date filter is loose, so a window's
-    routes include 线路 whose 团期 are all outside it — five 斯里兰卡 lines for a week only two
-    of them depart in. The fixtures filter strictly, so the looseness is added here, by dropping
-    the window from the query and keeping the ERP's own text match."""
-
-    async def search_routes(self, q):
-        return await super().search_routes(replace(q, depart_from=None, depart_to=None))
-
-
-async def test_a_route_with_no_departure_in_the_window_is_not_an_exact_match(session):
-    """The loose filter returns 青海湖 for a week it does not depart in. A card built from that
-    row would carry no date, no seat count and no price while claiming to be what the advisor
-    asked for, so the route is dropped from the stated pass; the fourth step takes it back with
-    its nearest 团期 named."""
-    backend = build(LooseDates(today=TODAY, now=FakeClock()))
-    products = await search(
-        backend,
-        session,
-        "青海湖",
-        destination="青海",
-        depart_from="2026-09-06",
-        depart_to="2026-09-07",
-    )
-    assert [product for product in products if product.attributes["match"] == "exact"] == []
-    assert ids(products) == ["RT-1051"]
-    assert products[0].attributes["match"] == "adjacent_date"
-    assert products[0].attributes["mismatch"] == "无 9/6–9/7 团期，最近为 9/18"
-    assert products[0].options["depart_date"]
-    # A window the route does depart in is untouched by the drop.
-    october = await search(
-        backend,
-        session,
-        "青海湖",
-        destination="青海",
-        depart_from="2026-10-01",
-        depart_to="2026-10-07",
-    )
-    assert [product.attributes["match"] for product in october] == ["exact"]
-    assert october[0].options["depart_date"] == ["2026-10-02"]
+# -- what one search costs the ERP ---------------------------------------------------------
 
 
 class Windowed(MockErpClient):
@@ -1003,35 +788,6 @@ async def test_a_search_reads_the_windows_departures_once_for_every_route_it_wei
     products = await search_yili(backend, session)
     assert set(ids(products)) == {"RT-1021", "RT-1022", "RT-1024"}
     assert erp.calls["list_window"] == 1
-    assert "list_departures" not in erp.calls
-
-
-class LooseWindowed(Windowed, LooseDates):
-    """Both production shapes at once: ``route/list`` answers with 线路 whose 团期 are all
-    outside the window, and the 团期 themselves are read a window at a time."""
-
-
-async def test_a_relaxation_step_costs_a_window_read_only_when_it_moves_the_window(session):
-    """The four steps repeat a window more often than they change it: widening the day count or
-    dropping the preferences leaves the dates alone, and only the dates decide what is read — and
-    the first step's week wider window was read around at the start. Every pass here has
-    candidates to weigh, because the ERP's date filter answers with 线路 that have no 团期 inside
-    the window at all."""
-    erp = LooseWindowed(today=TODAY, now=FakeClock())
-    backend = build(erp)
-    products = await search(
-        backend,
-        session,
-        "青海湖",
-        destination="青海",
-        depart_from="2026-09-06",
-        depart_to="2026-09-07",
-    )
-    assert ids(products) == ["RT-1051"]
-    # The stated window, read a week around it, answers the first step as well; the two steps
-    # after it relax nothing the ERP filters on, and only the fourth step's whole default window
-    # reaches past what was read.
-    assert erp.calls["list_window"] == 2
     assert "list_departures" not in erp.calls
 
 

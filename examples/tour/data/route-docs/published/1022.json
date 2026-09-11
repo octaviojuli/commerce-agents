@@ -1,0 +1,450 @@
+{
+  "schema_version": "1.0",
+  "route_id": 1022,
+  "route_code": "YLKL",
+  "name": "伊犁·喀拉峻草原深度 10 日",
+  "department": "ACME 旅行社 新疆部",
+  "sale_type": "公开",
+  "summary": {
+    "days": 10,
+    "nights": 9,
+    "depart_city": "乌鲁木齐",
+    "countries": [
+      "新疆"
+    ],
+    "region": "伊犁"
+  },
+  "cover": {
+    "airline": "",
+    "hotel_standard": "全程当地四钻酒店，喀拉峻连住两晚",
+    "meal_standard": "含 9 早 6 正",
+    "highlights": [
+      "6 人小车走透伊犁，喀拉峻两晚、琼库什台一晚，早晚光线全留给拍照。",
+      "喀拉峻",
+      "琼库什台",
+      "夏塔古道"
+    ],
+    "fields": {
+      "交通": "6座商务车"
+    }
+  },
+  "transport": [],
+  "days": [
+    {
+      "day": 1,
+      "title": "乌鲁木齐集合",
+      "places": [
+        "乌鲁木齐"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "不含",
+          "included": false
+        },
+        "lunch": {
+          "text": "不含",
+          "included": false
+        },
+        "dinner": {
+          "text": "不含",
+          "included": false
+        }
+      },
+      "hotel": {
+        "name": "乌鲁木齐 · 云杉里酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "全天接站入住，摄影向导在傍晚开一场简短的行前会：讲这十天的光线安排、每个机位的到达时间与所需焦段，并检查客人的电池、存储卡与三脚架配置。需要租用长焦或滤镜的客人可在会后登记，由向导次日带上车。"
+    },
+    {
+      "day": 2,
+      "title": "乌鲁木齐—赛里木湖",
+      "places": [
+        "乌鲁木齐",
+        "赛里木湖"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "路餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "湖畔炖鱼",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "赛里木湖 · 湖畔星野度假酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "上午乘 6 座商务车西行，午后抵达赛里木湖。向导按光线把下午分成两段：先在西岸拍逆光下的湖面反光，日落前转到南岸的玛瑙滩拍雪山与前景石。晚饭安排在日落之后，回酒店再出一次门拍银河，天气不允许时改为室内的后期讲评。"
+    },
+    {
+      "day": 3,
+      "title": "赛里木湖—伊宁",
+      "places": [
+        "赛里木湖",
+        "伊宁"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "打包",
+          "included": true
+        },
+        "lunch": {
+          "text": "边贸小馆",
+          "included": true
+        },
+        "dinner": {
+          "text": "不含",
+          "included": false
+        }
+      },
+      "hotel": {
+        "name": "伊宁 · 河谷雅居酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "日出前起床拍湖面晨雾，早餐打包在车上吃。上午翻果子沟，在大桥观景台等云隙光。下午进伊宁，六星街的彩色院墙与老手风琴是这天的人文机位，向导讲一段扫街的取景与礼貌沟通方式。晚上在酒店整理素材，向导逐台看片给建议。"
+    },
+    {
+      "day": 4,
+      "title": "伊宁—琼库什台",
+      "places": [
+        "伊宁",
+        "琼库什台"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "琼库什台",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "路餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "民宿家常菜",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "琼库什台 · 松木居民宿",
+        "or_similar": true,
+        "grade": "民宿"
+      },
+      "text": "上午沿特克斯河进山，路面后半段为砂石路，车速放慢。午后抵达琼库什台，这是一座木屋村落，牧道、羊群与炊烟都在同一条山谷里。傍晚爬到村后的高台拍全景与暮色，向导安排两个不同高度的机位轮换。今晚住村里的木屋民宿，条件简朴但取景最近。"
+    },
+    {
+      "day": 5,
+      "title": "琼库什台—喀拉峻",
+      "places": [
+        "琼库什台",
+        "喀拉峻"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "琼库什台",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "喀拉峻",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "喀拉峻空中草原摄影车",
+          "kind": "自费",
+          "duration": "",
+          "ticket_included": null
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "民宿",
+          "included": true
+        },
+        "lunch": {
+          "text": "路餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "手抓饭",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "特克斯 · 八卦城景苑酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "清晨在村口拍晨雾中的羊群转场，之后翻库尔代森林峡谷前往喀拉峻。下午上东喀拉峻的空中草原，向导带客人走到人体草原的最佳角度，等待光影在草坡上一层层滑过。傍晚回特克斯入住，晚饭后讲一节草原大场景的构图课。"
+    },
+    {
+      "day": 6,
+      "title": "喀拉峻连住 · 西喀拉峻整日",
+      "places": [
+        "喀拉峻",
+        "西喀拉峻"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "喀拉峻",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "草原简餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "酒店合菜",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "特克斯 · 八卦城景苑酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "今日不换酒店。整日留给西喀拉峻的阔克苏河大峡谷：上午拍鳄鱼湾的河曲，中午在观景台附近休息避开硬光，下午转到猎鹰台等侧光。这一天的节奏由天气决定，向导随时调整顺序。晚上回酒店做当日精选，明早出发时间视次日云量再定。"
+    },
+    {
+      "day": 7,
+      "title": "特克斯—夏塔古道",
+      "places": [
+        "特克斯",
+        "夏塔古道"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "夏塔古道",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "路餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "昭苏马肉宴",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "昭苏 · 天马原上酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "上午前往夏塔，沿木扎尔特河谷进山，两侧是冰川融水切出的砾石滩。下午在古道口徒步一段约三公里的平缓路，尽头可以远望木扎尔特冰川，是这条线最硬的一天，体力一般的客人可在半程折返等车。傍晚返回昭苏县城入住。"
+    },
+    {
+      "day": 8,
+      "title": "昭苏—唐布拉百里画廊",
+      "places": [
+        "昭苏"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "路餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "度假村合菜",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "唐布拉 · 百里画廊度假村",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "上午翻过山口前往唐布拉，一路是连绵百里的河谷草场，向导按机位把车程切成六七段停车。下午在乔尔玛附近的雪山垭口拍云海，光线好时会在此停留较久。晚上住在唐布拉的度假村，房间朝向草场，清晨推窗即可拍雾气。"
+    },
+    {
+      "day": 9,
+      "title": "唐布拉—独库公路—乌鲁木齐",
+      "places": [
+        "唐布拉",
+        "独库公路",
+        "乌鲁木齐"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "独库公路",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "路餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "不含",
+          "included": false
+        }
+      },
+      "hotel": {
+        "name": "乌鲁木齐 · 云杉里酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早发走独库公路北段，达坂、雪线与红层依次出现，向导在安全观景点逐一停车。中午在巴音布鲁克附近用餐，天气好时加拍一次九曲十八弯的落日，那样今日会晚两小时抵达乌鲁木齐，是否加拍由全车商量决定。晚上入住机场附近酒店。"
+    },
+    {
+      "day": 10,
+      "title": "乌鲁木齐送站",
+      "places": [
+        "乌鲁木齐送站"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "home",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "不含",
+          "included": false
+        },
+        "dinner": {
+          "text": "不含",
+          "included": false
+        }
+      },
+      "hotel": null,
+      "text": "上午按航班时间分批送站。出发前向导把全团十天的合影与讲评稿发到群里，并留下后期问题的联络方式。需要延住或改签的客人由计调协助改期，费用另计。行程至此结束。"
+    }
+  ],
+  "inclusions": [
+    "行程所列景点首道门票",
+    "全程用车与司导服务",
+    "行程所列住宿，按两人一间安排",
+    "行程所列餐食",
+    "旅行社责任险"
+  ],
+  "exclusions": [
+    "往返大交通（另行报价）",
+    "单房差",
+    "个人消费与自费项目",
+    "因不可抗力产生的额外费用"
+  ],
+  "shopping": [],
+  "optional": [
+    {
+      "name": "喀拉峻空中草原摄影车",
+      "price": "180 元/人",
+      "day": 5
+    }
+  ],
+  "policies": {
+    "single_room": "单房差按团期公布价收取，指定单房需在报名时提出。",
+    "child": "2 岁以下不占床按儿童价，2 岁以上占床按成人价。",
+    "visa": "国内线路无需签证，请携带身份证原件；儿童携带户口本。",
+    "cancellation": "出发前 15 日以上取消退全款，14—8 日扣 30%，7 日内扣 60%。",
+    "deposit": "报名时收取每人 1000 元定金，出发前 10 日付清尾款。"
+  },
+  "notices": [
+    "行程顺序可能因天气与路况调整，景点不减少。"
+  ],
+  "source": {
+    "attachment_name": "",
+    "attachment_url": "",
+    "etag": null,
+    "bytes": 0,
+    "parsed_at": "2026-08-20T09:00:00Z",
+    "parser": "fixture"
+  },
+  "quality": {
+    "completeness": 1.0,
+    "needs_review": [],
+    "reviewed_by": "产品部 · 林薇",
+    "reviewed_at": "2026-08-20T09:00:00Z"
+  }
+}

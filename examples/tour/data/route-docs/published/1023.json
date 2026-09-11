@@ -1,0 +1,470 @@
+{
+  "schema_version": "1.0",
+  "route_id": 1023,
+  "route_code": "YLJD",
+  "name": "伊犁经典环线 9 日中巴团",
+  "department": "ACME 旅行社 新疆部",
+  "sale_type": "公开",
+  "summary": {
+    "days": 9,
+    "nights": 8,
+    "depart_city": "乌鲁木齐",
+    "countries": [
+      "新疆"
+    ],
+    "region": "伊犁"
+  },
+  "cover": {
+    "airline": "",
+    "hotel_standard": "全程当地四钻酒店",
+    "meal_standard": "含 8 早 7 正",
+    "highlights": [
+      "含往返大交通的省心团，20 座中巴宽敞，节奏慢、景点集中，含 2 个购物店。",
+      "赛里木湖",
+      "那拉提草原",
+      "薰衣草田"
+    ],
+    "fields": {
+      "交通": "旅游用车"
+    }
+  },
+  "transport": [],
+  "days": [
+    {
+      "day": 1,
+      "title": "乌鲁木齐",
+      "places": [
+        "乌鲁木齐"
+      ],
+      "distances_km": [],
+      "transport": "",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "不含",
+          "included": false
+        },
+        "lunch": {
+          "text": "不含",
+          "included": false
+        },
+        "dinner": {
+          "text": "不含",
+          "included": false
+        }
+      },
+      "hotel": {
+        "name": "乌鲁木齐 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "乌鲁木齐集合，接站后送酒店办理入住，晚上开行前说明会。"
+    },
+    {
+      "day": 2,
+      "title": "乌鲁木齐—赛里木湖",
+      "places": [
+        "乌鲁木齐",
+        "赛里木湖"
+      ],
+      "distances_km": [],
+      "transport": "",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "赛里木湖",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "赛里木湖 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早餐后前往赛里木湖，全天在赛里木湖游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 3,
+      "title": "赛里木湖—那拉提草原",
+      "places": [
+        "赛里木湖",
+        "那拉提草原"
+      ],
+      "distances_km": [],
+      "transport": "",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "赛里木湖",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "那拉提草原",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "那拉提草原 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早餐后前往那拉提草原，全天在那拉提草原游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 4,
+      "title": "那拉提草原—薰衣草田",
+      "places": [
+        "那拉提草原",
+        "薰衣草田"
+      ],
+      "distances_km": [],
+      "transport": "",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "那拉提草原",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "薰衣草田",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "薰衣草田 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早餐后前往薰衣草田，全天在薰衣草田游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 5,
+      "title": "薰衣草田—库尔德宁",
+      "places": [
+        "薰衣草田",
+        "库尔德宁"
+      ],
+      "distances_km": [],
+      "transport": "",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "薰衣草田",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "库尔德宁",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "库尔德宁 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早餐后前往库尔德宁，全天在库尔德宁游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 6,
+      "title": "库尔德宁—天山花海",
+      "places": [
+        "库尔德宁",
+        "天山花海"
+      ],
+      "distances_km": [],
+      "transport": "",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "库尔德宁",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "天山花海",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "伊宁玉器城",
+          "kind": "购物",
+          "duration": "90 分钟",
+          "ticket_included": null
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "天山花海 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早餐后前往天山花海，全天在天山花海游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 7,
+      "title": "天山花海—天山花海",
+      "places": [
+        "天山花海"
+      ],
+      "distances_km": [],
+      "transport": "",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "天山花海",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "天山花海小火车",
+          "kind": "自费",
+          "duration": "",
+          "ticket_included": null
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "天山花海 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早餐后前往天山花海，全天在天山花海游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 8,
+      "title": "天山花海—天山花海",
+      "places": [
+        "天山花海"
+      ],
+      "distances_km": [],
+      "transport": "",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "天山花海",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "干果特产超市",
+          "kind": "购物",
+          "duration": "60 分钟",
+          "ticket_included": null
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "天山花海 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早餐后前往天山花海，全天在天山花海游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 9,
+      "title": "乌鲁木齐",
+      "places": [
+        "乌鲁木齐"
+      ],
+      "distances_km": [],
+      "transport": "",
+      "overnight": "home",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "路餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "不含",
+          "included": false
+        }
+      },
+      "hotel": null,
+      "text": "早餐后返回乌鲁木齐，送站，行程结束。"
+    }
+  ],
+  "inclusions": [
+    "行程所列景点首道门票",
+    "全程用车与司导服务",
+    "行程所列住宿，按两人一间安排",
+    "行程所列餐食",
+    "旅行社责任险"
+  ],
+  "exclusions": [
+    "往返大交通（另行报价）",
+    "单房差",
+    "个人消费与自费项目",
+    "因不可抗力产生的额外费用"
+  ],
+  "shopping": [
+    {
+      "name": "伊宁玉器城",
+      "day": 6,
+      "duration": "90 分钟"
+    },
+    {
+      "name": "干果特产超市",
+      "day": 8,
+      "duration": "60 分钟"
+    }
+  ],
+  "optional": [
+    {
+      "name": "天山花海小火车",
+      "price": "80 元/人",
+      "day": 7
+    }
+  ],
+  "policies": {
+    "single_room": "单房差按团期公布价收取，指定单房需在报名时提出。",
+    "child": "2 岁以下不占床按儿童价，2 岁以上占床按成人价。",
+    "visa": "国内线路无需签证，请携带身份证原件；儿童携带户口本。",
+    "cancellation": "出发前 15 日以上取消退全款，14—8 日扣 30%，7 日内扣 60%。",
+    "deposit": "报名时收取每人 1000 元定金，出发前 10 日付清尾款。"
+  },
+  "notices": [
+    "行程顺序可能因天气与路况调整，景点不减少。"
+  ],
+  "source": {
+    "attachment_name": "",
+    "attachment_url": "",
+    "etag": null,
+    "bytes": 0,
+    "parsed_at": "2026-08-20T09:00:00Z",
+    "parser": "fixture"
+  },
+  "quality": {
+    "completeness": 1.0,
+    "needs_review": [],
+    "reviewed_by": "产品部 · 林薇",
+    "reviewed_at": "2026-08-20T09:00:00Z"
+  }
+}

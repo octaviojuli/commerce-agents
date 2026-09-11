@@ -70,7 +70,11 @@ def cart_product() -> str:
 @pytest.fixture(scope="session")
 def relevance_probe() -> tuple[str, str, str, set[str]]:
     """Returns (query, non-relevance sort, the route that must lead, faint matches to cut).
-    The ERP matches a destination against 线路 names and tags and nothing else, so the probe
-    is a destination the other routes do not name: 摄影 or 深度游 alone must not pull 伊犁 or
-    南疆 into a 喀纳斯 search, whatever the sort."""
-    return ("喀纳斯秋色", "rating", "RT-1031", {"RT-1021", "RT-1022", "RT-1041", "RT-1051"})
+    The search reads the 线路文档, so the probe is a place one document names and the others
+    do not: 白哈巴 is on the 喀纳斯 秋色 line alone, and no sort may pull 伊犁 or 南疆 into it."""
+    return (
+        "白哈巴",
+        "rating",
+        "RT-1031",
+        {"RT-1021", "RT-1022", "RT-1032", "RT-1041", "RT-1051"},
+    )

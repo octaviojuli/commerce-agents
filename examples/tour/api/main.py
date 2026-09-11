@@ -52,12 +52,14 @@ from . import attachments
 from .advisor_memory import advisor_memory, advisor_write_filter
 from .advisors import NEED_LOGIN, AdvisorLogin, AdvisorRegistry, FixtureAdvisorRegistry
 from .agent_config import brand_name, build_shopping_config
+from .departures import build_departures_extension
 from .erp_client import ErpAuth, ErpClient, ErpError, ErpThrottled
 from .focus import build_focus_extension
 from .http_erp import HttpErpClient
 from .itinerary import build_itinerary_extension, card_payload, stored_records
 from .mock_erp import MockErpClient
 from .plans import Plan, summarize
+from .route_days import build_route_days_extension
 from .route_docs import RouteDocStore
 from .shortlist import build_shortlist_extension
 from .store import SqliteSessionStore, display_messages
@@ -128,6 +130,8 @@ registry: AdvisorRegistry = (
 sessions = SqliteSessionStore(STATE_DIR / "sessions.sqlite")
 # The 线路 documents the review round produced (``docs/route-doc.md``): what has been
 # checked under route-docs/published/, the draft pick under route-docs/selected/.
+# An empty store is a deployment with no documents of its own: the backend then reads the
+# fixture catalog's, which is the demo's own 新疆 and 青海 lines.
 route_docs = RouteDocStore.load(STATE_DIR / "route-docs")
 if len(route_docs):
     log.info("tour: %d 线路 documents loaded", len(route_docs))
@@ -144,7 +148,7 @@ backend = TourBackend(
     registry=registry,
     state_dir=STATE_DIR,
     plans=sessions,
-    route_docs=route_docs,
+    route_docs=route_docs if len(route_docs) else None,
 )
 agent = ShoppingAgent(
     backend=backend,
@@ -158,6 +162,8 @@ agent = ShoppingAgent(
         build_shortlist_extension(),
         build_focus_extension(),
         build_itinerary_extension(),
+        build_route_days_extension(),
+        build_departures_extension(),
         attachments.build_attachments_extension(),
     ],
     executor_class=TourToolExecutor,

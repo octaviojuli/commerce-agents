@@ -78,27 +78,31 @@ file to `route-docs/published/`.
 ## The runtime
 
 `api/route_docs.py`'s `RouteDocStore` reads `published/` and `selected/` at boot, a published
-document winning over a selected one for the same 线路, and the backend reads a document ahead
-of everything it would otherwise guess:
+document winning over a selected one for the same 线路. The documents are the catalog: a
+search is answered off them and the ERP is asked only for the dynamic half — which 团期 run,
+their 成团 state, the seats left and the 同业价.
 
+- `api/catalog.py` reads each document into `RouteFacts` and matches a request on them: the
+  destination against the countries, the 线路系, the name, the department, the places the days
+  pass through and the sights they name; the day count, 出发城市, 纯玩, the hotel standard and
+  the 线路系 against what the document states. A 线路 with no document is not searched at all.
+- a 线路 card is the document's own fields, and its labels say 纯玩 or 购物店N家, the 钻 grade
+  the 酒店标准 states where it states one, the airline and 已复核 or 解析稿 (`doc`);
+- `present_route_days` draws the whole 逐日行程 off the document — the days, the flights out
+  and back, 费用包含 / 不含, 购物店, 自费项目 and the policy sentences;
 - the 行程 on a details record and under a 定制方案 comes from the document's days, and the
   card says 线路文档（已复核）or 线路文档（解析稿，待复核）as its 行程来源;
 - the card's 规格 gain 参考航班, 酒店标准, 用餐安排, 购物店, 自费项目, 费用包含 / 不含, 单房差,
-  儿童 and 签证;
-- the model reads `doc` (reviewed / draft), `shopping_stops`, `meals_included`,
-  `doc_hotel_grade` and `flights` on the route record;
-- the 纯玩 and hotel-standard filters, and the note a relaxed record carries, follow the
-  document's 购物店 count and stated grade rather than the tags.
+  儿童 and 签证.
 
-A 线路 with no document is read as before: the ERP's own days where it has them, the
-attachment parsed where it does not, the tags for the rest. The team's 团期, seats and prices
-are never in a document.
+A deployment whose state directory holds no document reads the fixture catalog's own under
+`data/route-docs/published/`, which is what the demo searches. A 团期, its seats and its
+prices are never in a document.
 
 ## Not yet
 
 - `.pdf` attachments (65 of the production catalog's 269), image attachments (34), `.xlsx` (3).
-- Search facets off `days[].sights`, `inclusions` and the meals beyond the three filters
-  above; the card drawing the programme day by day; the customer page.
+- Filters off `inclusions` and the meals; the customer page.
 - A review tool. The first round is the JSON files and the report.
 - The ERP holding the document. `erp-contract.md` asks for a structured itinerary endpoint;
   when it exists the parser becomes the fallback.

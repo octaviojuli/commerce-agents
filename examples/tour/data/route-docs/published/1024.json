@@ -1,0 +1,352 @@
+{
+  "schema_version": "1.0",
+  "route_id": 1024,
+  "route_code": "YLQS",
+  "name": "伊犁五钻轻奢 8 日私享小团",
+  "department": "ACME 旅行社 新疆部",
+  "sale_type": "公开",
+  "summary": {
+    "days": 8,
+    "nights": 7,
+    "depart_city": "乌鲁木齐",
+    "countries": [
+      "新疆"
+    ],
+    "region": "伊犁"
+  },
+  "cover": {
+    "airline": "",
+    "hotel_standard": "全程当地五钻酒店，那拉提连住两晚",
+    "meal_standard": "含 7 早 6 正，一顿哈萨克家访宴",
+    "highlights": [
+      "全程五钻酒店与 6 座商务车，每日车程控制在 4 小时内，含双导服务。",
+      "赛里木湖",
+      "那拉提草原",
+      "喀拉峻"
+    ],
+    "fields": {
+      "交通": "6座商务车"
+    }
+  },
+  "transport": [],
+  "days": [
+    {
+      "day": 1,
+      "title": "乌鲁木齐接机",
+      "places": [
+        "乌鲁木齐"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "不含",
+          "included": false
+        },
+        "lunch": {
+          "text": "不含",
+          "included": false
+        },
+        "dinner": {
+          "text": "不含",
+          "included": false
+        }
+      },
+      "hotel": {
+        "name": "乌鲁木齐 · 天山庭院酒店",
+        "or_similar": true,
+        "grade": "五钻"
+      },
+      "text": "专车专人接机，全程 6 座商务车，行李由司机装卸。入住市区五钻酒店后由生活导游送上迎宾水果与热饮，并逐一确认房型、枕头软硬与忌口。晚上不安排活动，愿意出门的客人由地陪陪同散步，车与司机随叫随到。"
+    },
+    {
+      "day": 2,
+      "title": "乌鲁木齐—赛里木湖",
+      "places": [
+        "乌鲁木齐",
+        "赛里木湖"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "赛里木湖",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "路餐盒",
+          "included": true
+        },
+        "dinner": {
+          "text": "酒店西餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "赛里木湖 · 云顶湖景酒店",
+        "or_similar": true,
+        "grade": "五钻"
+      },
+      "text": "上午九点半出发，车程分三段，每段不超过两小时，中途在服务区与果子沟大桥观景台各停一次。下午抵达赛里木湖，全程以车观湖为主，只在南岸走一段平缓的木栈道。酒店房间面湖，傍晚在房间的观景窗前就能看落日，无需再出门。"
+    },
+    {
+      "day": 3,
+      "title": "赛里木湖—伊宁",
+      "places": [
+        "赛里木湖",
+        "伊宁"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "赛里木湖",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "河谷园林餐厅",
+          "included": true
+        },
+        "dinner": {
+          "text": "酒店中餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "伊宁 · 塞外华庭酒店",
+        "or_similar": true,
+        "grade": "五钻"
+      },
+      "text": "上午在湖边慢走一小时，之后经果子沟前往伊宁，午餐安排在河谷的园林餐厅。下午逛六星街，全程有轮椅可租，步行段不超过八百米。晚上住伊宁市区五钻酒店，安排一场维吾尔族与哈萨克族的民乐小演出，在酒店宴会厅进行，不需要外出。"
+    },
+    {
+      "day": 4,
+      "title": "伊宁—喀拉峻草原",
+      "places": [
+        "伊宁",
+        "喀拉峻草原"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "景区贵宾餐厅",
+          "included": true
+        },
+        "dinner": {
+          "text": "养生汤锅",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "特克斯 · 八卦源境酒店",
+        "or_similar": true,
+        "grade": "五钻"
+      },
+      "text": "上午出发前往喀拉峻，车程约两小时。景区内全程使用区间车，只在观景台之间走短距离平路，不安排徒步。生活导游随身带折叠椅与保温壶，方便老人随时坐下休息。傍晚返回特克斯入住，晚餐是清淡的养生汤锅，忌口在出发前已录入。"
+    },
+    {
+      "day": 5,
+      "title": "特克斯连住 · 昭苏草原一日",
+      "places": [
+        "特克斯",
+        "昭苏草原"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "马场餐厅",
+          "included": true
+        },
+        "dinner": {
+          "text": "酒店中餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "特克斯 · 八卦源境酒店",
+        "or_similar": true,
+        "grade": "五钻"
+      },
+      "text": "今日不换酒店，行李留在房间。上午前往昭苏看天马与油菜花田，车程一小时四十分钟，中午在马场的餐厅用餐并午休两小时。下午返回特克斯，愿意的客人可在县城的八卦街区慢走一圈，其余客人回酒店休息。晚餐后安排足浴，费用已含。"
+    },
+    {
+      "day": 6,
+      "title": "特克斯—那拉提草原",
+      "places": [
+        "特克斯",
+        "那拉提草原"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "那拉提草原",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "草原贵宾餐厅",
+          "included": true
+        },
+        "dinner": {
+          "text": "酒店合菜",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "那拉提 · 河谷天境度假酒店",
+        "or_similar": true,
+        "grade": "五钻"
+      },
+      "text": "上午沿伊犁河谷东行前往那拉提，途中在巩乃斯的林间休息区停留一次。下午坐区间车上空中草原，观景台之间以电瓶车接驳，全程无台阶。傍晚入住草原脚下的度假酒店，房间为一层的独栋，门口即是草场，无需上下楼。"
+    },
+    {
+      "day": 7,
+      "title": "那拉提—乌鲁木齐",
+      "places": [
+        "那拉提",
+        "乌鲁木齐"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "路餐盒",
+          "included": true
+        },
+        "dinner": {
+          "text": "酒店中餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "乌鲁木齐 · 天山庭院酒店",
+        "or_similar": true,
+        "grade": "五钻"
+      },
+      "text": "上午在草原上再走一段平路，之后返回乌鲁木齐。今日走高速，车程约五小时，分三段行驶，中途两次停车休息，车上备有靠枕与热饮。傍晚抵达市区入住，晚餐安排在酒店，饭后生活导游协助整理行李并核对次日的航班时间。"
+    },
+    {
+      "day": 8,
+      "title": "乌鲁木齐送机",
+      "places": [
+        "乌鲁木齐"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "home",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "不含",
+          "included": false
+        },
+        "dinner": {
+          "text": "不含",
+          "included": false
+        }
+      },
+      "hotel": null,
+      "text": "按航班时间一对一送机，行李由司机送至值机柜台，需要轮椅服务的客人由地陪提前向航司申请。行程至此结束。返程航班在傍晚之后的客人可延迟退房至下午两点，费用已含在团费里。"
+    }
+  ],
+  "inclusions": [
+    "行程所列景点首道门票",
+    "全程用车与司导服务",
+    "行程所列住宿，按两人一间安排",
+    "行程所列餐食",
+    "旅行社责任险"
+  ],
+  "exclusions": [
+    "往返大交通（另行报价）",
+    "单房差",
+    "个人消费与自费项目",
+    "因不可抗力产生的额外费用"
+  ],
+  "shopping": [],
+  "optional": [],
+  "policies": {
+    "single_room": "单房差按团期公布价收取，指定单房需在报名时提出。",
+    "child": "2 岁以下不占床按儿童价，2 岁以上占床按成人价。",
+    "visa": "国内线路无需签证，请携带身份证原件；儿童携带户口本。",
+    "cancellation": "出发前 15 日以上取消退全款，14—8 日扣 30%，7 日内扣 60%。",
+    "deposit": "报名时收取每人 1000 元定金，出发前 10 日付清尾款。"
+  },
+  "notices": [
+    "行程顺序可能因天气与路况调整，景点不减少。"
+  ],
+  "source": {
+    "attachment_name": "",
+    "attachment_url": "",
+    "etag": null,
+    "bytes": 0,
+    "parsed_at": "2026-08-20T09:00:00Z",
+    "parser": "fixture"
+  },
+  "quality": {
+    "completeness": 1.0,
+    "needs_review": [],
+    "reviewed_by": "产品部 · 林薇",
+    "reviewed_at": "2026-08-20T09:00:00Z"
+  }
+}

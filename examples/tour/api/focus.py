@@ -1,20 +1,21 @@
 # Copyright 2026 Anthropic PBC
 # SPDX-License-Identifier: Apache-2.0
 
-"""``present_focus``: the 聚焦卡, one narrowing question over a request the catalog answers
-with too many 线路 to shortlist. The model writes the question and names the dimension; the
-card's chips are the groups the backend counted on the last search (``TourBackend.overview``),
-each one a filter the workbench sends straight back — so the choices the advisor is offered
-are the catalog's and never the model's. Up to three of the results may stand on the card as a
-foothold when the match is not huge; above twelve the card is the question alone.
+"""``present_focus``: the 聚焦卡, the narrowing question a 旅游顾问 asks. The model writes the
+question and names the dimension; the card's chips are the groups the backend counted on the
+last search (``TourBackend.overview``), each one a filter the workbench sends straight back —
+so the choices the advisor is offered are the catalog's and never the model's. Up to three of
+the results may stand on the card as a foothold when the match is not huge; above twelve the
+card is the question alone.
 
-The card is the step before a shortlist on a broad request and refused otherwise: with no
-overview standing the last search fits a shortlist, and once the advisor has narrowed the
-conversation shows cards rather than asking again."""
+The card is offered while an overview stands: the request is wider than a shortlist, the few
+lines that matched are versions of one trip and the customer has to say which, or nothing
+matched and the chips are the directions the catalog does sell. With none standing the last
+search fits a shortlist and the answer is cards."""
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -25,18 +26,17 @@ from commerce_common.presentation import (
 )
 from shopping_agent import Product
 
+from .catalog import FILTERS
+
 MAX_ANCHORS = 3
 # The advisor's foothold: above this many matches, the card carries no results at all.
 ANCHORS_UP_TO = 12
-DIMENSIONS = ("线路系", "出发城市", "天数", "起价")
+# The dimensions the catalog groups on, which are the chips the card offers (``catalog.py``).
+DIMENSIONS = tuple(FILTERS)
 
 NOT_BROAD = (
     "present_focus is for a search that matched more 线路 than it could show. The last search "
     "fits a shortlist: present its results with present_products instead."
-)
-ALREADY_NARROWED = (
-    "The advisor has already narrowed once; do not ask again. Present what the last search "
-    "returned with present_products, and offer any further narrowing as chips beside it."
 )
 _ANCHORS_DROPPED = "匹配超过 12 条时聚焦卡不带线路，已去掉："
 _UNSEEN_DROPPED = "以下编号不在本次会话的结果里，已从聚焦卡上去掉："
@@ -47,7 +47,7 @@ class FocusPayload(BaseModel):
     wants to stand beside the question."""
 
     question: str = Field(min_length=1, max_length=80)
-    dimension: Literal["线路系", "出发城市", "天数", "起价"] | None = None
+    dimension: str | None = None
     picks: list[str] = Field(default_factory=list, max_length=MAX_ANCHORS)
 
 
@@ -104,15 +104,14 @@ def _groups(overview: Any) -> list[FocusGroup]:
 
 
 def _dimension(chosen: str | None, groups: list[FocusGroup]) -> str:
-    """The model's dimension when its group has more than one value, else the first group in
-    ``DIMENSIONS`` order that splits the set at all."""
-    by_label = {group.label: group for group in groups}
-    if chosen and len(by_label.get(chosen, FocusGroup(label="", filter="", values=[])).values) > 1:
+    """The model's dimension when its group has more than one value, else the first group the
+    backend put on the card that splits the set at all — which for a handful of versions of
+    one trip is the dimension they differ on."""
+    by_label = {group.label: len(group.values) for group in groups}
+    if chosen and by_label.get(chosen, 0) > 1:
         return chosen
-    for label in DIMENSIONS:
-        if len(by_label.get(label, FocusGroup(label="", filter="", values=[])).values) > 1:
-            return label
-    return chosen or DIMENSIONS[0]
+    splitting = (group.label for group in groups if len(group.values) > 1)
+    return next(splitting, chosen or (groups[0].label if groups else DIMENSIONS[0]))
 
 
 def _plain(product: Product) -> Product:
@@ -124,8 +123,6 @@ async def _enrich(payload: FocusPayload, context: EnrichmentContext) -> dict[str
     overview = read(context.session.session_id) if read is not None else None
     if overview is None:
         raise PresentationRefused(NOT_BROAD)
-    if overview.answered:
-        raise PresentationRefused(ALREADY_NARROWED)
     anchors: list[Product] = []
     unseen: list[str] = []
     for product_id in payload.picks:
