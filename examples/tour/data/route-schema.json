@@ -1,0 +1,615 @@
+{
+  "$defs": {
+    "Cover": {
+      "additionalProperties": false,
+      "description": "The attachment's front matter: the labelled rows (航空公司, 酒店标准, 用餐安排, 吃/住/行)\nand the ★ highlights, as written.",
+      "properties": {
+        "airline": {
+          "default": "",
+          "title": "Airline",
+          "type": "string"
+        },
+        "hotel_standard": {
+          "default": "",
+          "title": "Hotel Standard",
+          "type": "string"
+        },
+        "meal_standard": {
+          "default": "",
+          "title": "Meal Standard",
+          "type": "string"
+        },
+        "highlights": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Highlights",
+          "type": "array"
+        },
+        "fields": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Fields",
+          "type": "object"
+        }
+      },
+      "title": "Cover",
+      "type": "object"
+    },
+    "Day": {
+      "additionalProperties": false,
+      "description": "One itinerary day. ``places`` is the title's A-B-C route; ``distances_km`` the KM\nfigures written between them; ``transport`` the 车程/交通 notes; ``text`` the programme\nas written, kept whole because the parsed fields are a reading of it and not a\nreplacement.",
+      "properties": {
+        "day": {
+          "title": "Day",
+          "type": "integer"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "places": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Places",
+          "type": "array"
+        },
+        "distances_km": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Distances Km",
+          "type": "array"
+        },
+        "transport": {
+          "default": "",
+          "title": "Transport",
+          "type": "string"
+        },
+        "overnight": {
+          "default": "unknown",
+          "enum": [
+            "hotel",
+            "ship",
+            "flight",
+            "home",
+            "unknown"
+          ],
+          "title": "Overnight",
+          "type": "string"
+        },
+        "flights": {
+          "items": {
+            "$ref": "#/$defs/Flight"
+          },
+          "title": "Flights",
+          "type": "array"
+        },
+        "sights": {
+          "items": {
+            "$ref": "#/$defs/Sight"
+          },
+          "title": "Sights",
+          "type": "array"
+        },
+        "meals": {
+          "$ref": "#/$defs/Meals"
+        },
+        "hotel": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Hotel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "text": {
+          "default": "",
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "day",
+        "title"
+      ],
+      "title": "Day",
+      "type": "object"
+    },
+    "Flight": {
+      "additionalProperties": false,
+      "description": "One flight segment as the attachment writes it (参考航班 MU6017 上海浦东-科伦坡 1425-1900).\nTimes are kept as written — an attachment states 夏令时/冬令时 pairs and ``+1`` days — and\n``day`` is the itinerary day the segment is on.",
+      "properties": {
+        "day": {
+          "title": "Day",
+          "type": "integer"
+        },
+        "flight_no": {
+          "default": "",
+          "title": "Flight No",
+          "type": "string"
+        },
+        "carrier": {
+          "default": "",
+          "title": "Carrier",
+          "type": "string"
+        },
+        "from_place": {
+          "default": "",
+          "title": "From Place",
+          "type": "string"
+        },
+        "to_place": {
+          "default": "",
+          "title": "To Place",
+          "type": "string"
+        },
+        "times": {
+          "default": "",
+          "title": "Times",
+          "type": "string"
+        },
+        "raw": {
+          "title": "Raw",
+          "type": "string"
+        }
+      },
+      "required": [
+        "day",
+        "raw"
+      ],
+      "title": "Flight",
+      "type": "object"
+    },
+    "Hotel": {
+      "additionalProperties": false,
+      "description": "The night's 住宿: the names as written (several alternatives joined by ``/``), whether\nthe attachment says 或同级, and the standard where a grade is stated on the line.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "or_similar": {
+          "default": false,
+          "title": "Or Similar",
+          "type": "boolean"
+        },
+        "grade": {
+          "default": "",
+          "title": "Grade",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Hotel",
+      "type": "object"
+    },
+    "Meal": {
+      "additionalProperties": false,
+      "description": "One meal: the text as written and whether the price includes it (X, ×, 自理 and an\nempty cell all mean it does not).",
+      "properties": {
+        "text": {
+          "default": "",
+          "title": "Text",
+          "type": "string"
+        },
+        "included": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Included"
+        }
+      },
+      "title": "Meal",
+      "type": "object"
+    },
+    "Meals": {
+      "additionalProperties": false,
+      "properties": {
+        "breakfast": {
+          "$ref": "#/$defs/Meal"
+        },
+        "lunch": {
+          "$ref": "#/$defs/Meal"
+        },
+        "dinner": {
+          "$ref": "#/$defs/Meal"
+        }
+      },
+      "title": "Meals",
+      "type": "object"
+    },
+    "OptionalItem": {
+      "additionalProperties": false,
+      "description": "A 自费项目 with the price as written (``120 美金/人``).",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "price": {
+          "default": "",
+          "title": "Price",
+          "type": "string"
+        },
+        "day": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Day"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "OptionalItem",
+      "type": "object"
+    },
+    "Policies": {
+      "additionalProperties": false,
+      "description": "What the terms say about money and paperwork, each the sentence as written.",
+      "properties": {
+        "single_room": {
+          "default": "",
+          "title": "Single Room",
+          "type": "string"
+        },
+        "child": {
+          "default": "",
+          "title": "Child",
+          "type": "string"
+        },
+        "visa": {
+          "default": "",
+          "title": "Visa",
+          "type": "string"
+        },
+        "cancellation": {
+          "default": "",
+          "title": "Cancellation",
+          "type": "string"
+        },
+        "deposit": {
+          "default": "",
+          "title": "Deposit",
+          "type": "string"
+        }
+      },
+      "title": "Policies",
+      "type": "object"
+    },
+    "Quality": {
+      "additionalProperties": false,
+      "description": "``completeness`` is the parser's own score in [0, 1] (``route_parser.score``);\n``needs_review`` names what a person should check, in the reviewer's language;\n``reviewed_by``/``reviewed_at`` are set by the reviewer, never by the parser.",
+      "properties": {
+        "completeness": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Completeness",
+          "type": "number"
+        },
+        "needs_review": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Needs Review",
+          "type": "array"
+        },
+        "reviewed_by": {
+          "default": "",
+          "title": "Reviewed By",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reviewed At"
+        }
+      },
+      "required": [
+        "completeness"
+      ],
+      "title": "Quality",
+      "type": "object"
+    },
+    "ShoppingStop": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "day": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Day"
+        },
+        "duration": {
+          "default": "",
+          "title": "Duration",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ShoppingStop",
+      "type": "object"
+    },
+    "Sight": {
+      "additionalProperties": false,
+      "description": "One named stop of a day: a 【景点】, a 购物店, a 自费项目 or a 赠送 item. ``kind`` is\nwhat the words around it say; ``ticket_included`` is True on 含门票/入内, False on 外观,\nNone where the text says neither.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "default": "景点",
+          "enum": [
+            "景点",
+            "外观",
+            "购物",
+            "自费",
+            "赠送",
+            "自由活动"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "duration": {
+          "default": "",
+          "title": "Duration",
+          "type": "string"
+        },
+        "ticket_included": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ticket Included"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Sight",
+      "type": "object"
+    },
+    "Source": {
+      "additionalProperties": false,
+      "properties": {
+        "attachment_name": {
+          "title": "Attachment Name",
+          "type": "string"
+        },
+        "attachment_url": {
+          "title": "Attachment Url",
+          "type": "string"
+        },
+        "etag": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Etag"
+        },
+        "bytes": {
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "parsed_at": {
+          "format": "date-time",
+          "title": "Parsed At",
+          "type": "string"
+        },
+        "parser": {
+          "title": "Parser",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attachment_name",
+        "attachment_url",
+        "bytes",
+        "parsed_at",
+        "parser"
+      ],
+      "title": "Source",
+      "type": "object"
+    },
+    "Summary": {
+      "additionalProperties": false,
+      "properties": {
+        "days": {
+          "title": "Days",
+          "type": "integer"
+        },
+        "nights": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nights"
+        },
+        "depart_city": {
+          "default": "",
+          "title": "Depart City",
+          "type": "string"
+        },
+        "countries": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Countries",
+          "type": "array"
+        },
+        "region": {
+          "default": "",
+          "title": "Region",
+          "type": "string"
+        }
+      },
+      "required": [
+        "days"
+      ],
+      "title": "Summary",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One 线路 as its attachment describes it. Identity and the fields the ERP itself states\ncome from the catalog record; everything under ``cover``, ``days`` and the terms comes\nfrom the attachment.",
+  "properties": {
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "route_id": {
+      "title": "Route Id",
+      "type": "integer"
+    },
+    "route_code": {
+      "title": "Route Code",
+      "type": "string"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "department": {
+      "title": "Department",
+      "type": "string"
+    },
+    "sale_type": {
+      "default": "",
+      "title": "Sale Type",
+      "type": "string"
+    },
+    "summary": {
+      "$ref": "#/$defs/Summary"
+    },
+    "cover": {
+      "$ref": "#/$defs/Cover"
+    },
+    "transport": {
+      "items": {
+        "$ref": "#/$defs/Flight"
+      },
+      "title": "Transport",
+      "type": "array"
+    },
+    "days": {
+      "items": {
+        "$ref": "#/$defs/Day"
+      },
+      "title": "Days",
+      "type": "array"
+    },
+    "inclusions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Inclusions",
+      "type": "array"
+    },
+    "exclusions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Exclusions",
+      "type": "array"
+    },
+    "shopping": {
+      "items": {
+        "$ref": "#/$defs/ShoppingStop"
+      },
+      "title": "Shopping",
+      "type": "array"
+    },
+    "optional": {
+      "items": {
+        "$ref": "#/$defs/OptionalItem"
+      },
+      "title": "Optional",
+      "type": "array"
+    },
+    "policies": {
+      "$ref": "#/$defs/Policies"
+    },
+    "notices": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notices",
+      "type": "array"
+    },
+    "source": {
+      "$ref": "#/$defs/Source"
+    },
+    "quality": {
+      "$ref": "#/$defs/Quality"
+    }
+  },
+  "required": [
+    "route_id",
+    "route_code",
+    "name",
+    "department",
+    "summary",
+    "source",
+    "quality"
+  ],
+  "title": "RouteDoc",
+  "type": "object",
+  "$comment": "schema_version 1.0; one 线路 as its 行程附件 describes it, parsed by examples/tour/api/route_parser.py. Fields under source and quality are the parser's own."
+}

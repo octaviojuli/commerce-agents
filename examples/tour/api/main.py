@@ -58,6 +58,7 @@ from .http_erp import HttpErpClient
 from .itinerary import build_itinerary_extension, card_payload, stored_records
 from .mock_erp import MockErpClient
 from .plans import Plan, summarize
+from .route_docs import RouteDocStore
 from .shortlist import build_shortlist_extension
 from .store import SqliteSessionStore, display_messages
 from .tour_backend import (
@@ -125,6 +126,12 @@ registry: AdvisorRegistry = (
     else FixtureAdvisorRegistry(erp)
 )
 sessions = SqliteSessionStore(STATE_DIR / "sessions.sqlite")
+# The 线路 documents the review round produced (``docs/route-doc.md``): what has been
+# checked under route-docs/published/, the draft pick under route-docs/selected/.
+route_docs = RouteDocStore.load(STATE_DIR / "route-docs")
+if len(route_docs):
+    log.info("tour: %d 线路 documents loaded", len(route_docs))
+
 backend = TourBackend(
     erp,
     customer_id=0 if live else MOCK_CUSTOMER_ID,
@@ -137,6 +144,7 @@ backend = TourBackend(
     registry=registry,
     state_dir=STATE_DIR,
     plans=sessions,
+    route_docs=route_docs,
 )
 agent = ShoppingAgent(
     backend=backend,

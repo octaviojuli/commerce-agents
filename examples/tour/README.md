@@ -207,6 +207,19 @@ Single prompts worth trying after those turns:
   names any department but the 团期's own is refused with 部门不匹配, which is the guard the
   real ERP enforces with a bare 404. Nothing expires here, because the ERP's own 预留 runs on
   the departure's `reserveHours`.
+- `api/route_doc.py`: `RouteDoc`, one 线路 as a structured document — the static half of the
+  catalog (`docs/route-doc.md`): identity, `summary`, the attachment's `cover`, the flights,
+  the `days` (places, KM figures, 交通, the night, the 【景点】 with 含门票/外观/购物/自费/赠送,
+  the three meals, the hotel, the programme whole), the 包含/不含 lists, 购物 and 自费, the
+  policy sentences, and `source` and `quality` saying which attachment it was read from and
+  what a reviewer should check. `data/route-schema.json` is its JSON Schema.
+- `api/route_parser.py`: the .docx 行程附件 read into a `RouteDoc` by rule, on top of
+  `itinerary_source`'s days; `score` is the completeness the batch ranks the catalog by.
+- `api/route_docs.py`: `RouteDocStore`, the documents the runtime reads — `route-docs/published/`
+  (reviewed) over `route-docs/selected/` (the review round's draft) — and what the backend
+  reads off one ahead of the tags: the 行程, the card's 参考航班 / 购物店 / 费用包含 / 单房差
+  规格, the `doc` / `shopping_stops` / `meals_included` / `doc_hotel_grade` / `flights`
+  attributes, and the 纯玩 and hotel-standard filters.
 - `api/itinerary_source.py`: where a 线路's day-by-day 行程 comes from. A details record carries
   行程来源 and one spec per day — the day's title, its programme cut to 200 characters, its
   住宿 and its 用餐 — for at most 20 days, and a 线路 whose days could not be read says 无 there
@@ -460,6 +473,8 @@ A search that matches more lines than it may show is ranked, not cut in the cata
   from the itinerary attachment and the `periodPriceTags` budget band. There is no
   destination, hotel, vehicle, shopping or child-age *field*, because the ERP has none; those
   are tags, and `api/tags.py` is what reads them.
+- `data/route-schema.json`: the JSON Schema of `RouteDoc`, written by
+  `scripts/parse_attachments.py --schema` and held to the model by `api/tests/test_route_doc.py`.
 - `data/private-lines.json`: the words a 线路 not on general sale carries in its name, and
   the `saleType` values that mean public once the ERP sends the field; `api/private_lines.py`
   reads it.
@@ -525,6 +540,8 @@ gitignored, created at boot — holds all three:
 | `sessions.sqlite` | `api/store.py`'s `SqliteSessionStore` | one row per conversation (the advisor it belongs to, the session state, the version a write is checked against) and one row per message |
 | `memory-store.json` | the core's `JsonFileMemoryStore` | the facts the post-turn extraction pass keeps about each advisor |
 | `itineraries/{routeId}.json` | `api/itinerary_source.py`'s `cache_write` | one 线路's days as parsed out of its 行程附件, with the URL and the ETag they were read at |
+| `route-docs/{routeId}.json`, `index.json`, `REPORT.md`, `selected/` | `scripts/parse_attachments.py` | one `RouteDoc` per public .docx line, the ranking, and the first review round's pick; the agency's product data, never committed |
+| `route-docs/published/{routeId}.json` | the agency's product staff | the reviewed documents (`quality.reviewed_by` set), read at boot ahead of `selected/` |
 
 `SqliteSessionStore` is a subclass of `demo_common.sessions.SessionStore` with the six
 storage methods over one SQLite file, which is what that class's docstring describes a
@@ -557,6 +574,12 @@ id is the server's and a call carries it only once the advisor revises the plan.
 reports only — nothing is written, and the words it lists are candidates to review, because a
 change to the vocabulary or the prompt is made by hand afterwards. The sections and the parsing
 are `api/review.py`, which is where the tests read them.
+
+`scripts/parse_attachments.py [--select N] [--limit N] [--include-private] [--out DIR]` reads the
+catalog's public .docx 行程附件 into one `RouteDoc` per 线路 under the state directory's
+`route-docs/`, with `index.json` and `REPORT.md` ranking them by completeness and, with
+`--select`, the N most complete copied into `selected/` for the agency's product staff to
+review (`docs/route-doc.md`); `--schema` writes `data/route-schema.json` and stops.
 
 `python scripts/run_demo.py tour --fresh-memory` deletes `memory-store.json` and leaves the
 conversations beside it alone. The fixture seed in `data/memory-seed.json` is loaded at every
