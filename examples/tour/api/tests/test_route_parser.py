@@ -165,7 +165,7 @@ def test_layout_one_reads_flights_places_sights_meals_hotels_and_terms():
     )
     assert doc.notices[0] == "旅行团须知"
     assert doc.quality.completeness == 1.0 and doc.quality.needs_review == []
-    assert doc.source.parser == "docx-rules-1" and doc.source.bytes == len(LAYOUT_ONE)
+    assert doc.source.parser == "docx-rules-2" and doc.source.bytes == len(LAYOUT_ONE)
 
 
 def test_layout_two_reads_inline_cover_km_figures_and_the_overview_fallback():
@@ -176,7 +176,7 @@ def test_layout_two_reads_inline_cover_km_figures_and_the_overview_fallback():
     d1, d2, d3, d4 = doc.days
     # Day 1 has no 住宿 line: 夜宿飞机上 says the night, the overview says the meals.
     assert d1.overnight == "flight" and d1.meals.breakfast.included is False
-    assert d2.flights[0].flight_no == "MU249" and d2.flights[0].from_place == "PVG"
+    assert d2.flights[0].flight_no == "MU249" and d2.flights[0].from_place == "上海浦东"
     assert d2.hotel is not None and d2.hotel.name == "巴塞罗那或周边" and not d2.hotel.or_similar
     assert d2.meals.dinner.text == "<伊比利亚火腿餐>" and d2.meals.dinner.included
     names = [(s.name, s.kind, s.ticket_included) for s in d2.sights]
@@ -237,3 +237,82 @@ def test_a_flight_written_route_first_with_slashed_times_is_read_too():
         "科伦坡",
         "14:25/19:00",
     )
+
+
+# The lines the first review round found the rules reading wrong: a 均为外观 tail, a 自费
+# package's 参考行程, a 赠送 note, a 自由活动, a priced line without the word 自费, airport
+# codes, a night on a ship, and the 退改 sentence in the 旅游责任 notice.
+REVIEWED = docx(
+    table([["航空公司", "东航直飞"], ["行程亮点", ["★【网红打卡】赠送体验海边小火车"]]]),
+    table(
+        [
+            ["第 1 天 上海-科伦坡 参考航班：MU6018 CMBPVG 2030-0610+1"],
+            ["用餐", "早：X", "中：X", "晚：X"],
+            ["住宿", "酒店或同级", "交通：飞机"],
+            ["★ 于指定时间集合；抵达后接机。"],
+            ["第 2 天 科伦坡-加勒"],
+            ["用餐", "早：酒店内", "中：当地餐", "晚：酒店内"],
+            ["住宿", "酒店或同级", "交通：旅游用车"],
+            [
+                "一整天自由活动，也可参加自费项目 / 推荐自费套餐：加勒古堡+海龟抚育中心 自费 120 美金/人"
+                " / 参考行程如下: / 早餐后前往【海龟保育园】，之后参观【加勒古堡】。随后【赠送体验海边火车】"
+                "返回，参观【红树林】。备注：红树林为赠送项目。途中经过【茶园】。"
+            ],
+            ["第 3 天 加勒-科伦坡"],
+            ["用餐", "早：酒店内", "中：当地餐", "晚：X"],
+            ["住宿", "豪华夜邮轮", "交通：旅游用车"],
+            [
+                "上午自由活动，可选增加美瑞莎观鲸半日游，收费120美金/人（满10人发团）。下午市区游，"
+                "【独立广场】，【印度教寺庙】，【会议中心】均为外观或车游。"
+            ],
+            ["第 4 天 科伦坡-上海"],
+            ["用餐", "早：打包", "中：X", "晚：X"],
+            ["住宿", "无", "交通：飞机"],
+        ]
+    ),
+    paragraph("包含项目"),
+    paragraph("往返机票"),
+    paragraph("不包含项目"),
+    paragraph("因不可抗力的客观原因（如航班取消）而产生的额外的费用"),
+    paragraph("旅游责任"),
+    paragraph("行程中所安排之机票，均属团体订位，一经确认，概不退回任何款项。"),
+)
+
+
+def test_the_rules_the_first_review_round_added():
+    doc = parse_route(record(4), REVIEWED)
+    flight = doc.transport[0]
+    assert (flight.from_place, flight.to_place, flight.raw) == (
+        "科伦坡",
+        "上海浦东",
+        "MU6018 CMBPVG 2030-0610+1",
+    )
+    d1, d2, d3, d4 = doc.days
+    assert [(s.name, s.kind, s.ticket_included) for s in d2.sights] == [
+        ("全天自由活动", "自由活动", None),
+        ("海龟保育园", "自费", False),
+        ("加勒古堡", "自费", False),
+        ("海边火车", "赠送", None),
+        ("红树林", "赠送", None),
+        ("茶园", "景点", None),
+    ]
+    assert [(s.name, s.kind, s.ticket_included) for s in d3.sights] == [
+        ("上午自由活动", "自由活动", None),
+        ("独立广场", "外观", False),
+        ("印度教寺庙", "外观", False),
+        ("会议中心", "外观", False),
+    ]
+    assert d3.overnight == "ship" and doc.summary.nights == 3 and d4.overnight == "home"
+    assert [(o.name, o.price, o.day) for o in doc.optional] == [
+        ("加勒古堡+海龟抚育中心", "120美金/人", 2),
+        ("海龟保育园", "", 2),
+        ("美瑞莎观鲸半日游", "120美金/人", 3),
+    ]
+    assert (
+        doc.policies.cancellation
+        == "行程中所安排之机票，均属团体订位，一经确认，概不退回任何款项。"
+    )
+    assert doc.quality.needs_review == [
+        "第2天【茶园】疑似购物点，附件未列为购物店，请产品确认",
+        "封面写明赠送“【网红打卡】赠送体验海边小火车”，请核对各天的赠送标记",
+    ]

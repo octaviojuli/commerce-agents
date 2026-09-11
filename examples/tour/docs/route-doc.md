@@ -17,7 +17,7 @@ One document per 线路, `data/route-schema.json` being its JSON Schema:
 | `summary` | `days` (the ERP's), `nights` (the hotel nights read), `depart_city`, `countries`, `region` | the row, then `api/tags.py` over its tags and name |
 | `cover` | 航空公司, 酒店标准, 用餐安排, the ★ highlights, every labelled front-matter row | the attachment's cover table or its 吃/住/行 lines |
 | `transport` | every 参考航班 segment: day, flight number, carrier, route, times as written | the day headers and programmes |
-| `days[]` | `places` (the title's A-B-C), `distances_km`, `transport` (车程/交通), `overnight` (hotel / flight / home), `flights`, `sights[]` (名, 景点/外观/购物/自费/赠送, duration, 含门票), `meals` (three, each text and included), `hotel` (names, 或同级, grade), `text` (the programme whole) | the day table |
+| `days[]` | `places` (the title's A-B-C), `distances_km`, `transport` (车程/交通), `overnight` (hotel / ship / flight / home), `flights`, `sights[]` (名, 景点/外观/购物/自费/赠送/自由活动, duration, 含门票), `meals` (three, each text and included), `hotel` (names, 或同级, grade), `text` (the programme whole) | the day table |
 | `inclusions`, `exclusions` | the 费用包含 / 不含 lists, one item each | the terms |
 | `shopping`, `optional` | the 购物店 and 自费项目, from the terms and from the days | both |
 | `policies` | the sentence the terms write about 单房差, 儿童, 签证, 退改, 定金 | the terms |
@@ -36,6 +36,21 @@ empty and `needs_review` says so. The two production layouts are the ones the ru
 written against — one table per day with 用餐/住宿 rows, or an English overview table above
 a detail table with 餐饮/住宿 lines — and a third layout yields fewer fields and a lower
 score, which is the signal to look at it.
+
+Four rules read a day around its 【】 rather than inside them, because that is where the
+attachments put the qualifiers: a sentence ending 均为外观或车游 makes every 【】 in it an
+外观; a 参考行程如下 under a 全天自由活动 with a 自费套餐 makes every 【】 after it 自费
+up to the first 【赠送…】; a note saying X为赠送项目 marks the sight named X; a 自由活动
+is an entry of its own (全天/上午/下午). A priced line is a 自费 item whether or not the
+word 自费 stands beside the price (美瑞莎出海观鲸120美金/人). A 茶园, 香料园 or 宝石 kept
+as a sight, a line saying 此处不算购物店, and a 赠送 promised on the cover each add a
+`needs_review` note, since the parser cannot decide them and a product person can.
+A 【】 is a 购物 by its name (百货, Outlet, 老佛爷, 莎玛丽丹, 花宫娜, 天鹅广场) or by the words
+beside it (购物广场, 售卖, 门店); 含船票, 含缆车 and 含小火车 count as 含门票, 不入内 as an
+外观; a day whose 住宿 row names only the city takes its hotel grade from the overview
+table's HOTEL column; the 退改 policy is the 团体订位…概不退回 sentence of the notices, never
+the 不可抗力 clause; a 单人间房差…; 儿童… line is split at the semicolon; a 另行付费 table is
+read by column with the unit from its 价格(欧元/人) header.
 
 `score` is the completeness: the attachment's day count against the ERP's (0.20), a night
 read for every day (0.15), meals read for every day away from home (0.15), at least one

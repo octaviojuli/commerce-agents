@@ -90,7 +90,7 @@ class Day(_Doc):
     places: list[str] = Field(default_factory=list)
     distances_km: list[int] = Field(default_factory=list)
     transport: str = ""
-    overnight: Literal["hotel", "flight", "home", "unknown"] = "unknown"
+    overnight: Literal["hotel", "ship", "flight", "home", "unknown"] = "unknown"
     flights: list[Flight] = Field(default_factory=list)
     sights: list[Sight] = Field(default_factory=list)
     meals: Meals = Field(default_factory=Meals)
