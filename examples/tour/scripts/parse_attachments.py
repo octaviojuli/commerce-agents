@@ -1,9 +1,9 @@
 # Copyright 2026 Anthropic PBC
 # SPDX-License-Identifier: Apache-2.0
 
-"""Read the catalog's .docx 行程附件 into ``RouteDoc`` files, and rank them for review.
+"""Read the catalog's .docx and .pdf 行程附件 into ``RouteDoc`` files, and rank them for review.
 
-    python examples/tour/scripts/parse_attachments.py            # every public .docx line
+    python examples/tour/scripts/parse_attachments.py            # every public .docx and .pdf line
     python examples/tour/scripts/parse_attachments.py --select 30 --limit 200
     python examples/tour/scripts/parse_attachments.py --schema   # data/route-schema.json only
 
@@ -31,6 +31,7 @@ sys.path.insert(0, str(HERE.parents[2]))
 from tour.api.erp_client import RouteQuery, RouteRecord  # noqa: E402
 from tour.api.http_erp import HttpErpClient  # noqa: E402
 from tour.api.itinerary_source import fetch_attachment  # noqa: E402
+from tour.api.pdf_source import ImageOnlyPdf  # noqa: E402
 from tour.api.private_lines import load_private_line_rules  # noqa: E402
 from tour.api.route_doc import RouteDoc, json_schema  # noqa: E402
 from tour.api.route_parser import parse_route  # noqa: E402
@@ -86,10 +87,12 @@ async def _one(
     async with erp_sem:
         fetched = await fetch_attachment(record.attachment_url or "", etag=None)
     if fetched is None:
-        return record, None, "附件未取到（不是 .docx、超过大小上限或存储未响应）"
+        return record, None, "附件未取到（不是 .docx/.pdf、超过大小上限或存储未响应）"
     data, etag = fetched
     try:
         doc = parse_route(record, data, etag=etag)
+    except ImageOnlyPdf:
+        return record, None, "图片型 PDF（没有文字层），本轮跳过"
     except ValueError as error:
         return record, None, f"附件无法读取：{error}"
     (out / f"{record.route_id}.json").write_text(
@@ -213,13 +216,13 @@ async def run(args: argparse.Namespace) -> int:
     wanted = [
         r
         for r in catalog
-        if (r.attachment_url or "").lower().split("?")[0].endswith(".docx")
+        if (r.attachment_url or "").lower().split("?")[0].endswith((".docx", ".pdf"))
         and (args.include_private or not private.is_private(r))
     ]
     wanted.sort(key=lambda r: r.route_id)
     if args.limit:
         wanted = wanted[: args.limit]
-    print(f"catalog {len(catalog)} lines; {len(wanted)} public .docx to parse -> {out}")
+    print(f"catalog {len(catalog)} lines; {len(wanted)} public .docx/.pdf to parse -> {out}")
     sem = asyncio.Semaphore(FETCH_CONCURRENCY)
     results = await asyncio.gather(*(_one(sem, r, out) for r in wanted))
     rows: list[dict] = []

@@ -34,11 +34,14 @@ from typing import Any
 import httpx
 
 from .erp_client import Itinerary, ItineraryDay
+from .pdf_source import PDF_MAGIC, PDF_TYPE, pdf_lines
 
 log = logging.getLogger(__name__)
 
-# What a .docx is, on the wire and in a URL; anything else is not read at all.
+# What a .docx and a .pdf are, on the wire and in a URL; anything else is not read at all.
 DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+ATTACHMENT_TYPES = {DOCX_TYPE, PDF_TYPE}
+ATTACHMENT_SUFFIXES = (".docx", ".pdf")
 FETCH_TIMEOUT = 8.0
 # The ceiling on one attachment. An attachment is mostly the photographs in it: over 60 of the
 # production catalog's the median is 1.0 MB and the largest 12.4 MB, and a third of them are
@@ -67,8 +70,9 @@ _SECTION = re.compile(
     r"^(包含项目|不包含项目|费用包含|费用不含|预\s*定\s*须\s*知|服\s*务\s*所\s*包\s*含"
     r"|旅行团须知|另行付费|购物|自费|温馨提示|注意事项)"
 )
-_HOTEL = re.compile(r"^住宿[：:\s]*")
-_MEALS = re.compile(r"^(?:用餐|餐饮)[：:\s]*")
+# The 住宿 and 用餐 labels of the .docx rows, and the 酒店：/餐食：/住：/餐： of the .pdf ones.
+_HOTEL = re.compile(r"^(?:住宿[：:\s]*|(?:酒店|住)[：:]\s*)")
+_MEALS = re.compile(r"^(?:用餐[：:\s]*|(?:餐饮|餐食|餐)[：:]\s*)")
 # The 内陆交通 the first layout writes into the 住宿 row; it is not the night's hotel.
 _TRANSPORT = re.compile(r"^交通[：:]")
 _SPACES = re.compile(r"[ \t　]+")
@@ -109,9 +113,12 @@ def _row_line(row: ET.Element) -> str:
 
 
 def document_lines(data: bytes) -> list[str]:
-    """The attachment's body as lines in document order: one per paragraph, one per table row.
-    Raises ``ValueError`` for anything that is not a readable .docx, which the caller states as
-    no itinerary rather than as an error."""
+    """The attachment's body as lines in document order: one per paragraph, one per table row
+    of a .docx, and the same shape out of a .pdf through ``pdf_source``. Raises ``ValueError``
+    for anything that is not readable, which the caller states as no itinerary rather than as
+    an error."""
+    if data.startswith(PDF_MAGIC):
+        return pdf_lines(data)
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             document = archive.read("word/document.xml")
@@ -164,11 +171,31 @@ class _Day:
         self.meals: str | None = None
 
     def add(self, line: str) -> None:
-        if self.hotel is None and _HOTEL.match(line):
+        """A 住宿 or 用餐 row is the field whole; a row whose cells carry their own labels
+        (``交通：旅游用车 || 酒店：Goldi Sands``, ``餐：/ || 住：飞机上 || 行：无``) gives each
+        cell to its field and the rest to the text."""
+        cells = [c.strip() for c in line.split(CELL_SEPARATOR)]
+        labelled = any(
+            _HOTEL.match(c) or _MEALS.match(c) or c.startswith(("行：", "行:")) for c in cells[1:]
+        )
+        if not labelled and self.hotel is None and _HOTEL.match(line):
             self.hotel = _field(line, _HOTEL) or None
-        elif self.meals is None and _MEALS.match(line):
+            return
+        if not labelled and self.meals is None and _MEALS.match(line):
             self.meals = _field(line, _MEALS) or None
-        else:
+            return
+        if labelled:
+            rest = []
+            for cell in cells:
+                if self.hotel is None and _HOTEL.match(cell):
+                    self.hotel = _HOTEL.sub("", cell).strip() or None
+                elif self.meals is None and _MEALS.match(cell):
+                    self.meals = _MEALS.sub("", cell).strip() or None
+                elif cell and not _TRANSPORT.match(cell) and not cell.startswith(("行：", "行:")):
+                    rest.append(cell)
+            if len(rest) < len(cells):
+                line = CELL_SEPARATOR.join(rest)
+        if line:
             self.lines.append(line)
 
     def record(self) -> ItineraryDay:
@@ -218,7 +245,7 @@ async def fetch_attachment(
 ) -> tuple[bytes, str | None] | None:
     """The attachment's bytes and the ETag they came with, or ``None`` — which the caller
     reads as "keep whatever you have". ``None`` is the answer to an unchanged file (304 under
-    the ETag given), to anything that is not a .docx by content type or by URL, to a file over
+    the ETag given), to anything that is not a .docx or .pdf by content type or by URL, to a file over
     ``max_bytes`` by its ``Content-Length`` or by what actually arrived, and to every failure:
     the file is one the agency's staff uploaded to a server neither this host nor the ERP
     owns, and a details read must not fail because it is unreachable."""
@@ -234,8 +261,12 @@ async def fetch_attachment(
     if response.status_code == 304 or not response.is_success:
         return None
     content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
-    if content_type != DOCX_TYPE and not url.split("?")[0].lower().endswith(".docx"):
-        log.warning("tour: itinerary attachment is not a .docx: %s", content_type or "unstated")
+    if content_type not in ATTACHMENT_TYPES and not url.split("?")[0].lower().endswith(
+        ATTACHMENT_SUFFIXES
+    ):
+        log.warning(
+            "tour: itinerary attachment is not a .docx or .pdf: %s", content_type or "unstated"
+        )
         return None
     if int(response.headers.get("content-length") or 0) > max_bytes:
         return None
