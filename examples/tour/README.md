@@ -215,6 +215,11 @@ Single prompts worth trying after those turns:
   what a reviewer should check. `data/route-schema.json` is its JSON Schema.
 - `api/route_parser.py`: the .docx 行程附件 read into a `RouteDoc` by rule, on top of
   `itinerary_source`'s days; `score` is the completeness the batch ranks the catalog by.
+- `api/route_docs.py`: `RouteDocStore`, the documents the runtime reads — `route-docs/published/`
+  (reviewed) over `route-docs/selected/` (the review round's draft) — and what the backend
+  reads off one ahead of the tags: the 行程, the card's 参考航班 / 购物店 / 费用包含 / 单房差
+  规格, the `doc` / `shopping_stops` / `meals_included` / `doc_hotel_grade` / `flights`
+  attributes, and the 纯玩 and hotel-standard filters.
 - `api/itinerary_source.py`: where a 线路's day-by-day 行程 comes from. A details record carries
   行程来源 and one spec per day — the day's title, its programme cut to 200 characters, its
   住宿 and its 用餐 — for at most 20 days, and a 线路 whose days could not be read says 无 there
@@ -536,6 +541,7 @@ gitignored, created at boot — holds all three:
 | `memory-store.json` | the core's `JsonFileMemoryStore` | the facts the post-turn extraction pass keeps about each advisor |
 | `itineraries/{routeId}.json` | `api/itinerary_source.py`'s `cache_write` | one 线路's days as parsed out of its 行程附件, with the URL and the ETag they were read at |
 | `route-docs/{routeId}.json`, `index.json`, `REPORT.md`, `selected/` | `scripts/parse_attachments.py` | one `RouteDoc` per public .docx line, the ranking, and the first review round's pick; the agency's product data, never committed |
+| `route-docs/published/{routeId}.json` | the agency's product staff | the reviewed documents (`quality.reviewed_by` set), read at boot ahead of `selected/` |
 
 `SqliteSessionStore` is a subclass of `demo_common.sessions.SessionStore` with the six
 storage methods over one SQLite file, which is what that class's docstring describes a

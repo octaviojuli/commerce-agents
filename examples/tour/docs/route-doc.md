@@ -57,15 +57,33 @@ line (包团/会销/定制 skipped unless asked), four downloads at a time, one 
 documents are the agency's product data and are not committed.
 
 The review is the agency's product staff's: they read each `selected/` document against the
-attachment, correct the fields, and set `quality.reviewed_by` and `reviewed_at`. A document
-with those set is published; the runtime reads published documents for content and the ERP
-for everything dated. That second arrow is the next step and is not built yet.
+attachment, correct the fields, set `quality.reviewed_by` and `reviewed_at`, and move the
+file to `route-docs/published/`.
+
+## The runtime
+
+`api/route_docs.py`'s `RouteDocStore` reads `published/` and `selected/` at boot, a published
+document winning over a selected one for the same 线路, and the backend reads a document ahead
+of everything it would otherwise guess:
+
+- the 行程 on a details record and under a 定制方案 comes from the document's days, and the
+  card says 线路文档（已复核）or 线路文档（解析稿，待复核）as its 行程来源;
+- the card's 规格 gain 参考航班, 酒店标准, 用餐安排, 购物店, 自费项目, 费用包含 / 不含, 单房差,
+  儿童 and 签证;
+- the model reads `doc` (reviewed / draft), `shopping_stops`, `meals_included`,
+  `doc_hotel_grade` and `flights` on the route record;
+- the 纯玩 and hotel-standard filters, and the note a relaxed record carries, follow the
+  document's 购物店 count and stated grade rather than the tags.
+
+A 线路 with no document is read as before: the ERP's own days where it has them, the
+attachment parsed where it does not, the tags for the rest. The team's 团期, seats and prices
+are never in a document.
 
 ## Not yet
 
 - `.pdf` attachments (65 of the production catalog's 269), image attachments (34), `.xlsx` (3).
-- The runtime reading published documents: search facets off `days[].sights`, `hotel.grade`,
-  `meals`, `inclusions`; the card showing the programme; the customer page.
+- Search facets off `days[].sights`, `inclusions` and the meals beyond the three filters
+  above; the card drawing the programme day by day; the customer page.
 - A review tool. The first round is the JSON files and the report.
 - The ERP holding the document. `erp-contract.md` asks for a structured itinerary endpoint;
   when it exists the parser becomes the fallback.

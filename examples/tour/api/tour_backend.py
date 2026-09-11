@@ -92,6 +92,16 @@ from .plans import (
     new_share_token,
 )
 from .private_lines import load_private_line_rules
+from .route_doc import RouteDoc
+from .route_docs import (
+    RouteDocStore,
+    flights_text,
+    hotel_grade,
+    is_reviewed,
+    itinerary_of,
+    meals_included,
+    shopping_stops,
+)
 from .store import PlanConflictError, SqliteSessionStore
 from .tags import UNKNOWN, RouteFacets, normalize
 
@@ -313,16 +323,22 @@ def _wanted_grade(level: str) -> str | None:
     return _HOTEL_GRADES.get(level.strip()[:1]) if level and level.strip() else None
 
 
-def _has_hotel_level(record: RouteRecord, facets: RouteFacets, level: str) -> bool:
+def _has_hotel_level(
+    record: RouteRecord, facets: RouteFacets, level: str, doc: RouteDoc | None = None
+) -> bool:
     """The tags say this standard. A route whose tags name none is not admitted here: it is
     not a no, so the step that drops the preferences takes it with a note saying so."""
-    return facets.hotel_grade == _wanted_grade(level)
+    stated = hotel_grade(doc) if doc is not None else ""
+    return (stated or facets.hotel_grade) == _wanted_grade(level)
 
 
-def _is_no_shopping(record: RouteRecord, facets: RouteFacets) -> bool:
-    """纯玩 by the tags where they say anything about 购物 at all; by the words in the name
-    and the tags where they do not, which is what the catalog offered before the ERP
-    extracted a 购物 tag from the itinerary."""
+def _is_no_shopping(record: RouteRecord, facets: RouteFacets, doc: RouteDoc | None = None) -> bool:
+    """纯玩 by the 线路 document where there is one — it names every 购物店 the attachment
+    does — else by the tags where they say anything about 购物 at all, else by the words in
+    the name and the tags, which is what the catalog offered before the ERP extracted a 购物
+    tag from the itinerary."""
+    if doc is not None:
+        return shopping_stops(doc) == 0
     if facets.shopping != UNKNOWN:
         return facets.shopping == "none"
     text = _text_of(record)
@@ -400,7 +416,55 @@ def _specs(record: RouteRecord, facets: RouteFacets) -> dict[str, str]:
     return specs
 
 
-def _itinerary_specs(record: RouteRecord, itinerary: Itinerary | None) -> dict[str, str]:
+def _doc_attributes(doc: RouteDoc | None) -> dict[str, str]:
+    """What the model reads off a 线路 document beside the tag-derived attributes: whether the
+    document is the agency's reviewed word or the parser's draft, the 购物店 count, the meals
+    the price includes, the hotel standard the attachment states, and the flights."""
+    if doc is None:
+        return {}
+    included, stated = meals_included(doc)
+    return {
+        "doc": "reviewed" if is_reviewed(doc) else "draft",
+        "shopping_stops": str(shopping_stops(doc)),
+        "meals_included": f"{included}/{stated}" if stated else "",
+        "doc_hotel_grade": hotel_grade(doc),
+        "flights": flights_text(doc)[:200],
+    }
+
+
+def _doc_specs(doc: RouteDoc | None) -> dict[str, str]:
+    """The 行程规格 a document adds to the card, in the advisor's words."""
+    if doc is None:
+        return {}
+    specs: dict[str, str] = {}
+    if doc.transport:
+        specs["参考航班"] = flights_text(doc)
+    if doc.cover.hotel_standard:
+        specs["酒店标准"] = doc.cover.hotel_standard
+    if doc.cover.meal_standard:
+        specs["用餐安排"] = doc.cover.meal_standard
+    specs["购物店"] = "、".join(s.name for s in doc.shopping) or "无（附件未列购物店）"
+    if doc.optional:
+        specs["自费项目"] = "、".join(
+            f"{o.name}{' ' + o.price if o.price else ''}" for o in doc.optional
+        )
+    if doc.inclusions:
+        specs["费用包含"] = "；".join(doc.inclusions[:8])
+    if doc.exclusions:
+        specs["费用不含"] = "；".join(doc.exclusions[:6])
+    for label, text in (
+        ("单房差", doc.policies.single_room),
+        ("儿童", doc.policies.child),
+        ("签证", doc.policies.visa),
+    ):
+        if text:
+            specs[label] = text
+    return specs
+
+
+def _itinerary_specs(
+    record: RouteRecord, itinerary: Itinerary | None, doc: RouteDoc | None = None
+) -> dict[str, str]:
     """The 线路's baseline 行程 as one spec per day, under the line saying where it was read.
     行程来源 is stated whichever way the reading went, because a day the advisor cannot see
     here is one they have to open the attachment for, and the record has to say which case it
@@ -409,6 +473,8 @@ def _itinerary_specs(record: RouteRecord, itinerary: Itinerary | None) -> dict[s
     if itinerary is None:
         return {"行程来源": NO_ITINERARY}
     attachment = f"行程附件 {record.attachment_name or ''}".strip()
+    if doc is not None and itinerary.source_ref == "route-doc":
+        attachment = "线路文档（已复核）" if is_reviewed(doc) else "线路文档（解析稿，待复核）"
     specs = {"行程来源": "ERP" if itinerary.source == "erp" else attachment}
     for day in itinerary.days[:MAX_ITINERARY_DAYS]:
         line = f"{day.title}｜{day.text[:MAX_DAY_CHARS]}"
@@ -647,13 +713,15 @@ def _fits_city(record: RouteRecord, facets: RouteFacets, city: str) -> bool:
     return any(wanted in name for name in (*facets.departure_cities, record.depart_city))
 
 
-def _fits(record: RouteRecord, facets: RouteFacets, stated: Request) -> bool:
+def _fits(
+    record: RouteRecord, facets: RouteFacets, stated: Request, doc: RouteDoc | None = None
+) -> bool:
     """The filters the ERP cannot apply: the day count, 纯玩, the hotel standard and the city
     the group leaves from. 亲子 is not one of them — a family that would take a line without
     the tag is better served by it sorting first, so it orders the shortlist instead."""
     if not _fits_days(record, stated):
         return False
-    if stated.no_shopping and not _is_no_shopping(record, facets):
+    if stated.no_shopping and not _is_no_shopping(record, facets, doc):
         return False
     if stated.departure_city and not _fits_city(record, facets, stated.departure_city):
         return False
@@ -661,7 +729,9 @@ def _fits(record: RouteRecord, facets: RouteFacets, stated: Request) -> bool:
         return False
     if stated.price_max and record.from_price > stated.price_max:
         return False
-    return not (stated.hotel_level and not _has_hotel_level(record, facets, stated.hotel_level))
+    return not (
+        stated.hotel_level and not _has_hotel_level(record, facets, stated.hotel_level, doc)
+    )
 
 
 def _fits_region(facets: RouteFacets, region: str) -> bool:
@@ -709,29 +779,43 @@ def _days_note(record: RouteRecord, stated: Request) -> str | None:
     return f"天数 {record.days} 天，超出要求的 {low}–{high} 天"
 
 
-def _preference_notes(record: RouteRecord, facets: RouteFacets, stated: Request) -> list[str]:
-    """What the tags say against what the advisor asked for. The tags are the ERP's own
-    extraction of the itinerary and can be wrong, so a note states what they say rather than
-    that the route fails the condition, and says so plainly where they say nothing at all."""
+def _preference_notes(
+    record: RouteRecord, facets: RouteFacets, stated: Request, doc: RouteDoc | None = None
+) -> list[str]:
+    """What the tags — or the 线路 document, where there is one — say against what the advisor
+    asked for. The tags are the ERP's own extraction of the itinerary and can be wrong, so a
+    note states what they say rather than that the route fails the condition, and says so
+    plainly where they say nothing at all; a document's word is the attachment's own."""
     notes = []
-    if stated.hotel_level and not _has_hotel_level(record, facets, stated.hotel_level):
+    if stated.hotel_level and not _has_hotel_level(record, facets, stated.hotel_level, doc):
         wanted = _wanted_grade(stated.hotel_level) or stated.hotel_level
-        notes.append(
-            f"标签标注{facets.hotel_grade}，要求{wanted}"
-            if facets.hotel_grade != UNKNOWN
-            else f"未标注{wanted}"
-        )
-    if stated.no_shopping and not _is_no_shopping(record, facets):
-        notes.append("标签标注含购物" if facets.shopping == "some" else "未标注纯玩或零购物")
+        stated_grade = hotel_grade(doc) if doc is not None else ""
+        if stated_grade:
+            notes.append(f"行程附件标注{stated_grade}，要求{wanted}")
+        elif facets.hotel_grade != UNKNOWN:
+            notes.append(f"标签标注{facets.hotel_grade}，要求{wanted}")
+        else:
+            notes.append(f"未标注{wanted}")
+    if stated.no_shopping and not _is_no_shopping(record, facets, doc):
+        if doc is not None:
+            notes.append(f"行程附件列出 {shopping_stops(doc)} 家购物店")
+        else:
+            notes.append("标签标注含购物" if facets.shopping == "some" else "未标注纯玩或零购物")
     return notes
 
 
-def _mismatch(record: RouteRecord, facets: RouteFacets, stated: Request, dates: list[date]) -> str:
+def _mismatch(
+    record: RouteRecord,
+    facets: RouteFacets,
+    stated: Request,
+    dates: list[date],
+    doc: RouteDoc | None = None,
+) -> str:
     """What the advisor reads back: every condition they stated that this record fails, in
     the order they stated them. A route admitted by one relaxation usually misses more than
     that step alone relaxed, and a note that named only that step would understate it."""
     notes = [note for note in (_date_note(stated, dates), _days_note(record, stated)) if note]
-    return "；".join(notes + _preference_notes(record, facets, stated)) or "与所提条件略有出入"
+    return "；".join(notes + _preference_notes(record, facets, stated, doc)) or "与所提条件略有出入"
 
 
 @dataclass
@@ -983,6 +1067,7 @@ class TourBackend(StorefrontBackend):
         order_store_name: str = "",
         registry: AdvisorRegistry | None = None,
         state_dir: Path | None = None,
+        route_docs: RouteDocStore | None = None,
         plans: SqliteSessionStore | None = None,
     ) -> None:
         """``today`` is for a host that runs on its own clock; the default is the real date.
@@ -1008,6 +1093,9 @@ class TourBackend(StorefrontBackend):
         self.registry = registry
         self.plans = plans
         self._state_dir = state_dir
+        # The 线路 documents (``route_docs.py``): reviewed first, the review round's draft pick
+        # behind; a deployment with none reads the attachments as before.
+        self._route_docs = route_docs or RouteDocStore()
         self.today: date = today or _utcnow().date()
         self.live = live
         self.customer_id = customer_id
@@ -1246,7 +1334,8 @@ class TourBackend(StorefrontBackend):
         fits = [
             record
             for record in records
-            if _fits(record, self._facets(record), stated) and self._sellable(record, stated)
+            if _fits(record, self._facets(record), stated, self._doc(record))
+            and self._sellable(record, stated)
         ]
         if fetched is None:
             return fits
@@ -1261,7 +1350,9 @@ class TourBackend(StorefrontBackend):
                 continue
             if not self._sellable(record, stated):
                 continue
-            if _fits(record, facets, stated) and await self._departs(erp, record, window, fetched):
+            if _fits(record, facets, stated, self._doc(record)) and await self._departs(
+                erp, record, window, fetched
+            ):
                 matched.append(record)
         fetched.matched = len(matched)
         rows = {
@@ -1501,6 +1592,7 @@ class TourBackend(StorefrontBackend):
             labels=_labels(record, facets),
             attributes={
                 **_route_attributes(record, facets, match, mismatch),
+                **_doc_attributes(self._doc(record)),
                 **({"line_type": kind} if (kind := self._private.line_type(record)) else {}),
             },
             in_stock=any(row.available_seats >= party for row in rows),
@@ -1570,7 +1662,7 @@ class TourBackend(StorefrontBackend):
         for record, rows in listed:
             dates = [row.depart_date for row in rows]
             mismatch = (
-                _mismatch(record, self._facets(record), original, dates)
+                _mismatch(record, self._facets(record), original, dates, self._doc(record))
                 if original is not None
                 else None
             )
@@ -1710,8 +1802,13 @@ class TourBackend(StorefrontBackend):
         return ProductDetails(
             **family.model_dump(),
             long_description="\n".join(record.features)[:1200] or None,
-            specs=_specs(record, self._facets(record)) | _itinerary_specs(record, itinerary),
+            specs=_specs(record, self._facets(record))
+            | _doc_specs(self._doc(record))
+            | _itinerary_specs(record, itinerary, self._doc(record)),
         )
+
+    def _doc(self, record: RouteRecord) -> RouteDoc | None:
+        return self._route_docs.get(record.route_id)
 
     async def _itinerary(self, erp: ErpClient, record: RouteRecord) -> Itinerary | None:
         """The 线路's baseline 行程, read once per process: the ERP's own days where it has
@@ -1729,6 +1826,9 @@ class TourBackend(StorefrontBackend):
         server neither this host nor the ERP owns, and a details read the advisor is waiting on
         must not fail because it is unreachable, oversized or not a readable .docx — such a
         route reads 行程来源：无 and the advisor opens the attachment themselves."""
+        doc = self._doc(record)
+        if doc is not None and doc.days:
+            return itinerary_of(doc)
         try:
             found = await erp.get_itinerary(record.route_id)
         except ErpError as error:
