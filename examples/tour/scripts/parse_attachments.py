@@ -125,6 +125,20 @@ def _spread(rows: list[dict], count: int) -> list[dict]:
     return chosen
 
 
+def _reason(note: str) -> str:
+    """A note as the class it counts under: the parser's per-line doubts (第4天【茶园】疑似
+    购物点…, 封面写明赠送…) are one reason each, whatever line they name."""
+    if "疑似购物点" in note:
+        return "有景点疑似购物点，待产品确认"
+    if "购物口径" in note:
+        return "附件写了“不算购物店”，购物口径待产品确认"
+    if note.startswith("封面写明赠送"):
+        return "封面写明赠送，待核对各天的赠送标记"
+    if note.startswith("附件天数"):
+        return "附件天数与 ERP 天数不一致"
+    return note
+
+
 def _report(rows: list[dict], failures: list[dict], out: Path, selected: list[dict]) -> str:
     lines = ["# 行程附件解析报告", ""]
     lines.append(
@@ -144,7 +158,7 @@ def _report(rows: list[dict], failures: list[dict], out: Path, selected: list[di
         lines.append(
             "完整度分布：" + "、".join(f"{k} {v}" for k, v in sorted(bands.items(), reverse=True))
         )
-        reasons = Counter(note for r in rows for note in r["needs_review"])
+        reasons = Counter(_reason(note) for r in rows for note in r["needs_review"])
         if reasons:
             lines.append("待复核原因：" + "、".join(f"{k} {v}" for k, v in reasons.most_common()))
     if selected:
