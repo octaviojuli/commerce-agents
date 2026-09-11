@@ -210,3 +210,30 @@ def test_the_score_names_each_missing_field():
     # Day 2 was the one hotel day with sights, so that check falls too.
     assert completeness == 0.65
     assert notes == ["有的天没有读到住宿", "没有读到参考航班", "有的行程日没有读到景点"]
+
+
+def test_a_flight_written_route_first_with_slashed_times_is_read_too():
+    """``参考航班： 上海-科伦坡 MU231 14：25/19:00``: the route before the number, the times
+    joined by a slash and a full-width colon."""
+    doc = parse_route(
+        record(2),
+        docx(
+            table(
+                [
+                    ["第 1 天 上海-科伦坡 参考航班： 上海-科伦坡 MU231 14：25/19:00"],
+                    ["用餐", "早：X", "中：X", "晚：X"],
+                    ["住宿", "酒店或同级", "交通：飞机"],
+                    ["第 2 天 科伦坡-上海"],
+                    ["用餐", "早：酒店内", "中：X", "晚：X"],
+                    ["住宿", "无", "交通：飞机"],
+                ]
+            )
+        ),
+    )
+    flight = doc.transport[0]
+    assert (flight.flight_no, flight.from_place, flight.to_place, flight.times) == (
+        "MU231",
+        "上海",
+        "科伦坡",
+        "14:25/19:00",
+    )

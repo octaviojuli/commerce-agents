@@ -51,7 +51,11 @@ from .tags import normalize
 PARSER_VERSION = "docx-rules-1"
 
 _FLIGHT_NO = re.compile(r"\b([A-Z]{2}\d{2,4})\b")
-_FLIGHT_TIMES = re.compile(r"\d{1,2}:?\d{2}\s*[-–—]\s*\d{1,2}:?\d{2}(?:\+\d)?")
+# ``1425-1900``, ``01:20-07:40``, ``14:25/19:00`` and a ``+1`` day: the separator is a dash or,
+# between two clock times, a slash.
+_FLIGHT_TIMES = re.compile(
+    r"\d{1,2}:?\d{2}\s*(?:[-–—]|/(?=\s*\d{1,2}:\d{2}))\s*\d{1,2}:?\d{2}(?:\+\d)?"
+)
 _FLIGHT_ROUTE = re.compile(r"([A-Za-z一-鿿]{2,})\s*[-–—]\s*([A-Za-z一-鿿]{2,})")
 _FLIGHT_MARK = re.compile(r"参考航班[：:]?")
 _KM = re.compile(r"(\d{2,4})\s*KM", re.IGNORECASE)
@@ -111,14 +115,19 @@ def _flights(text: str, day: int) -> list[Flight]:
         if not numbers:
             continue
         pieces = re.split(r"(?=\b[A-Z]{2}\d{2,4}\b)", chunk)
-        for piece in pieces:
+        for index, piece in enumerate(pieces):
             piece = piece.strip(" ;；,，")
             number = _FLIGHT_NO.search(piece)
             if number is None:
                 continue
             after = piece[number.end() :]
-            route = _FLIGHT_ROUTE.search(after)
-            times = " / ".join(_FLIGHT_TIMES.findall(after))
+            # The route is usually after the number (MU6017 上海浦东-科伦坡) and sometimes
+            # before it (上海-科伦坡 MU231 14:25/19:00), which is the piece before this one.
+            before = pieces[index - 1] if index else ""
+            route = _FLIGHT_ROUTE.search(_FLIGHT_TIMES.sub("", after)) or _FLIGHT_ROUTE.search(
+                _FLIGHT_TIMES.sub("", before)
+            )
+            times = " / ".join(_FLIGHT_TIMES.findall(after) or _FLIGHT_TIMES.findall(before))
             found.append(
                 Flight(
                     day=day,
