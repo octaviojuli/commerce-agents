@@ -1207,9 +1207,9 @@ def _optional_in_text(text: str, day: int) -> list[OptionalItem]:
 def _apply_ticket_list(days: list[Day], inclusions: list[str]) -> None:
     """``所含景点首道门票（其余景点均为外观）：马德里皇宫、塞哥维亚古城…``: the 包含 list names
     which sights the price's 首道门票 covers. A sight it names has its ticket; a 景点 it does
-    not name has none, and is an 外观 as well only where the same line says 其余景点均为外观 —
-    an attachment that does not say it may simply have left a sight off the list, and a 景点
-    with ``ticket_included`` False is the safer reading of that."""
+    not name has none. Its kind stays 景点 even where the line says 其余景点均为外观: the
+    second review round found 211 squares, bridges and 市区观光 entries turned into 外观 by
+    that tail, and a 景点 with ``ticket_included`` False is what the reviewers write."""
     for item in inclusions:
         listed_in = _TICKET_LIST.match(item)
         if listed_in is None:
@@ -1221,7 +1221,6 @@ def _apply_ticket_list(days: list[Day], inclusions: list[str]) -> None:
         ]
         if not listed:
             continue
-        all_outside = any(tail in item for tail in _ALL_OUTSIDE_TAIL)
         for day in days:
             for sight in day.sights:
                 if sight.kind not in ("景点", "外观") or sight.ticket_included is not None:
@@ -1229,9 +1228,10 @@ def _apply_ticket_list(days: list[Day], inclusions: list[str]) -> None:
                 if any(name in sight.name or sight.name in name for name in listed):
                     sight.ticket_included = True
                 elif sight.kind == "景点":
+                    # The kind stays 景点: a 广场, a bridge or a 市区观光 entry the list leaves
+                    # out is not an 外观 in the reviewers' reading, whatever the line's tail
+                    # says; the tail only settles that no ticket is in the price.
                     sight.ticket_included = False
-                    if all_outside:
-                        sight.kind = "外观"
 
 
 def _countries(name: str, days: list[Day], cover: Cover, tagged: list[str]) -> list[str]:
@@ -1241,10 +1241,15 @@ def _countries(name: str, days: list[Day], cover: Cover, tagged: list[str]) -> l
     Where none of those names a country the line's tags answer instead, without the region
     words (东欧, 北欧, 巴尔干) they carry, which are not countries."""
     found: list[tuple[int, int, str]] = []
+    # The cover's meal row names dishes (土耳其烤肉卷), not countries; the rest of it counts.
     texts = [
         name,
         *(part for day in days for part in (day.title, " ".join(day.places))),
-        *cover.fields.values(),
+        *(
+            value
+            for label, value in cover.fields.items()
+            if not any(word in label for word in ("餐", "吃", "美食"))
+        ),
     ]
     for index, text in enumerate(texts):
         for country, words in _COUNTRY_WORDS:
