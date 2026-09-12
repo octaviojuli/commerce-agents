@@ -165,6 +165,9 @@ RANK_DATE_BUCKET_DAYS = 3
 MAX_PER_REGION = 2
 # How many 团期 one 团期卡 carries: the advisor reads a fortnight of dates out, not a year's.
 MAX_DEPARTURE_ITEMS = 12
+# How far past the advisor's dates a line that runs in none of them is looked up, so the card
+# can name the nearest date it does run: half a year, which is as far ahead as the catalog goes.
+NEAREST_WINDOW_DAYS = 180
 # Above this many matches the search is an overview and a question, not a shortlist.
 OVERVIEW_ABOVE = 5
 # How much of a document's cover fields a card carries: 酒店标准 is a paragraph in some
@@ -654,6 +657,22 @@ def _facts_labels(facts: RouteFacts) -> list[str]:
     return [label for label in labels if label][:MAX_LABELS]
 
 
+def _window_label(window: tuple[date, date]) -> str:
+    """The advisor's dates as they read them back: ``10/01–10/07``."""
+    return f"{window[0]:%m/%d}–{window[1]:%m/%d}"
+
+
+def _no_departures_note(window: tuple[date, date], nearest: date | None) -> str:
+    """What a line that runs in none of the advisor's dates says instead, in the words the
+    advisor reads back to the customer."""
+    span = f"{_window_label(window)} 无团期"
+    return (
+        f"{span}，最近团期 {nearest:%m/%d}"
+        if nearest
+        else f"{span}，{NEAREST_WINDOW_DAYS} 天内无团期"
+    )
+
+
 def _facts_summary(facts: RouteFacts) -> str:
     """The one line under the title: the document's first 亮点 where it has one, else the
     shape of the trip."""
@@ -767,6 +786,10 @@ class Overview:
     dimensions: tuple[str, ...] = ()
     # The request matched nothing and the groups are the catalog's own directions.
     empty: bool = False
+    # The dates the advisor stated, where they stated any, and how many of the matches run in
+    # them: a line that runs in none of them is on the cards as its nearest date.
+    window: str = ""
+    with_dates: int = 0
 
     # The filter each group's values go back through (``catalog.FILTERS``).
     FILTERS = CHIP_FILTERS
@@ -782,12 +805,14 @@ class Overview:
             return (
                 f"目录概览：这 {self.total} 条线路的国家和天数相同，只差在{named}，还不能替客人选。"
             )
+        dated = f"，其中 {self.with_dates} 条在 {self.window} 有团期" if self.window else ""
         if self.answered:
-            return f"目录概览：缩小范围后仍有 {self.total} 条，上面是其中 {self.shown} 条。"
+            return f"目录概览：缩小范围后仍有 {self.total} 条{dated}，上面是其中 {self.shown} 条。"
         if self.total <= FOCUS_ANCHORS_UP_TO:
-            return f"目录概览：共 {self.total} 条线路符合，上面是其中 {self.shown} 条。"
+            return f"目录概览：共 {self.total} 条线路符合{dated}，上面是其中 {self.shown} 条。"
         return (
-            f"目录概览：共 {self.total} 条线路符合，上面只是其中 {self.shown} 条的样本，不是结论。"
+            f"目录概览：共 {self.total} 条线路符合{dated}，"
+            f"上面只是其中 {self.shown} 条的样本，不是结论。"
         )
 
     def _rows(self) -> list[str]:
@@ -798,6 +823,18 @@ class Overview:
                 how = f"filter {key}" if (key := self.FILTERS.get(label, "")) else "无过滤"
                 rows.append(f"按{label}（{how}）：{cells}")
         return rows
+
+    def _dates_rule(self) -> str:
+        """What the model does with the dates the advisor stated, where they stated any."""
+        if not self.window:
+            return ""
+        return (
+            f" Every card says what it sells in {self.window}: lead with the lines whose "
+            "departures attribute names dates, and for a line whose match is adjacent_date say "
+            "it runs on none of them and give its nearest_departure. The dates are on the "
+            "cards, so never say the 团期 have not been checked and never open one line's 团期 "
+            "after another to find out."
+        )
 
     def _instruction(self) -> str:
         mapping = (
@@ -825,23 +862,50 @@ class Overview:
             return (
                 "The advisor has narrowed once already: present the cards with "
                 "present_products, and keep the question to one short line — the chips are "
-                f"welcome after the cards while the set is wider than {OVERVIEW_ABOVE}. "
-                f"{mapping}"
+                f"welcome after the cards while the set is wider than {OVERVIEW_ABOVE}."
+                f"{self._dates_rule()} {mapping}"
             )
         if self.total <= FOCUS_ANCHORS_UP_TO:
             return (
                 "A set this size is cards and chips together: present the results with "
                 "present_products, say the total in a sentence, and end the reply with "
                 "present_focus asking ONE narrowing question over the groups above, naming the "
-                f"dimension that splits the set best. {mapping}"
+                f"dimension that splits the set best.{self._dates_rule()} {mapping}"
             )
         return (
             "Too many lines for the advisor to read as cards: do not present these as the "
             "answer. State the total in a sentence and call present_focus with ONE narrowing "
             "question, naming the dimension that splits this set best; the card carries the "
-            "groups above as chips and no 线路 at all. Cards follow the advisor's answer. "
-            f"{mapping}"
+            "groups above as chips and no 线路 at all. Cards follow the advisor's answer."
+            f"{self._dates_rule()} {mapping}"
         )
+
+
+@dataclass(frozen=True)
+class LineDates:
+    """What one search read about its matches' 团期: the rows inside the advisor's dates by
+    线路 id, the nearest date a line with none of them does run, and every date read for each
+    line, which is what the 出发月份 chips are counted from. ``read_all`` says the run weighed
+    every match and not only the ones the cards carry."""
+
+    inside: dict[int, list[DepartureRecord]]
+    nearest: dict[int, date]
+    read_all: bool
+    months: dict[int, list[date]] = field(default_factory=dict)
+
+    def rows(self, route_id: int) -> list[DepartureRecord]:
+        return self.inside.get(route_id, [])
+
+    def runs_in_window(self, route_id: int) -> bool:
+        return bool(self.inside.get(route_id))
+
+    def month_dates(self) -> dict[int, list[date]]:
+        """Every date read, by 线路 id: the stated window's rows, and the later read's dates
+        for the lines that had none."""
+        read = {
+            route_id: [row.depart_date for row in rows] for route_id, rows in self.inside.items()
+        }
+        return {**read, **self.months}
 
 
 @dataclass(frozen=True)
@@ -1667,26 +1731,65 @@ class TourBackend(StorefrontBackend):
         named = stated.text.strip()
         return bool(named) and named in (record.route_name.strip(), facts.name.strip())
 
-    async def _matched_departures(
+    async def _line_dates(
         self,
         erp: ErpClient,
         matches: list[RouteFacts],
         window: tuple[date, date],
         fetched: Fetched,
+        *,
+        stated: bool,
         limit: int,
+    ) -> LineDates:
+        """Which of the matched lines run in the advisor's dates, and for the ones that do not,
+        the nearest date they do run.
+
+        A stated window is a condition and not a decoration: a card that said nothing about the
+        dates the advisor asked for would leave them to find out one 线路 at a time. So every
+        match is weighed against the window, and the lines with no 团期 in it are looked up once
+        more over the ``NEAREST_WINDOW_DAYS`` after it — one read for all of them together,
+        like the first. A client that reads a window whole (``WindowReader``) answers both from
+        two paged reads; one that cannot is asked per line, which the catalog's size bounds.
+
+        With no window stated there is nothing to weigh: the 团期 are read for the lines the
+        cards will carry, and the months are then counted off those alone."""
+        inside = await self._window_rows(
+            erp, matches if stated else matches[:limit], window, fetched
+        )
+        if not stated:
+            return LineDates(inside=inside, nearest={}, read_all=len(inside) == len(matches))
+        missing = [facts for facts in matches if not inside.get(facts.route_id)]
+        nearest: dict[int, date] = {}
+        months = {route_id: [row.depart_date for row in rows] for route_id, rows in inside.items()}
+        if missing:
+            later = self._window(window[0], window[0] + timedelta(days=NEAREST_WINDOW_DAYS))
+            found = await self._window_rows(erp, missing, later, fetched)
+            for facts in missing:
+                dates = sorted(row.depart_date for row in found.get(facts.route_id, ()))
+                months[facts.route_id] = dates
+                if dates:
+                    nearest[facts.route_id] = dates[0]
+        return LineDates(inside=inside, nearest=nearest, read_all=True, months=months)
+
+    async def _window_rows(
+        self,
+        erp: ErpClient,
+        matches: list[RouteFacts],
+        window: tuple[date, date],
+        fetched: Fetched,
     ) -> dict[int, list[DepartureRecord]]:
-        """Each matched line's 团期 inside the window. A client that reads a window whole
-        (``WindowReader``) answers for every match in one paged read, which is what the
-        出发月份 chips are counted from; one that cannot is asked per line, and only for the
-        lines the cards will carry."""
+        """Each of these lines' 团期 inside one window, from the window's own paged read where
+        the client has one and a read per line where it has not; a line with none has no entry."""
         grouped = await self._listing_window(erp, window, fetched)
-        if grouped is not None:
-            return {facts.route_id: grouped.get(facts.route_id, []) for facts in matches}
         rows: dict[int, list[DepartureRecord]] = {}
-        for facts in matches[:limit]:
-            record = self._routes.get(facts.route_id)
-            if record is not None:
-                rows[facts.route_id] = await self._list(erp, record, window, fetched)
+        for facts in matches:
+            if grouped is not None:
+                found = grouped.get(facts.route_id, [])
+            else:
+                record = self._routes.get(facts.route_id)
+                found = await self._list(erp, record, window, fetched) if record is not None else []
+            if found:
+                rows[facts.route_id] = sorted(found, key=lambda row: row.depart_date)
         return rows
 
     def _card(
@@ -1695,28 +1798,34 @@ class TourBackend(StorefrontBackend):
         rows: list[DepartureRecord],
         context: SearchContext,
         window: tuple[date, date],
+        nearest: date | None = None,
     ) -> Product:
-        """One 线路 as a card: every fact the agency's own document states, and the sellable
-        团期 beside them where the advisor has given dates. The 团期 carry the date and the
-        state only — seats and prices are what ``present_departures`` and the 团期 card are
-        for, and a card that quoted them would be quoting a window the customer has not
-        chosen in."""
+        """One 线路 as a card: every fact the agency's own document states, and what the line
+        sells in the advisor's dates beside them. A line that runs in them carries the 团期 as
+        dates and states (seats and prices are the 团期卡's, because a card that quoted them
+        would be quoting a window the customer has not chosen in); one that runs in none of
+        them says so — ``match=adjacent_date``, an empty ``departures`` and the nearest date it
+        does run — because the advisor may still sell that date and has to be told."""
         record = self._routes.get(facts.route_id)
         party = max(context.adults + context.children, 1)
         attributes = _facts_attributes(facts)
         dates = [row.depart_date for row in rows]
-        if context.stated and rows:
+        if context.stated:
             attributes["departures"] = "|".join(
                 f"{row.depart_date.isoformat()}:{self._departure_state(row, party)}" for row in rows
             )
             attributes["departures_window"] = f"{window[0].isoformat()}..{window[1].isoformat()}"
+            if not rows:
+                attributes["match"] = "adjacent_date"
+                attributes["nearest_departure"] = nearest.isoformat() if nearest else ""
+                attributes["mismatch"] = _no_departures_note(window, nearest)
         return Product(
             product_id=route_id_of(facts.route_id),
             title=facts.name,
             brand=facts.department or self.store_name,
             price=facts.from_price,
             currency=CURRENCY,
-            image_url=None,
+            image_url=facts.image_url,
             category=CATEGORY,
             labels=_facts_labels(facts),
             attributes=attributes
@@ -1781,14 +1890,27 @@ class TourBackend(StorefrontBackend):
             matches.sort(key=lambda facts: "亲子" not in facts.feature_words)
         window = self._window(context.depart_from, context.depart_to)
         fetched = Fetched()
-        rows = await self._matched_departures(erp, matches, window, fetched, limit)
+        dates = await self._line_dates(
+            erp, matches, window, fetched, stated=context.stated, limit=limit
+        )
+        if context.stated:
+            # The lines that run in the advisor's dates lead, whatever else ranked them: a line
+            # the customer cannot travel on is not the first thing the advisor reads out.
+            matches.sort(key=lambda facts: not dates.runs_in_window(facts.route_id))
         shown = matches[:limit]
         found = [
-            self._card(facts, rows.get(facts.route_id, []), context, window) for facts in shown
+            self._card(
+                facts,
+                dates.rows(facts.route_id),
+                context,
+                window,
+                dates.nearest.get(facts.route_id),
+            )
+            for facts in shown
         ]
         for product in found:
             product.attributes["catalog_matches"] = str(len(matches))
-        self._note_overview(session, matches, rows, len(found))
+        self._note_overview(session, matches, dates, len(found), window if context.stated else None)
         return found
 
     def _stated_context(
@@ -1813,32 +1935,27 @@ class TourBackend(StorefrontBackend):
         self,
         session: ShoppingSessionContext,
         matches: list[RouteFacts],
-        rows: dict[int, list[DepartureRecord]],
+        dates: LineDates,
         shown: int,
+        window: tuple[date, date] | None,
     ) -> None:
         """What the executor hands the model beside the cards. An overview stands while the
-        set is wider than a shortlist, while the handful that matched are one trip sold
-        several ways, and when nothing matched at all — and in the last case it is the whole
-        catalog's own groups, so the model can offer the customer another direction. A search
-        made after a 聚焦卡 is the advisor's answer to it and its overview says so: cards now,
-        and the question a short line beside them."""
+        set is wider than a shortlist, while the handful that matched are one trip sold several
+        ways, and when nothing matched at all — and in the last case it is the whole catalog's
+        own groups, so the model can offer the customer another direction. ``window`` is the
+        advisor's dates where they stated any: the head then says how many of the matches run
+        in them. A search made after a 聚焦卡 is the advisor's answer to it and its overview
+        says so: cards now, and the question a short line beside them."""
         catalog = self.catalog()
         answered = session.session_id in self._focused
         self._focused.discard(session.session_id)
-        # The 出发月份 chips are counted only where the run read every match's 团期 — a client
-        # that cannot read a window whole is asked about the shown lines alone, and a count
-        # over those would say the catalog departs less often than it does.
-        months = (
-            {route_id: [row.depart_date for row in found] for route_id, found in rows.items()}
-            if len(rows) == len(matches)
-            else None
-        )
+        months = dates.month_dates() if dates.read_all else None
         ambiguous = catalog.ambiguous(matches)
         dimensions = tuple(catalog.differences(matches)) if ambiguous else ()
         if not matches:
             whole = catalog.all()
             self._overviews[session.session_id] = Overview(
-                total=0, shown=0, groups=catalog.chips(whole), empty=True
+                total=0, shown=0, groups=catalog.chips(whole, year=self.today.year), empty=True
             )
             return
         if len(matches) <= OVERVIEW_ABOVE and not ambiguous:
@@ -1847,10 +1964,12 @@ class TourBackend(StorefrontBackend):
         self._overviews[session.session_id] = Overview(
             total=len(matches),
             shown=shown,
-            groups=catalog.chips(matches, months, first=dimensions),
+            groups=catalog.chips(matches, months, first=dimensions, year=self.today.year),
             answered=answered,
             ambiguous=ambiguous,
             dimensions=dimensions,
+            window=_window_label(window) if window is not None else "",
+            with_dates=sum(1 for facts in matches if dates.runs_in_window(facts.route_id)),
         )
 
     def overview(self, session_id: str) -> Overview | None:

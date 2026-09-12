@@ -88,8 +88,8 @@ their 成团 state, the seats left and the 同业价.
   the 线路系 against what the document states. A 线路 with no document is not searched at all.
 - a 线路 card is the document's own fields, and its labels say 纯玩 or 购物店N家, the 钻 grade
   the 酒店标准 states where it states one, the airline and 已复核 or 解析稿 (`doc`);
-- `present_route_days` draws the whole 逐日行程 off the document — the days, the flights out
-  and back, 费用包含 / 不含, 购物店, 自费项目 and the policy sentences;
+- `present_route_days` draws the whole 逐日行程 off the document — the days with their 车程
+  notes, the flights out and back, 费用包含 / 不含, 购物店, 自费项目 and the policy sentences;
 - the 行程 on a details record and under a 定制方案 comes from the document's days, and the
   card says 线路文档（已复核）or 线路文档（解析稿，待复核）as its 行程来源;
 - the card's 规格 gain 参考航班, 酒店标准, 用餐安排, 购物店, 自费项目, 费用包含 / 不含, 单房差,

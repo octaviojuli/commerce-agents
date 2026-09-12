@@ -184,6 +184,8 @@ export interface RouteDay {
   day: number;
   title?: string;
   places?: string[];
+  /** How the day moves, where the document states it: 飞机, 大巴, 内陆航班, 高铁. */
+  transport?: string;
   overnight?: Overnight;
   hotel?: { name: string; grade?: string; or_similar?: boolean } | null;
   meals?: { breakfast?: RouteMeal; lunch?: RouteMeal; dinner?: RouteMeal };
@@ -204,6 +206,8 @@ export interface RouteDay {
 export interface RouteDaysPayload {
   route_id: string;
   title?: string;
+  /** The agency's own poster for the line; the card draws its own wash without one. */
+  image_url?: string | null;
   route_code?: string;
   department?: string;
   day_count?: number;

@@ -19,7 +19,7 @@ import type {
   RouteMeal,
   RouteSight,
 } from "@/lib/types";
-import { SpecGrid } from "./shared";
+import { Cover } from "./shared";
 
 /** What the 线路文档 makes of a stop, each kind its own muted ground. */
 const SIGHT_TONE: Record<string, string> = {
@@ -37,6 +37,9 @@ const OVERNIGHT_TEXT: Record<string, string> = {
   ship: "夜宿邮轮",
   home: "抵达",
 };
+
+/** The card is a 行程, not a brochure: three 亮点 is what its header carries. */
+const MAX_HIGHLIGHTS = 3;
 
 const MEALS: [keyof NonNullable<RouteDay["meals"]>, string][] = [
   ["breakfast", "早"],
@@ -131,6 +134,78 @@ function Meals({ meals }: { meals?: RouteDay["meals"] }) {
   );
 }
 
+/** A piece the document opens this way is an aside, not a step of the day. */
+const NOTE_MARKERS = ["备注", "温馨提示", "特别提醒", "提醒", "注意", "★"];
+
+/** A piece with nothing but punctuation and brackets in it says nothing. */
+function bare(text: string): string {
+  return text.replace(/[【】\s·—\-–~,，、.。;；:：!！?？()（）]/g, "");
+}
+
+/**
+ * The day's prose as the 线路文档 writes it: paragraphs joined with " / " and lines joined with
+ * "；". Each piece stands as its own paragraph, and a piece that only repeats the day's title or
+ * a 参考航班 the card already shows is dropped rather than said twice.
+ */
+function textPieces(day: RouteDay): string[] {
+  const shown = [day.title ?? "", (day.places ?? []).join("")].map(bare).filter(Boolean);
+  const flightNumbers = (day.flights ?? [])
+    .map((flight) => flight.flight_no)
+    .filter((no): no is string => Boolean(no));
+  const pieces: string[] = [];
+  for (const paragraph of (day.text ?? "").split(" / ")) {
+    for (const line of paragraph.split("；")) {
+      const piece = line.trim();
+      const stripped = bare(piece);
+      if (!stripped) continue;
+      if (shown.some((value) => value === stripped || value.includes(stripped))) continue;
+      if (flightNumbers.some((no) => piece.includes(no)) && piece.length <= 40) continue;
+      pieces.push(piece);
+    }
+  }
+  return pieces;
+}
+
+/** The 【】 the document puts around a sight name, read as the emphasis it is. */
+function Marked({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/【([^】]+)】/).map((part, i) =>
+        i % 2 === 1 ? (
+          <span key={i} className="font-medium text-(--accent-ink)">
+            {part}
+          </span>
+        ) : (
+          <span key={i}>{part}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+function Prose({ day }: { day: RouteDay }) {
+  const pieces = textPieces(day);
+  if (!pieces.length) return null;
+  return (
+    <div className="mt-2 flex flex-col gap-1.5">
+      {pieces.map((piece, i) =>
+        NOTE_MARKERS.some((marker) => piece.startsWith(marker)) ? (
+          <p
+            key={i}
+            className="border-l-2 border-(--line-strong) pl-2.5 text-[12.5px] leading-relaxed text-(--ink-faint)"
+          >
+            <Marked text={piece} />
+          </p>
+        ) : (
+          <p key={i} className="text-[13px] leading-[1.75] text-(--ink-soft)">
+            <Marked text={piece} />
+          </p>
+        ),
+      )}
+    </div>
+  );
+}
+
 /** A stop as the document wrote it: what it is, how long it takes, and whether the ticket is in. */
 function Sight({ sight }: { sight: RouteSight }) {
   const tone = SIGHT_TONE[sight.kind ?? ""] ?? "bg-(--well) text-(--ink-2)";
@@ -168,10 +243,12 @@ function Overnight({ day }: { day: RouteDay }) {
 }
 
 function DayRow({ day, last, delay }: { day: RouteDay; last: boolean; delay: number }) {
-  const places = (day.places ?? []).join(" - ");
+  const places = (day.places ?? []).join(" — ");
   const title = day.title || places;
   const sights = day.sights ?? [];
   const flights = day.flights ?? [];
+  // 用餐, 交通 and where the day sleeps read as one row of facts under the stops.
+  const facts = Boolean(day.meals || day.transport || day.hotel?.name || day.overnight);
   return (
     <li
       className="ac-reveal grid grid-cols-[46px_1fr] gap-x-3"
@@ -184,8 +261,8 @@ function DayRow({ day, last, delay }: { day: RouteDay; last: boolean; delay: num
         <span className="tg-label leading-none">天</span>
         {!last ? <span aria-hidden className="mt-1.5 w-px flex-1 bg-(--line)" /> : null}
       </div>
-      <div className={last ? "pt-0.5" : "pb-5 pt-0.5"}>
-        <div className="text-[14.5px] font-semibold leading-snug text-(--ink)">
+      <div className={last ? "pt-0.5" : "pb-6 pt-0.5"}>
+        <div className="text-[15px] font-semibold leading-snug text-(--ink)">
           <span className="sr-only">第 {day.day} 天 </span>
           {title}
         </div>
@@ -199,21 +276,25 @@ function DayRow({ day, last, delay }: { day: RouteDay; last: boolean; delay: num
             ))}
           </div>
         ) : null}
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-          <Meals meals={day.meals} />
-          <Overnight day={day} />
-        </div>
+        {facts ? (
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-(--radius) bg-(--well) px-2.5 py-1.5">
+            <Meals meals={day.meals} />
+            {day.transport ? (
+              <span className="text-[12.5px] leading-snug text-(--ink-2)">
+                <span className="tg-label mr-1">交通</span>
+                {day.transport}
+              </span>
+            ) : null}
+            <Overnight day={day} />
+          </div>
+        ) : null}
         {flights.length ? (
-          <div className="tg-num mt-1 text-[12px] leading-snug text-(--ink-soft)">
+          <div className="tg-num mt-1.5 text-[12px] leading-snug text-(--ink-soft)">
             <span className="tg-label mr-1">航班</span>
             {flights.map((flight) => flightText(flight)).join("；")}
           </div>
         ) : null}
-        {day.text ? (
-          <p className="mt-1.5 whitespace-pre-line text-[13px] leading-relaxed text-(--ink-soft)">
-            {day.text}
-          </p>
-        ) : null}
+        <Prose day={day} />
       </div>
     </li>
   );
@@ -305,45 +386,73 @@ export default function RouteDaysCard({
 
   return (
     <section className="tg-card ac-reveal p-5">
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-(--ink)">
-          {payload.title ?? payload.route_id}
-        </h3>
-        {payload.route_code ? <span className="tg-num tg-label">{payload.route_code}</span> : null}
-        {payload.department ? <span className="tg-label">{payload.department}</span> : null}
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-        {headline ? <span className="text-[13px] text-(--ink-2)">{headline}</span> : null}
-        {/* A line an editor has passed reads as the agency's own; one the parser wrote alone
-            says so, because an unreviewed 行程 is not quoted to a customer. */}
-        <span
-          className={`rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${
-            payload.reviewed ? "bg-(--ok-soft) text-(--ok)" : "bg-(--warn-soft) text-(--warn)"
-          }`}
-        >
-          {payload.reviewed
-            ? `已复核${payload.reviewed_by ? ` · ${payload.reviewed_by}` : ""}`
-            : "解析稿，待复核"}
-        </span>
+      <div className="flex flex-col gap-3 sm:flex-row">
+        {/* The poster where the record carries one; the card says nothing in its place. */}
+        {payload.image_url ? (
+          <Cover
+            url={payload.image_url}
+            alt={payload.title ?? payload.route_id}
+            name={payload.countries?.[0] ?? "线路"}
+            seed={payload.route_id}
+            className="h-24 w-full shrink-0 sm:h-[86px] sm:w-32"
+          />
+        ) : null}
+        <div className="min-w-0">
+          <h3 className="text-[20px] font-semibold leading-snug tracking-[-0.015em] text-(--ink)">
+            {payload.title ?? payload.route_id}
+          </h3>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+            {payload.route_code ? (
+              <span className="tg-num tg-label">{payload.route_code}</span>
+            ) : null}
+            {payload.department ? <span className="tg-label">{payload.department}</span> : null}
+            {/* A line an editor has passed reads as the agency's own; one the parser wrote
+                alone says so, because an unreviewed 行程 is not quoted to a customer. */}
+            <span
+              className={`rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${
+                payload.reviewed ? "bg-(--ok-soft) text-(--ok)" : "bg-(--warn-soft) text-(--warn)"
+              }`}
+            >
+              {payload.reviewed
+                ? `已复核${payload.reviewed_by ? ` · ${payload.reviewed_by}` : ""}`
+                : "解析稿，待复核"}
+            </span>
+          </div>
+          {headline ? (
+            <div className="mt-1 text-[13.5px] leading-snug text-(--ink-2)">{headline}</div>
+          ) : null}
+        </div>
       </div>
 
       {highlights.length ? (
-        <ul className="mt-2 flex flex-col gap-0.5">
-          {highlights.map((line, i) => (
-            <li key={`${line}-${i}`} className="text-[13px] leading-snug text-(--ink-2)">
-              <span aria-hidden className="mr-1.5 text-(--accent)">
-                ·
-              </span>
-              {line}
-            </li>
-          ))}
-        </ul>
+        <div className="mt-3">
+          <div className="tg-label mb-1">亮点</div>
+          <ul className="flex flex-col gap-1">
+            {highlights.slice(0, MAX_HIGHLIGHTS).map((line, i) => (
+              <li
+                key={`${line}-${i}`}
+                className="flex gap-2 text-[13px] leading-relaxed text-(--ink-2)"
+              >
+                <span
+                  aria-hidden
+                  className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-(--accent)"
+                />
+                <span className="min-w-0">{line}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
 
       {facts.length ? (
-        <div className="mt-3 rounded-(--radius) bg-(--well) px-3 py-2">
-          <SpecGrid specs={facts} cols={1} />
-        </div>
+        <dl className="mt-3 grid gap-x-4 gap-y-2 rounded-(--radius) bg-(--well) px-3 py-2.5 sm:grid-cols-3">
+          {facts.map((fact) => (
+            <div key={fact.label} className="min-w-0">
+              <dt className="tg-label">{fact.label}</dt>
+              <dd className="mt-0.5 text-[13px] leading-snug text-(--ink-2)">{fact.value}</dd>
+            </div>
+          ))}
+        </dl>
       ) : null}
 
       <FlightStrip label="去程" flights={payload.outbound ?? []} />

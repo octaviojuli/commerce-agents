@@ -40,6 +40,7 @@ def _day(number: int, place: str, *, sights: tuple[str, ...] = (), hotel: str = 
         day=number,
         title=f"{place}",
         places=[place],
+        transport="车程约 3 小时" if number == 2 else "",
         overnight="hotel" if hotel else "flight",
         flights=(
             [
@@ -331,6 +332,8 @@ def test_the_months_are_counted_from_the_departures_the_run_read(catalog):
     }
     groups = catalog.chips(matches, months)
     assert groups["出发月份"] == [("2026年10月", 1), ("2026年11月", 1)]
+    # The year is left off the month the advisor is working in, and kept on any other.
+    assert catalog.chips(matches, months, year=2026)["出发月份"] == [("10月", 1), ("11月", 1)]
 
 
 def test_the_dimensions_that_tell_a_family_apart_come_first(catalog):

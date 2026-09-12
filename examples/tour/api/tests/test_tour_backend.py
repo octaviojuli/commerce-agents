@@ -192,6 +192,84 @@ async def test_stated_dates_put_the_sellable_departures_on_the_card(backend, ses
     assert larger.attributes["departures"] == "2026-10-13:满员|2026-10-17:满员"
 
 
+async def test_a_line_that_runs_on_none_of_the_stated_dates_says_so_and_names_the_nearest(
+    backend, session
+):
+    """A stated window is a condition, not a decoration. 10/11–10/12 holds a 团期 of the 10 日
+    深度 line and of the 经典环线; the other two 伊犁 lines run on neither date, so they say so,
+    name the nearest date they do run, and rank behind the ones that do — the advisor may still
+    sell 10/13, but they have to be told it is not what the customer asked for."""
+    products = await search(
+        backend,
+        session,
+        "伊犁",
+        destination="伊犁",
+        depart_from="2026-10-11",
+        depart_to="2026-10-12",
+    )
+    assert ids(products)[:2] == ["RT-1023", "RT-1022"]
+    running = {p.product_id for p in products if p.attributes["match"] == "exact"}
+    assert running == {"RT-1022", "RT-1023"}
+    later = next(p for p in products if p.product_id == ROUTE)
+    assert later.attributes["match"] == "adjacent_date"
+    assert later.attributes["departures"] == ""
+    assert later.attributes["departures_window"] == "2026-10-11..2026-10-12"
+    assert later.attributes["nearest_departure"] == "2026-10-13"
+    assert later.attributes["mismatch"] == "10/11–10/12 无团期，最近团期 10/13"
+    # The line is still offered: nothing is dropped for running on another date.
+    assert later.in_stock is True and later.options == {}
+
+
+async def test_a_line_with_nothing_inside_half_a_year_says_that(backend, session):
+    """Nothing the fixtures sell departs in the summer after next, and the read that looks for
+    the nearest date reaches half a year past the advisor's own."""
+    products = await search(
+        backend,
+        session,
+        "伊犁",
+        destination="伊犁",
+        depart_from="2027-06-01",
+        depart_to="2027-06-07",
+    )
+    assert ids(products)
+    for product in products:
+        assert product.attributes["match"] == "adjacent_date"
+        assert product.attributes["nearest_departure"] == ""
+        assert product.attributes["mismatch"] == "06/01–06/07 无团期，180 天内无团期"
+
+
+async def test_the_overview_says_how_many_of_the_matches_run_in_the_stated_dates(backend, session):
+    products = await search(
+        backend,
+        session,
+        "新疆",
+        destination="新疆",
+        depart_from="2026-10-11",
+        depart_to="2026-10-12",
+    )
+    overview = backend.overview(session.session_id)
+    assert overview is not None and overview.total == 7 and overview.with_dates == 3
+    assert overview.window == "10/11–10/12"
+    assert "目录概览：共 7 条线路符合，其中 3 条在 10/11–10/12 有团期" in overview.text()
+    assert "lead with the lines whose departures attribute names dates" in overview.text()
+    assert "never say the 团期 have not been checked" in overview.text()
+    # The cards the model is handed lead with those three.
+    assert [p.attributes["match"] for p in products][:3] == ["exact"] * 3
+    # The 出发月份 chips are counted off both reads, so a month past the advisor's dates shows.
+    assert overview.groups["出发月份"] == [("10月", 7), ("11月", 1)]
+
+
+async def test_a_cards_photo_is_the_erp_catalogs_own(erp, session):
+    """The document carries no photograph; the ERP catalog row does, and 29 of the agency's
+    30 documented lines have one."""
+    erp._routes[1021]["firstImageUrl"] = "https://files.example/acme/ylbj.jpg"
+    backend = build(erp)
+    products = await search_yili(backend, session)
+    photo = {p.product_id: p.image_url for p in products}
+    assert photo[ROUTE] == "https://files.example/acme/ylbj.jpg"
+    assert photo["RT-1022"] is None
+
+
 async def test_a_search_with_no_dates_carries_none_and_the_window_is_remembered(backend, session):
     """A card states sellable 团期 only against dates the advisor gave: with none the card is
     the line alone. The dates the conversation did state stand for the searches after it."""

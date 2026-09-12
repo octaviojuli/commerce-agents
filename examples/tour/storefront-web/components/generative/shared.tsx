@@ -123,15 +123,10 @@ export function DeparturePill({
   );
 }
 
-/**
- * The picture a 线路 card carries until the agency's own photos are in: a soft wash named for
- * the first country the line covers. The angle and the wash come off the record's id, so one
- * route keeps one picture wherever the card is drawn.
- */
-export function CoverBlock({ product, className = "" }: { product: Product; className?: string }) {
-  const name = routeCover(product);
+/** The wash a line falls back to, named for the country it covers; one picture per record. */
+function Placeholder({ name, seed, className }: { name: string; seed: string; className: string }) {
   let hash = 0;
-  for (const char of product.product_id) hash = (hash * 31 + char.charCodeAt(0)) % 360;
+  for (const char of seed) hash = (hash * 31 + char.charCodeAt(0)) % 360;
   return (
     <div
       aria-hidden
@@ -144,6 +139,51 @@ export function CoverBlock({ product, className = "" }: { product: Product; clas
         {name}
       </span>
     </div>
+  );
+}
+
+/**
+ * The agency's own poster for a 线路, off the URL the record carries. A line with no poster, and
+ * one whose poster the browser cannot fetch, falls back to the wash — a card in a shortlist is
+ * read for its figures, and a broken picture is worse than none.
+ */
+export function Cover({
+  url,
+  alt,
+  name,
+  seed,
+  className = "",
+}: {
+  url?: string | null;
+  alt: string;
+  name: string;
+  seed: string;
+  className?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (!url || failed) return <Placeholder name={name} seed={seed} className={className} />;
+  return (
+    // The posters sit on the agency's own object storage, which the browser fetches directly.
+    <img
+      src={url}
+      alt={alt}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className={`rounded-(--radius) object-cover ${className}`}
+    />
+  );
+}
+
+/** The picture on a 线路 card: the record's own poster, or the wash named for its first country. */
+export function CoverBlock({ product, className = "" }: { product: Product; className?: string }) {
+  return (
+    <Cover
+      url={product.image_url}
+      alt={product.title}
+      name={routeCover(product)}
+      seed={product.product_id}
+      className={className}
+    />
   );
 }
 

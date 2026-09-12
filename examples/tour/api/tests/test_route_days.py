@@ -95,17 +95,21 @@ async def test_the_card_is_the_whole_itinerary_as_the_document_writes_it(executo
     assert card["countries"] == ["德国", "法国", "意大利", "瑞士"]
     assert card["depart_city"] == "上海"
     assert card["reviewed"] is True and card["reviewed_by"] == "产品部 · 林薇"
+    # The document carries no photograph; this line's ERP row is unread, so there is none.
+    assert card["image_url"] is None
     assert card["highlights"] == EUROPE.cover.highlights
     assert card["hotel_standard"] == "全程网评4钻酒店"
     # Every day rides, whole: the card is the itinerary and the reply is not.
     assert [day["day"] for day in card["days"]] == list(range(1, 13))
     first = card["days"][0]
     assert first["places"] == ["法兰克福"] and first["overnight"] == "hotel"
+    assert first["transport"] == ""  # the first day of these documents writes no 车程 note
     assert first["hotel"]["name"] == "法兰克福酒店" and first["hotel"]["or_similar"] is True
     assert first["meals"]["breakfast"] == {"text": "酒店", "included": True}
     assert first["meals"]["dinner"] == {"text": "自理", "included": False}
     assert first["text"].startswith("全天在法兰克福")
     second = card["days"][1]
+    assert second["transport"] == "车程约 3 小时"
     assert second["sights"] == [
         {"name": "卢浮宫", "kind": "景点", "duration": "", "ticket_included": True}
     ]

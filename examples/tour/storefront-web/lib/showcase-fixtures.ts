@@ -659,13 +659,28 @@ const focus: FocusPayload = {
  * with every line, hotel, carrier and person invented for the showcase.
  */
 
+/**
+ * A record's `image_url` is the agency's own poster on its object storage. The showcase has no
+ * such server, so 锡兰环岛 carries a drawing made here and 法意瑞 carries a URL that cannot
+ * resolve, which is how the card's own wash gets onto the page beside a poster that loads.
+ */
+const CEYLON_POSTER =
+  "data:image/svg+xml;utf8," +
+  "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 180'>" +
+  "<defs><linearGradient id='s' x1='0' y1='0' x2='0' y2='1'>" +
+  "<stop offset='0' stop-color='%23a8d3dc'/><stop offset='1' stop-color='%23f2e7cd'/>" +
+  "</linearGradient></defs><rect width='240' height='180' fill='url(%23s)'/>" +
+  "<circle cx='188' cy='42' r='17' fill='%23f3c78a'/>" +
+  "<path d='M0 138 L64 92 L122 138 Z' fill='%237fa89b'/>" +
+  "<path d='M92 142 L152 100 L240 142 L240 180 L0 180 Z' fill='%23567a70'/></svg>";
+
 const CEYLON_7 = {
   product_id: "RT-2041",
   title: "锡兰环岛 7 日 · 茶山与南岸",
   brand: "ACME 旅行社 南亚部",
   price: 6980.0,
   currency: "CNY",
-  image_url: null,
+  image_url: CEYLON_POSTER,
   category: "tour",
   labels: ["直飞", "当地四星", "纯玩", "上海出发"],
   attributes: {
@@ -699,7 +714,7 @@ const EUROPE_12 = {
   brand: "ACME 旅行社 欧洲部",
   price: 13800.0,
   currency: "CNY",
-  image_url: null,
+  image_url: "https://oss.acme-lvxing.example/routes/FYR12-cover.jpg",
   category: "tour",
   labels: ["四星酒店", "含门票", "上海出发"],
   attributes: {
@@ -760,6 +775,24 @@ const SIAM_5 = {
   in_stock: true,
 } satisfies Product;
 
+/**
+ * A 线路 the dated search kept although the window holds no 团期 of it: the 团期 attribute comes
+ * back empty, and the record names the window it was asked for and the nearest date the ERP has.
+ */
+function withAdjacentDates(route: Product, window: string, nearest: string, note: string): Product {
+  return {
+    ...route,
+    attributes: {
+      ...route.attributes,
+      match: "adjacent_date",
+      departures: "",
+      departures_window: window,
+      nearest_departure: nearest,
+      mismatch: note,
+    },
+  };
+}
+
 /** The same 线路 as a dated search stamps it: the 团期 it sells inside the window, each state. */
 function withDepartures(route: Product, window: string, dates: string): Product {
   return {
@@ -798,6 +831,15 @@ const route_products_dated: ProductsPayload = {
       ),
       reason: "10/15 是窗口里唯一还收人的班。",
     },
+    {
+      product: withAdjacentDates(
+        SIAM_5,
+        "2026-10-08..2026-10-22",
+        "2026-11-02",
+        "国庆档 10/08–10/22 无团期，最近团期 11/02",
+      ),
+      reason: "这条线国庆档整档没开，最近一班要等到 11/02。",
+    },
   ],
 };
 
@@ -808,6 +850,7 @@ const route_products_dated: ProductsPayload = {
 const route_days: RouteDaysPayload = {
   route_id: "RT-2041",
   title: "锡兰环岛 7 日 · 茶山与南岸",
+  image_url: CEYLON_POSTER,
   route_code: "XLHD7",
   department: "ACME 旅行社 南亚部",
   day_count: 7,
@@ -849,6 +892,7 @@ const route_days: RouteDaysPayload = {
       day: 1,
       title: "上海浦东 — 科伦坡",
       places: ["上海", "科伦坡"],
+      transport: "国际航班，夜航",
       overnight: "flight",
       hotel: null,
       meals: {
@@ -866,12 +910,13 @@ const route_days: RouteDaysPayload = {
         },
       ],
       sights: [],
-      text: "21:00 浦东机场 T2 集合，领队发放登机牌与落地签资料。\n夜航六个半小时，机上过夜，落地即次日清晨。",
+      text: "上海浦东—科伦坡；21:00 浦东机场 T2 集合，领队发放登机牌与落地签资料；夜航六个半小时，机上过夜，落地即次日清晨 / 备注：航班时刻以出团通知为准，机上无中文报刊。",
     },
     {
       day: 2,
       title: "科伦坡 — 尼甘布 — 丹布勒",
       places: ["科伦坡", "尼甘布", "丹布勒"],
+      transport: "空调大巴，约 3 小时",
       overnight: "hotel",
       hotel: { name: "丹布勒石林度假酒店", grade: "当地四星", or_similar: true },
       meals: {
@@ -885,12 +930,13 @@ const route_days: RouteDaysPayload = {
         { name: "丹布勒石窟寺", kind: "景点", duration: "1.5 小时", ticket_included: true },
         { name: "独立纪念堂", kind: "外观", duration: "15 分钟", ticket_included: null },
       ],
-      text: "清晨落地后先到酒店用早餐并短暂休整，再沿西海岸北上。\n下午进丹布勒石窟寺，五个洞窟按开凿年代走一遍，日落前抵酒店。",
+      text: "清晨落地后先到酒店用早餐并短暂休整；沿西海岸北上，在【尼甘布渔市】看晨间卸货 / 下午进【丹布勒石窟寺】，五个洞窟按开凿年代走一遍，日落前抵酒店；途经【独立纪念堂】外观停留 15 分钟 / 温馨提示：进寺需脱鞋并覆盖肩膝，建议自带一双薄袜。",
     },
     {
       day: 3,
       title: "丹布勒 — 狮子岩 — 康提",
       places: ["丹布勒", "狮子岩", "康提"],
+      transport: "空调大巴，约 4 小时",
       overnight: "hotel",
       hotel: { name: "康提湖畔庭院酒店", grade: "当地四星", or_similar: true },
       meals: {
@@ -904,12 +950,13 @@ const route_days: RouteDaysPayload = {
         { name: "康提佛牙寺", kind: "景点", duration: "1 小时", ticket_included: true },
         { name: "皇家植物园", kind: "自费", duration: "1.5 小时", ticket_included: false },
       ],
-      text: "六点半出发避开正午日照，登狮子岩全程约一千二百级台阶，体力一般的客人可在山腰壁画层折返。\n傍晚赶上佛牙寺的供奉仪式。",
+      text: "06:30 出发避开正午日照；登【狮子岩】全程约一千二百级台阶，体力一般的客人可在山腰壁画层折返 / 午后翻山前往康提，傍晚赶上【康提佛牙寺】的供奉仪式 / 注意：岩顶风大且无遮阳处，请备帽子与饮水。",
     },
     {
       day: 4,
       title: "康提 — 努沃勒埃利耶 — 埃拉",
       places: ["康提", "努沃勒埃利耶", "埃拉"],
+      transport: "高山小火车 + 空调大巴",
       overnight: "hotel",
       hotel: { name: "埃拉云雾山庄", grade: "当地四星", or_similar: true },
       meals: {
@@ -923,12 +970,13 @@ const route_days: RouteDaysPayload = {
         { name: "茶园下午茶", kind: "赠送", duration: "30 分钟", ticket_included: null },
         { name: "高山小火车 努沃勒埃利耶—埃拉", kind: "景点", duration: "2.5 小时", ticket_included: true },
       ],
-      text: "上午在茶厂看一遍萎凋、揉捻与烘干，赠送的下午茶就在茶园露台。\n下午段小火车走的是全线风景最好的一截，车厢无空调，窗边位置先到先得。",
+      text: "上午在【高山茶园与制茶厂】看一遍萎凋、揉捻与烘干，赠送的下午茶就在茶园露台 / 下午乘【高山小火车】从努沃勒埃利耶到埃拉，走的是全线风景最好的一截；车厢无空调，窗边位置先到先得。",
     },
     {
       day: 5,
       title: "埃拉 — 乌达瓦拉维 — 加勒",
       places: ["埃拉", "乌达瓦拉维", "加勒"],
+      transport: "空调大巴，约 5 小时",
       overnight: "hotel",
       hotel: { name: "加勒城墙海景旅舍", grade: "当地四星", or_similar: false },
       meals: {
@@ -942,12 +990,13 @@ const route_days: RouteDaysPayload = {
         { name: "加勒古堡与灯塔", kind: "景点", duration: "2 小时", ticket_included: true },
         { name: "古城城墙日落自由活动", kind: "自由活动", duration: "1 小时", ticket_included: null },
       ],
-      text: "南下路况尚可，全天车程约五小时，分两段走。\n住在城墙里，日落与清晨两次逛古城都不用再跑一趟。",
+      text: "南下路况尚可，全天车程约五小时，分两段走 / 傍晚抵达【加勒古堡与灯塔】，住在城墙里，日落与清晨两次逛古城都不用再跑一趟；【乌达瓦拉维野生动物园吉普】为自费，需前一晚报名 / 备注：古城内为石板路，行李箱拉行不便，酒店可代为搬运。",
     },
     {
       day: 6,
       title: "加勒 — 本托塔 — 科伦坡",
       places: ["加勒", "本托塔", "科伦坡"],
+      transport: "空调大巴 + 国际航班",
       overnight: "flight",
       hotel: null,
       meals: {
@@ -969,7 +1018,7 @@ const route_days: RouteDaysPayload = {
         { name: "红树林游船", kind: "赠送", duration: "1 小时", ticket_included: true },
         { name: "海龟保育站", kind: "景点", duration: "40 分钟", ticket_included: true },
       ],
-      text: "中午的海鲜餐是全程唯一一顿，安排在本托塔海边。\n晚上返回科伦坡机场，办完登机手续即搭次日凌晨的航班回程。",
+      text: "上午【本托塔海滩自由活动】，赠送的【红树林游船】约一小时 / 中午的海鲜餐是全程唯一一顿，安排在海边；下午返回科伦坡，晚餐自理 / HT622 01:20 起飞，13:05 抵上海浦东 / 22:00 前抵机场办理登机手续。",
     },
   ],
   inclusions: [
@@ -1022,6 +1071,7 @@ const route_days_short: RouteDaysPayload = {
       day: 1,
       title: "上海 — 苏州",
       places: ["上海", "苏州"],
+      transport: "高铁二等座 30 分钟",
       overnight: "hotel",
       hotel: { name: "平江路河畔酒店", grade: "本地四星", or_similar: true },
       meals: {
@@ -1034,12 +1084,13 @@ const route_days_short: RouteDaysPayload = {
         { name: "拙政园", kind: "景点", duration: "2 小时", ticket_included: true },
         { name: "平江路自由活动", kind: "自由活动", duration: "2 小时", ticket_included: null },
       ],
-      text: "上午高铁 30 分钟到苏州，行李先送酒店。\n下午拙政园，傍晚平江路自己逛。",
+      text: "上午高铁 30 分钟到苏州，行李先送酒店；下午游【拙政园】，傍晚【平江路】自己逛。",
     },
     {
       day: 2,
       title: "苏州 — 太湖",
       places: ["苏州", "太湖"],
+      transport: "空调大巴",
       overnight: "hotel",
       hotel: { name: "太湖西山湖景酒店", grade: "本地四星", or_similar: true },
       meals: {
@@ -1052,12 +1103,13 @@ const route_days_short: RouteDaysPayload = {
         { name: "西山岛环岛", kind: "景点", duration: "3 小时", ticket_included: true },
         { name: "碧螺春茶庄", kind: "购物", duration: "60 分钟", ticket_included: null },
       ],
-      text: "解析稿这里写了一个 60 分钟的茶庄停留，复核时要确认算不算购物店。",
+      text: "上午环【西山岛】，午餐为农家太湖三白 / 特别提醒：解析稿这里写了一个 60 分钟的【碧螺春茶庄】停留，复核时要确认算不算购物店。",
     },
     {
       day: 3,
       title: "太湖 — 上海",
       places: ["太湖", "上海"],
+      transport: "高铁二等座",
       overnight: "home",
       hotel: null,
       meals: {
@@ -1067,7 +1119,7 @@ const route_days_short: RouteDaysPayload = {
       },
       flights: [],
       sights: [{ name: "东山雕花楼", kind: "外观", duration: "30 分钟", ticket_included: null }],
-      text: "上午自由活动，午后高铁回上海，约 17:00 到虹桥。",
+      text: "上午自由活动，可步行至【东山雕花楼】外观；午后高铁回上海，约 17:00 到虹桥。",
     },
   ],
   inclusions: ["上海—苏州往返高铁二等座", "本地四星 2 晚", "含 2 早 2 正", "导游服务"],
@@ -1085,6 +1137,7 @@ const route_days_short: RouteDaysPayload = {
 const route_days_streaming: RouteDaysPayload = {
   route_id: route_days.route_id,
   title: route_days.title,
+  image_url: route_days.image_url,
   route_code: route_days.route_code,
   department: route_days.department,
   day_count: route_days.day_count,

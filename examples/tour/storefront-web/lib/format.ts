@@ -19,15 +19,22 @@ export function formatYuanText(value: number): string {
 
 const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
+function pad(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
 function parts(iso?: string | null): [number, number, number] | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? "");
   return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
 }
 
-/** "2026-10-14" → "10/14", from the string parts so no timezone shifts the day. */
+/**
+ * "2026-10-08" → "10/08", from the string parts so no timezone shifts the day. Both halves keep
+ * their zero, because these dates are read down a column of 团期 rather than out of a sentence.
+ */
 export function dayLabel(iso?: string | null): string | null {
   const ymd = parts(iso);
-  return ymd ? `${ymd[1]}/${ymd[2]}` : null;
+  return ymd ? `${pad(ymd[1])}/${pad(ymd[2])}` : null;
 }
 
 /** "2026-10-14" → "10/14 周三"; Date.UTC keeps the weekday timezone-stable. */
@@ -35,7 +42,7 @@ export function dateLabel(iso?: string | null): string | null {
   const ymd = parts(iso);
   if (!ymd) return null;
   const weekday = WEEKDAYS[new Date(Date.UTC(ymd[0], ymd[1] - 1, ymd[2])).getUTCDay()];
-  return `${ymd[1]}/${ymd[2]} ${weekday}`;
+  return `${dayLabel(iso)} ${weekday}`;
 }
 
 /**
@@ -51,7 +58,6 @@ export function fullDateLabel(iso: string): string {
 }
 
 function clock(at: Date): string {
-  const pad = (value: number) => String(value).padStart(2, "0");
   return `${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
 
@@ -223,6 +229,8 @@ export interface DepartureDate {
 /**
  * The sellable 团期 a search stamped onto a 线路 when the advisor stated dates:
  * "2026-10-01:可报名|2026-10-03:已成团" as the dates the card's pills show, each with its state.
+ * A line the window holds none of carries the attribute empty and states its nearest date
+ * instead, which `adjacentDates` reads.
  */
 export function routeDepartures(product: Product): DepartureDate[] {
   return attrList(product.attributes?.departures)
@@ -233,12 +241,28 @@ export function routeDepartures(product: Product): DepartureDate[] {
     .filter((item): item is DepartureDate => item !== null);
 }
 
-/** "10/01–10/07", the window those 团期 were read out of; nothing when none was stated. */
+/**
+ * "10/01–10/07", the window those 团期 were read out of; nothing when none was stated. A line
+ * with no 团期 in the window still carries it, because the window is what the row explains.
+ */
 export function departuresWindow(product: Product): string | null {
   const [from, to] = (product.attributes?.departures_window ?? "").split("..");
   const start = dayLabel(from);
   const end = dayLabel(to);
   return start && end ? `${start}–${end}` : start;
+}
+
+/**
+ * A 线路 the dated search kept although it sells nothing inside the window: the window asked
+ * for, and the nearest 团期 outside it where the ERP has one. The 团期 footer says both, so
+ * `mismatchNote` leaves this case to the card rather than stating it twice.
+ */
+export function adjacentDates(
+  product: Product,
+): { window: string | null; nearest: string | null } | null {
+  const attrs = product.attributes ?? {};
+  if (attrs.match !== "adjacent_date") return null;
+  return { window: departuresWindow(product), nearest: dayLabel(attrs.nearest_departure) };
 }
 
 /** "29:41"; a hold past its deadline reads 已过期 at the call site. */
@@ -337,10 +361,13 @@ export function partyQuote(product: Product): string | null {
   return `${attrs.quote_party}合计${whole ? ` ${formatYuanText(total)}` : "待定"}`;
 }
 
-/** What a relaxed result misses, said in the ERP's own words; nothing on an exact match. */
+/**
+ * What a relaxed result misses, said in the ERP's own words; nothing on an exact match, and
+ * nothing on a line kept for its nearest date, whose 团期 footer states that in figures.
+ */
 export function mismatchNote(product: Product): string | null {
   const attrs = product.attributes ?? {};
-  if (!attrs.mismatch || attrs.match === "exact") return null;
+  if (!attrs.mismatch || attrs.match === "exact" || attrs.match === "adjacent_date") return null;
   return attrs.mismatch;
 }
 

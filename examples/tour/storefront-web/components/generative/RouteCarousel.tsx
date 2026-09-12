@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useStoreFrame } from "web-shared";
 import {
+  adjacentDates,
   departuresWindow,
   departureSpecs,
   formatYuan,
@@ -58,6 +59,7 @@ function RouteCard({ product }: { product: Product }) {
   const places = routePlaces(product);
   const dates = routeDepartures(product);
   const dateWindow = departuresWindow(product);
+  const adjacent = adjacentDates(product);
   const busy = chat?.busy ?? false;
   const soldOut = product.in_stock === false;
   return (
@@ -106,7 +108,9 @@ function RouteCard({ product }: { product: Product }) {
           </div>
         ) : null}
         {/* The 团期 a dated search stamped on the record: the days this line actually sells in
-            that window, each saying what it is open for. */}
+            that window, each saying what it is open for. A line the window holds none of says
+            so in the same place, with the nearest date the ERP has, because an advisor asked
+            about 国庆 needs the near miss rather than a card that goes quiet. */}
         {dates.length ? (
           <div className="border-t border-dashed border-(--line) pt-2">
             <div className="tg-label mb-1.5">{dateWindow ? `${dateWindow} 团期` : "团期"}</div>
@@ -115,6 +119,17 @@ function RouteCard({ product }: { product: Product }) {
                 <DeparturePill key={date.date} date={date.date} status={date.status} />
               ))}
             </div>
+          </div>
+        ) : adjacent ? (
+          <div className="border-t border-dashed border-(--line) pt-2">
+            <p className="tg-num rounded-(--radius) bg-(--warn-soft) px-2.5 py-1.5 text-[12px] leading-snug text-(--warn)">
+              {[
+                adjacent.window ? `${adjacent.window} 无团期` : "窗口内无团期",
+                adjacent.nearest ? `最近 ${adjacent.nearest}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
           </div>
         ) : null}
         <button

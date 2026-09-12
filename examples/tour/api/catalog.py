@@ -154,8 +154,12 @@ def price_band(price: float) -> str:
     return PRICE_BANDS[next((i for i, edge in enumerate(edges) if price <= edge), 4)]
 
 
-def month_label(day: date) -> str:
-    return f"{day.year}年{day.month}月"
+def month_label(day: date, year: int | None = None) -> str:
+    """The month a chip says: bare where it is the year the advisor is working in, and with
+    the year where it is not, because 1月 next year is a different question."""
+    return (
+        f"{day.month}月" if year is not None and day.year == year else f"{day.year}年{day.month}月"
+    )
 
 
 def short_text(text: str, limit: int) -> str:
@@ -316,6 +320,7 @@ class Catalog:
         matches: Sequence[RouteFacts],
         months: Mapping[int, Sequence[date]] | None = None,
         first: Sequence[str] = (),
+        year: int | None = None,
     ) -> dict[str, list[tuple[str, int]]]:
         """The matches grouped over every dimension that splits them, each value one the
         advisor taps and the model sends back as a filter. ``months`` is the 团期 dates read
@@ -326,7 +331,7 @@ class Catalog:
             "目的地": self._destinations(matches),
             "天数": _counts(f"{facts.days} 天" for facts in matches),
             "出发城市": _counts(facts.depart_city or UNSTATED for facts in matches),
-            "出发月份": self._months(matches, months),
+            "出发月份": self._months(matches, months, year),
             "酒店标准": _counts(facts.hotel_grade or UNSTATED for facts in matches),
             "纯玩": _counts(
                 NO_SHOPPING if facts.no_shopping else SOME_SHOPPING for facts in matches
@@ -343,17 +348,24 @@ class Catalog:
         return _counts(facts.destination for facts in matches)
 
     def _months(
-        self, matches: Sequence[RouteFacts], months: Mapping[int, Sequence[date]] | None
+        self,
+        matches: Sequence[RouteFacts],
+        months: Mapping[int, Sequence[date]] | None,
+        year: int | None = None,
     ) -> list[tuple[str, int]]:
-        """How many lines depart in each month the run read a 团期 in; a line departing twice
-        in one month counts once, because the chip narrows lines and not dates."""
+        """How many lines depart in each month the run read a 团期 in, in date order; a line
+        departing twice in one month counts once, because the chip narrows lines and not
+        dates."""
         if not months:
             return []
-        counted: dict[str, int] = {}
+        counted: dict[tuple[int, int], int] = {}
         for facts in matches:
-            for label in sorted({month_label(day) for day in months.get(facts.route_id, ())}):
-                counted[label] = counted.get(label, 0) + 1
-        return sorted(counted.items())
+            for stamp in {(day.year, day.month) for day in months.get(facts.route_id, ())}:
+                counted[stamp] = counted.get(stamp, 0) + 1
+        return [
+            (month_label(date(year_of, month, 1), year), count)
+            for (year_of, month), count in sorted(counted.items())
+        ]
 
     def _prices(self, matches: Sequence[RouteFacts]) -> list[tuple[str, int]]:
         counted = _counts(price_band(facts.from_price) for facts in matches)

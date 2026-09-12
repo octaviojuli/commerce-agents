@@ -301,10 +301,15 @@ Single prompts worth trying after those turns:
   `optional_count`, `ticket_count`, `gift_count`, `places`, `highlights`, `doc` — with
   `attachment` where the catalog links one, and its labels are 纯玩 or 购物店N家, the hotel
   standard, the airline and 已复核 or 解析稿. The ERP is asked for the dynamic half alone: the
-  window's 团期 are read once for the whole search, and while the conversation has stated
-  dates every card carries the ones it sells in them as `departures`
-  (`2026-10-03:可报名|2026-10-05:已成团|2026-10-08:满员`, 截止 once the date has passed) and the
-  window as `departures_window`. The ERP catalog row behind a document is read once, for the
+  window's 团期 are read once for the whole search. A stated window is a condition and not a
+  decoration: every match is weighed against it, a line that runs in it is `match=exact` and
+  carries the dates as `departures`
+  (`2026-10-03:可报名|2026-10-05:已成团|2026-10-08:满员`, 截止 once the date has passed) with the
+  window as `departures_window`, and a line that runs in none of them is `match=adjacent_date`
+  with an empty `departures`, the `nearest_departure` a second read over the next 180 days
+  found — one read for all such lines together — and a `mismatch` the advisor reads back
+  (`10/01–10/07 无团期，最近团期 10/19`). Such a line is offered and not dropped, because the
+  advisor may still sell that date, and the lines that do run in the dates rank ahead of it. The ERP catalog row behind a document is read once, for the
   起价 and the cover photo; a matched line the process has no row for is still offered, at
   起价未知. A quoted departure costs  because a card built from one carries no date, no seat count and no price. A quoted departure costs
   two ERP calls — its detail for the 市场价 and the seat counts, `order/price` in its own
@@ -442,8 +447,10 @@ Single prompts worth trying after those turns:
 `storefront-web/` is the advisor's workbench, Chinese throughout: 线路 cards read what the
 reviewed document states about a line (`days`, `nights`, `depart_city`, `countries`, `airline`,
 `hotel_standard`, `meal_standard`, `shopping_stops`, `optional_count`, `ticket_count`,
-`gift_count`, `places`, `doc`, `match`, `mismatch`) and, on a dated search, the 团期 it sells in
-the window (`departures`, `departures_window`), 团期 cards read a variant's (`depart_date`, `seats_left`,
+`gift_count`, `places`, `doc`, `match`, `mismatch`) under the agency's own poster (`image_url`,
+with a wash in its place where a line carries none) and, on a dated search, the 团期 it sells in
+the window (`departures`, `departures_window`) — or, where the window holds none, that window and
+the nearest date beside it (`match` `adjacent_date`, `nearest_departure`), 团期 cards read a variant's (`depart_date`, `seats_left`,
 `seats_total`, `group_status`, `party_quote_total`, `quote_party`) and name both of its prices
 per head, the 同业价 an order is booked at (`adult_price`, `child_price`) above the 市场价 the
 customer is shown (`market_adult_price`, `market_child_price`), with the party's total on the
@@ -480,7 +487,7 @@ The filter keys the model writes into `filters.attributes` on every search:
 | Key | Value |
 |---|---|
 | `destination` | the customer's destination as text, matched against the document's countries, its 线路系, the line's name, the department that sells it, the places its days pass through and the sights it names; a distinctive word (观鲸, 一价全含) narrows one family of a trip, and places joined with · must all be on the line |
-| `depart_from`, `depart_to` | ISO dates; the ERP's own date filter, and the window this and every later quote is made for |
+| `depart_from`, `depart_to` | ISO dates; the window every match is weighed against, and the one this and every later quote is made for. A line with no 团期 in it is `match=adjacent_date` and names its `nearest_departure` |
 | `days_min`, `days_max` | whole days, against the document's own 天数 |
 | `adults`, `children` | the party every quote is made for, and the split `add_to_cart` writes onto the order |
 | `child_ages` | pipe-separated, `5\|9`; kept on the session's `SearchContext` and filters nothing, because the ERP states no minimum age |
@@ -496,8 +503,10 @@ line of exactly the length asked for, then the lower published 起价, then the 
 result carries `catalog_matches`, the number of 线路 that met the request. Above five matches
 the executor appends a 目录概览 to the tool result — the total and the matches grouped by
 目的地 (one value per line: the 线路系 it is filed under, else its countries joined), 天数,
-出发城市, 出发月份, 酒店标准, 纯玩, 特色 (观鲸, 一价全含, 国泰 — the words that tell one version
-of a trip from another) and 起价, each value one the model sends back as a filter. Between six
+出发城市, 出发月份 (counted off the 团期 the search read, bare for the year the advisor is
+working in), 酒店标准, 纯玩, 特色 (观鲸, 一价全含, 国泰 — the words that tell one version of a
+trip from another) and 起价, each value one the model sends back as a filter. With dates stated
+the head says how many of the matches run in them. Between six
 and twelve matches that is cards and chips together: the cards are the answer and the model
 ends the reply with a `present_focus` question over those groups. Above twelve it is the
 question alone, and a shortlist over that overview is held until it has been asked.

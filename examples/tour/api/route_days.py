@@ -74,11 +74,13 @@ class SightOut(BaseModel):
 
 class DayOut(BaseModel):
     """One day as the advisor reads it out. ``text`` is the programme as the attachment
-    wrote it; everything beside it is that paragraph read into fields."""
+    wrote it; everything beside it is that paragraph read into fields. ``transport`` is the
+    day's 车程 / 交通 note, ``""`` where the attachment writes none."""
 
     day: int
     title: str
     places: list[str]
+    transport: str
     overnight: str
     hotel: HotelOut | None = None
     meals: MealsOut
@@ -123,6 +125,8 @@ class RouteDaysCard(BaseModel):
     countries: list[str]
     reviewed: bool
     reviewed_by: str
+    # The 线路's own cover photo from the ERP catalog row, where it carries one.
+    image_url: str | None = None
     highlights: list[str]
     airline: str
     hotel_standard: str
@@ -181,6 +185,7 @@ def _day(day: Day) -> DayOut:
         day=day.day,
         title=day.title,
         places=list(day.places),
+        transport=day.transport,
         overnight=day.overnight,
         hotel=(
             HotelOut(name=day.hotel.name, grade=day.hotel.grade, or_similar=day.hotel.or_similar)
@@ -226,6 +231,7 @@ async def _enrich(payload: RouteDaysPayload, context: EnrichmentContext) -> dict
         countries=list(facts.countries),
         reviewed=facts.reviewed,
         reviewed_by=facts.reviewed_by,
+        image_url=facts.image_url,
         highlights=list(doc.cover.highlights),
         airline=doc.cover.airline,
         hotel_standard=doc.cover.hotel_standard,
