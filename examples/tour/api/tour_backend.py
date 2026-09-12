@@ -64,6 +64,7 @@ from .catalog import (
     FILTERS as CHIP_FILTERS,
 )
 from .catalog import (
+    SCOPES,
     Catalog,
     Request,
     RouteFacts,
@@ -277,7 +278,10 @@ def _query_places(query: str) -> tuple[str, ...]:
     words = [
         w for w in re.split(r"[\s·、,，/+&]+", query.strip()) if w and not _QUERY_NOISE.match(w)
     ]
-    return tuple(words[:2])
+    # A wide word (欧洲) is the customer's; a 线路系 the model wrote beside it (德法意瑞) is
+    # the model's guess at the answer, and the question the card asks — not a fact stated.
+    scopes = [w for w in words if w in SCOPES]
+    return tuple(scopes[:1]) if scopes else tuple(words[:2])
 
 
 def _values(raw: str | None) -> tuple[str, ...]:
