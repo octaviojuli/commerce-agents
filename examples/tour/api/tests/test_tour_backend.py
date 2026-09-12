@@ -256,7 +256,9 @@ async def test_the_overview_says_how_many_of_the_matches_run_in_the_stated_dates
     # The cards the model is handed lead with those three.
     assert [p.attributes["match"] for p in products][:3] == ["exact"] * 3
     # The 出发月份 chips are counted off both reads, so a month past the advisor's dates shows.
-    assert overview.groups["出发月份"] == [("10月", 7), ("11月", 1)]
+    assert overview.counts["出发月份"] == [("10月", 7), ("11月", 1)]
+    # The dates are stated and three lines run in them, so 出发月份 is not asked again.
+    assert "出发月份" not in overview.groups and "10/11–10/12" in overview.stated
 
 
 async def test_a_cards_photo_is_the_erp_catalogs_own(erp, session):
