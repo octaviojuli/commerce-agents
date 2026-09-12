@@ -1275,3 +1275,5 @@ def test_a_free_text_query_names_only_its_places():
     assert _query_places("国庆 欧洲 线路") == ("欧洲",)
     assert _query_places("4人 11月 斯里兰卡 纯玩") == ("斯里兰卡",)
     assert _query_places("国庆 线路 推荐") == ()
+    # A 线路系 the model adds beside the customer's wide word is a guess, not a fact.
+    assert _query_places("欧洲 德法意瑞 国庆") == ("欧洲",)
