@@ -38,28 +38,52 @@ written against — one table per day with 用餐/住宿 rows, or an English ove
 a detail table with 餐饮/住宿 lines — and a third layout yields fewer fields and a lower
 score, which is the signal to look at it.
 
-Four rules read a day around its 【】 rather than inside them, because that is where the
+Rules read a day around its 【】 rather than inside them, because that is where the
 attachments put the qualifiers: a sentence ending 均为外观或车游 makes every 【】 in it an
 外观; a 参考行程如下 under a 全天自由活动 with a 自费套餐 makes every 【】 after it 自费
-up to the first 【赠送…】; a note saying X为赠送项目 marks the sight named X; a 自由活动
-is an entry of its own (全天/上午/下午). A priced line is a 自费 item whether or not the
-word 自费 stands beside the price (美瑞莎出海观鲸120美金/人). A 茶园, 香料园 or 宝石 kept
-as a sight, a line saying 此处不算购物店, and a 赠送 promised on the cover each add a
-`needs_review` note, since the parser cannot decide them and a product person can.
-A 【】 is a 购物 by its name (百货, Outlet, 老佛爷, 莎玛丽丹, 花宫娜, 天鹅广场) or by the words
-beside it (购物广场, 售卖, 门店); 含船票, 含缆车 and 含小火车 count as 含门票, 不入内 as an
-外观; a day whose 住宿 row names only the city takes its hotel grade from the overview
-table's HOTEL column; the 退改 policy is the 团体订位…概不退回 sentence of the notices, never
-the 不可抗力 clause; a 单人间房差…; 儿童… line is split at the semicolon; a 另行付费 table is
-read by column with the unit from its 价格(欧元/人) header.
+up to the first 【赠送…】; a note saying X为赠送项目 marks the sight named X; a 自费推荐 or
+（自费游览…） right after a bracket makes it 自费; a 若…/将调整为… sentence is the 温馨提示's
+alternative and its 【】 is no sight of the day; 【特别赠送】 is a label and the gift is the
+words beside it, as 赠送观鲸 written with no bracket at all is; a group written as prose
+(日内瓦游览（均外观）：A，B，C) is read name by name; a 自由活动 the prose states is an entry of
+its own (全天/上午/下午), while one inside a parenthesis — （总观光+自由活动时间不少于2小时） —
+is the duration of the 【】 before it and nothing more. A priced line is a 自费 item whether or
+not the word 自费 stands beside the price (美瑞莎出海观鲸120美金/人); a price in a 退门票
+sentence is money given back and no item. A 茶园, 香料园 or 宝石 kept as a sight, a sight the
+prose calls a 购物场所 or 露天市场, a line saying 此处不算购物店, and a 赠送 promised on the
+cover each add a `needs_review` note, since the parser cannot decide them and a product person
+can. A 【】 is a 购物 by its name (百货, Outlet, 老佛爷, 莎玛丽丹, 花宫娜, 天鹅广场) or by the
+words its sentence writes beside it (购物广场, 售卖, 门店); 含船票, 含缆车 and 含小火车 count as
+含门票 and 不入内 as an 外观, while 含官导 and 含讲解 are a guide and leave the ticket unstated
+and 不含园内门票 states there is none; a 包含 list writing 所含景点首道门票（其余景点均为外观）：A、B
+gives the ticket to the sights it names and takes it from the 景点 it does not. A day whose
+住宿 row names only the city takes its hotel grade from the overview table's HOTEL column, and
+a grade keeps the digits as written (4星, 4-5星); a 火车参考班次, a 参考船次 and a 参考航班：待定
+are the day's `transport`, never a place of its title, and a flight's `raw` keeps the 参考航班
+label and the full-width parentheses the attachment wrote. `summary.countries` is read off the
+线路 name, the day titles and places and the cover — a country word in a day's prose belongs to a
+sight's name (英国花园) and not to the itinerary — and falls back to the line's tags without
+their region words (东欧, 北欧, 巴尔干), which `facets.region` keeps instead. The 退改 policy is
+the 团体订位…概不退回 sentence with the 游客取消规则 day bands after it, never the 不可抗力
+clause; 签证 is read from a notice only where the notice is about the fee, so a 销签 reminder is
+not one; a 儿童 clause saying 与成人同价 loses to a 周岁/不占床 one; a 单人间房差…; 儿童… line is
+split at the semicolon; a 另行付费 table is read row by row, a row with columns being an item
+whatever its name's length, with the price from the price column and the unit from the
+价格(欧元/人) header.
 
 A `.pdf` goes through `api/pdf_source.py` first: `pdftotext` (poppler, on the PATH) gives
 the page text, runs of three or more spaces become the `||` cell separator so a table row
-reads like a .docx row, and the two day-header shapes the .pdf attachments use — `DAY` with
-the number drawn as a picture and the bare number on the line below, or a day written as a
-number alone — are rewritten into `第N天`. pdftotext reads a page in two orders, `-layout`
-(columns kept) and default (text blocks in sequence); the parser reads each .pdf both ways
-and keeps the more complete document, and `source.parser` says which (`docx-rules-2/pdf-layout`).
+reads like a .docx row, and the day-header shapes the .pdf attachments use — `DAY` with
+the number drawn as a picture and the bare number on the line below, a day written as a
+number alone, a number printed against the middle of the right column's paragraph, and one
+printed in the same row as the day's 餐/住/行 fields — are rewritten into `第N天`. A
+private-use character (Word's Wingdings) between two words is a separator and reads as a dash,
+and elsewhere it is decoration and goes; a page-edge 出发日期 stamp printed inside a sentence
+(佛罗9.23伦萨) goes with it. A 报价包含 ｜ 报价不含 table printed side by side is read by
+column, a cell that does not close with ；or 。 being the row above wrapping. pdftotext reads
+a page in two orders, `-layout` (columns kept) and default (text blocks in sequence); the
+parser reads each .pdf both ways and keeps the more complete document, and `source.parser`
+says which (`docx-rules-3/pdf-layout`).
 A .pdf with fewer than 300 Chinese characters of text is a scan and is refused. The .pdf
 attachments' own labels — `餐食：早午晚`, `酒店：…`, `餐：/ 住：飞机上 行：无` — are read by
 `itinerary_source.split_days` cell by cell.

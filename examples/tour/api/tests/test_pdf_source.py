@@ -134,3 +134,55 @@ def test_document_lines_reads_a_pdf_and_refuses_a_scan(monkeypatch):
     monkeypatch.setattr("tour.api.pdf_source.MIN_TEXT_CHARS", 300)
     with pytest.raises(ImageOnlyPdf):
         document_lines(_pdf(["DAY 1 Shanghai - Colombo"]))
+
+
+def test_a_day_number_printed_against_the_middle_of_a_paragraph_starts_its_day():
+    """The 行程详情 table of a .pdf writes the day number in a left column against the middle
+    of the right column's paragraph. The paragraph above it is that day's too, so the header
+    goes where the day began — after the 餐/住/行 row that closed the day before it."""
+    lines = normalise_lines(
+        [
+            "第 02 天        蓝湾镇-雪顶镇",
+            "                早餐后前往雪顶镇，沿途是连绵的葡萄园与教堂钟楼。",
+            "餐：早 午 晚     住：雪顶镇山景酒店     行：旅游用车",
+            "                上午前往山谷深处，白色的瀑布与周围的绿色植物搭配得恰到好处。",
+            "第 03 天        随后乘车前往特别安排的老城散步，晚间返回酒店休息。",
+            "餐：早 午 晚     住：老城精选酒店       行：旅游用车",
+            "                老城-蓝湾镇",
+            "                早上：酒店早餐",
+            "第 04 天",
+            "                晚上：晚餐自理后入住酒店。",
+            "餐：早 / 晚      住：蓝湾镇精选酒店     行：旅游用车",
+        ]
+    )
+    assert lines[3] == "第 03 天"
+    assert lines[4].startswith("上午前往山谷深处")
+    # A day number on a line of its own inside the block goes back to the block's title line.
+    assert "第 04 天 老城-蓝湾镇" in lines
+    days = split_days(lines)
+    assert [day.day_no for day in days] == [2, 3, 4]
+    assert "白色的瀑布" in days[1].text and "白色的瀑布" not in days[0].text
+    assert days[2].title == "老城-蓝湾镇" and "晚餐自理" in days[2].text
+
+
+def test_a_day_number_in_the_same_row_as_its_餐_line_still_starts_the_day():
+    lines = normalise_lines(["第 12 天   餐：/    住：温暖的家   行：飞机"])
+    assert lines == ["第 12 天", "餐：/ || 住：温暖的家 || 行：飞机"]
+    day = split_days(lines)[0]
+    assert (day.day_no, day.hotel, day.meals) == (12, "温暖的家", "/")
+
+
+def test_a_page_edge_date_stamp_is_not_part_of_the_sentence():
+    line = (
+        "上午参观老城的主教座堂与回廊，随后前往佛罗9.23伦萨深度游，"
+        "沿途约1.5小时车程，傍晚抵达酒店休息，晚餐后自由活动。"
+    )
+    assert "佛罗伦萨深度游" in normalise_lines([line])[0]
+    assert "约1.5小时车程" in normalise_lines([line])[0]
+
+
+def test_a_private_use_character_between_two_names_is_a_separator():
+    assert normalise_lines(["第 2 天   上海米兰-310KM-佛罗伦萨"])[0].endswith(
+        "上海-米兰-310KM-佛罗伦萨"
+    )
+    assert normalise_lines([" 全程国际连锁四星酒店"])[0] == "全程国际连锁四星酒店"
