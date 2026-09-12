@@ -134,6 +134,15 @@ body {
   opacity: 0.5;
 }
 
+/* A chip the advisor is holding on a 聚焦卡: picked, not yet sent. The hover rule repeats the
+   filled ground so a held chip does not read as an unheld one under the pointer. */
+.chip-on,
+.chip-on:hover:not(:disabled) {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+  color: var(--on-accent);
+}
+
 .btn-primary {
   border-radius: var(--radius);
   background: var(--accent-strong);

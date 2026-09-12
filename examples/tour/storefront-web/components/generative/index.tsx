@@ -12,17 +12,20 @@ import type {
   AttachmentsPayload,
   CheckoutPayload,
   ComparisonPayload,
+  DeparturesPayload,
   FocusPayload,
   GuidePayload,
   ItineraryPayload,
   OrderStatusPayload,
   PlanPayload,
   ProductsPayload,
+  RouteDaysPayload,
   ShortlistPayload,
 } from "@/lib/types";
 import AttachmentsCard from "./AttachmentsCard";
 import BookingStatusCard from "./BookingStatusCard";
 import ComparisonSpread from "./ComparisonSpread";
+import DeparturesCard from "./DeparturesCard";
 import FocusCard from "./FocusCard";
 import HistoryMark from "./HistoryMark";
 import ItineraryTimeline from "./ItineraryTimeline";
@@ -30,6 +33,7 @@ import PlanChecklist from "./PlanChecklist";
 import PolicyCard from "./PolicyCard";
 import QuoteSheet from "./QuoteSheet";
 import RouteCarousel from "./RouteCarousel";
+import RouteDaysCard from "./RouteDaysCard";
 import ShortlistCard from "./ShortlistCard";
 
 export default function GenerativeBlock({ block, status }: GenerativeBlockProps) {
@@ -38,6 +42,10 @@ export default function GenerativeBlock({ block, status }: GenerativeBlockProps)
   switch (block.component) {
     case "products":
       return <RouteCarousel payload={payload as ProductsPayload} partial={partial} />;
+    case "route_days":
+      return <RouteDaysCard payload={payload as RouteDaysPayload} partial={partial} />;
+    case "departures":
+      return <DeparturesCard payload={payload as DeparturesPayload} partial={partial} />;
     case "shortlist":
       return <ShortlistCard payload={payload as ShortlistPayload} partial={partial} />;
     case "focus":

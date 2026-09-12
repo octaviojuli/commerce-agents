@@ -133,9 +133,10 @@ export interface ShortlistPayload {
 
 /**
  * `present_focus`: one narrowing question over a search that matched more 线路 than a shortlist
- * shows. `dimension` names the group whose values are the chips; a value with an `ask` sends
- * those words when tapped, one without is a count alone. `anchors` are up to three results the
- * card carries as a foothold when the match is not huge.
+ * shows. `dimension` names the group the card puts first; a value with an `ask` behind it is one
+ * the advisor may hold, and the card sends every held value of every group as one message when
+ * they confirm, while a value without an `ask` is a count alone. `anchors` are up to three results
+ * the card carries as a foothold when the match is not huge.
  */
 export interface FocusPayload {
   question: string;
@@ -144,6 +145,118 @@ export interface FocusPayload {
   dimension: string;
   groups: { label: string; filter: string; values: { value: string; count: number; ask?: string }[] }[];
   anchors: Product[];
+}
+
+/**
+ * One leg of a 参考航班: the 去程 at the head of a 逐日行程, the 回程 at its tail, or a flight the
+ * document wrote inside a day. Everything but the day is free text as the 线路文档 states it.
+ */
+export interface RouteFlight {
+  day?: number;
+  flight_no?: string;
+  carrier?: string;
+  from_place?: string;
+  to_place?: string;
+  times?: string;
+}
+
+/** One meal of a day: what the document says, and whether it is included; null is 未写明. */
+export interface RouteMeal {
+  text?: string;
+  included?: boolean | null;
+}
+
+/** What the 线路文档 makes of a stop: a visit, a facade, a shop, a paid extra, a gift, free time. */
+export type SightKind = "景点" | "外观" | "购物" | "自费" | "赠送" | "自由活动";
+
+/** One stop of a day; `ticket_included` is null where the document does not say. */
+export interface RouteSight {
+  name: string;
+  kind?: SightKind;
+  duration?: string;
+  ticket_included?: boolean | null;
+}
+
+/** Where a day sleeps: a hotel, a ship, the plane, or home on the last day. */
+export type Overnight = "hotel" | "ship" | "flight" | "home" | "unknown";
+
+/** One day of a 线路, as the reviewed document writes it. */
+export interface RouteDay {
+  day: number;
+  title?: string;
+  places?: string[];
+  /** How the day moves, where the document states it: 飞机, 大巴, 内陆航班, 高铁. */
+  transport?: string;
+  overnight?: Overnight;
+  hotel?: { name: string; grade?: string; or_similar?: boolean } | null;
+  meals?: { breakfast?: RouteMeal; lunch?: RouteMeal; dinner?: RouteMeal };
+  flights?: RouteFlight[];
+  sights?: RouteSight[];
+  text?: string;
+}
+
+/**
+ * `present_route_days`: one 线路 as its 逐日行程 — every day of the reviewed 线路文档 expanded,
+ * the 去程 flights at the head and the 回程 at the tail, and what the document states around
+ * them: 费用包含 and 费用不含, the 购物店 and 自费项目 it lists, and its policies. A streaming
+ * partial carries the head and the days written so far, so everything but the id is optional.
+ *
+ * `days` is the day list; the 天数 is `day_count`, and the list's own length stands in for it
+ * until the payload states one.
+ */
+export interface RouteDaysPayload {
+  route_id: string;
+  title?: string;
+  /** The agency's own poster for the line; the card draws its own wash without one. */
+  image_url?: string | null;
+  route_code?: string;
+  department?: string;
+  day_count?: number;
+  nights?: number;
+  depart_city?: string;
+  countries?: string[];
+  /** True once an editor has passed the parsed document; `reviewed_by` is who did. */
+  reviewed?: boolean;
+  reviewed_by?: string;
+  highlights?: string[];
+  airline?: string;
+  hotel_standard?: string;
+  meal_standard?: string;
+  outbound?: RouteFlight[];
+  inbound?: RouteFlight[];
+  days: RouteDay[];
+  inclusions?: string[];
+  exclusions?: string[];
+  shopping?: { name: string; day?: number; duration?: string }[];
+  optional?: { name: string; price?: string; day?: number }[];
+  policies?: {
+    single_room?: string;
+    child?: string;
+    visa?: string;
+    cancellation?: string;
+    deposit?: string;
+  };
+  attachment_name?: string;
+}
+
+/** What a 团期 is open for, in the words the 团期 card and the route card's pills show. */
+export type DepartureStatus = "可报名" | "已成团" | "满员" | "截止";
+
+/**
+ * `present_departures`: the sellable 团期 of one 线路 inside the window the advisor asked about.
+ * Each row is the 团期 record itself with the date read off it, so a tap can open that 团期 by
+ * its own id; `price_adult` is the 同业价 for one adult, and null where the ERP published none.
+ */
+export interface DeparturesPayload {
+  route: Product;
+  window?: { from: string; to: string };
+  items: {
+    departure: Product;
+    date: string;
+    weekday?: string;
+    status: DepartureStatus;
+    price_adult?: number | null;
+  }[];
 }
 
 /**

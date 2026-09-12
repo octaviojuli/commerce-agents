@@ -19,15 +19,22 @@ export function formatYuanText(value: number): string {
 
 const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
+function pad(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
 function parts(iso?: string | null): [number, number, number] | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? "");
   return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
 }
 
-/** "2026-10-14" → "10/14", from the string parts so no timezone shifts the day. */
-function dayLabel(iso?: string | null): string | null {
+/**
+ * "2026-10-08" → "10/08", from the string parts so no timezone shifts the day. Both halves keep
+ * their zero, because these dates are read down a column of 团期 rather than out of a sentence.
+ */
+export function dayLabel(iso?: string | null): string | null {
   const ymd = parts(iso);
-  return ymd ? `${ymd[1]}/${ymd[2]}` : null;
+  return ymd ? `${pad(ymd[1])}/${pad(ymd[2])}` : null;
 }
 
 /** "2026-10-14" → "10/14 周三"; Date.UTC keeps the weekday timezone-stable. */
@@ -35,7 +42,7 @@ export function dateLabel(iso?: string | null): string | null {
   const ymd = parts(iso);
   if (!ymd) return null;
   const weekday = WEEKDAYS[new Date(Date.UTC(ymd[0], ymd[1] - 1, ymd[2])).getUTCDay()];
-  return `${ymd[1]}/${ymd[2]} ${weekday}`;
+  return `${dayLabel(iso)} ${weekday}`;
 }
 
 /**
@@ -51,7 +58,6 @@ export function fullDateLabel(iso: string): string {
 }
 
 function clock(at: Date): string {
-  const pad = (value: number) => String(value).padStart(2, "0");
   return `${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
 
@@ -152,25 +158,111 @@ export function attrList(raw?: string): string[] {
 }
 
 /**
- * The ERP's tags for a route: `labels` holds the first four, and the joined attribute is
- * there for a record that carries no labels. An editor may have written a whole sentence
- * into one, so the chip that shows it is the one that cuts it.
+ * The tag row of a 线路 card, off what its reviewed document counted: whether the line stops at
+ * a shop at all, how many 自费 and 赠送 items it lists, how many stops it holds the first ticket
+ * for, and whether an editor has passed the document or it is still the parser's draft.
  */
-export function routeTags(product: Product, limit = 4): string[] {
-  const tags = product.labels?.length ? product.labels : attrList(product.attributes?.tags);
-  return tags.filter(Boolean).slice(0, limit);
+export function routeTags(product: Product, limit = 5): string[] {
+  const attrs = product.attributes ?? {};
+  const count = (raw?: string) => {
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  };
+  const tags: string[] = [];
+  const shops = count(attrs.shopping_stops);
+  if (attrs.shopping_stops) tags.push(shops ? `购物店 ${shops} 家` : "纯玩");
+  if (count(attrs.optional_count)) tags.push(`自费 ${count(attrs.optional_count)} 项`);
+  if (count(attrs.ticket_count)) tags.push(`含门票 ${count(attrs.ticket_count)} 处`);
+  if (count(attrs.gift_count)) tags.push(`赠送 ${count(attrs.gift_count)} 项`);
+  if (attrs.doc === "reviewed") tags.push("已复核");
+  else if (attrs.doc === "draft") tags.push("解析稿");
+  return tags.slice(0, limit);
 }
 
 /**
- * The one feature written as a sentence; the ERP's other features are place names. The
- * backend already picks it as the record's short description, so that is read first.
+ * The 线路 on one line: how long it runs, the city it leaves from, and the countries it covers
+ * in the order the document names them. A record missing any of the three states the rest.
  */
-export function featureSentence(product: Product): string | null {
-  if (product.short_description) return product.short_description;
-  const sentence = attrList(product.attributes?.features).find(
-    (text) => text.includes("，") || text.includes("。"),
-  );
-  return sentence ?? null;
+export function routeHeadline(product: Product): string {
+  const attrs = product.attributes ?? {};
+  const parts: string[] = [];
+  const nights = attrs.nights ? ` ${attrs.nights} 晚` : "";
+  if (attrs.days) parts.push(`${attrs.days} 天${nights}`);
+  if (attrs.depart_city) parts.push(`${attrs.depart_city}出发`);
+  const countries = attrList(attrs.countries).join("·");
+  if (countries) parts.push(countries);
+  else if (attrs.region) parts.push(attrs.region);
+  return parts.join(" · ");
+}
+
+/** The three facts an advisor is asked for first: which airline, which hotels, which meals. */
+export function routeFacts(product: Product): Spec[] {
+  const attrs = product.attributes ?? {};
+  const facts: [string, string | undefined][] = [
+    ["航空", attrs.airline],
+    ["酒店", attrs.hotel_standard],
+    ["用餐", attrs.meal_standard],
+  ];
+  return facts
+    .filter(([, value]) => Boolean(value))
+    .map(([label, value]) => ({ label, value: value as string }));
+}
+
+/** Where the line passes, the first few in the document's order; "…" stands for the rest. */
+export function routePlaces(product: Product, limit = 8): string | null {
+  const places = attrList(product.attributes?.places);
+  if (!places.length) return null;
+  return places.slice(0, limit).join(" · ") + (places.length > limit ? " …" : "");
+}
+
+/** What the picture on a route card names: the first country, or the 线路系 it belongs to. */
+export function routeCover(product: Product): string {
+  const attrs = product.attributes ?? {};
+  return attrList(attrs.countries)[0] ?? attrs.region ?? attrs.depart_city ?? "线路";
+}
+
+export interface DepartureDate {
+  date: string;
+  status: string;
+}
+
+/**
+ * The sellable 团期 a search stamped onto a 线路 when the advisor stated dates:
+ * "2026-10-01:可报名|2026-10-03:已成团" as the dates the card's pills show, each with its state.
+ * A line the window holds none of carries the attribute empty and states its nearest date
+ * instead, which `adjacentDates` reads.
+ */
+export function routeDepartures(product: Product): DepartureDate[] {
+  return attrList(product.attributes?.departures)
+    .map((entry) => {
+      const [date, status] = entry.split(":");
+      return date ? { date, status: status ?? "" } : null;
+    })
+    .filter((item): item is DepartureDate => item !== null);
+}
+
+/**
+ * "10/01–10/07", the window those 团期 were read out of; nothing when none was stated. A line
+ * with no 团期 in the window still carries it, because the window is what the row explains.
+ */
+export function departuresWindow(product: Product): string | null {
+  const [from, to] = (product.attributes?.departures_window ?? "").split("..");
+  const start = dayLabel(from);
+  const end = dayLabel(to);
+  return start && end ? `${start}–${end}` : start;
+}
+
+/**
+ * A 线路 the dated search kept although it sells nothing inside the window: the window asked
+ * for, and the nearest 团期 outside it where the ERP has one. The 团期 footer says both, so
+ * `mismatchNote` leaves this case to the card rather than stating it twice.
+ */
+export function adjacentDates(
+  product: Product,
+): { window: string | null; nearest: string | null } | null {
+  const attrs = product.attributes ?? {};
+  if (attrs.match !== "adjacent_date") return null;
+  return { window: departuresWindow(product), nearest: dayLabel(attrs.nearest_departure) };
 }
 
 /** "29:41"; a hold past its deadline reads 已过期 at the call site. */
@@ -189,7 +281,7 @@ export interface Spec {
   value: string;
 }
 
-/** What the ERP's catalog states about a 线路: how long it runs, and where from. */
+/** A 线路 in two figures, for the cards that name it on one line: how long, and where from. */
 export function routeSpecs(product: Product): Spec[] {
   const attrs = product.attributes ?? {};
   const specs: Spec[] = [];
@@ -269,10 +361,13 @@ export function partyQuote(product: Product): string | null {
   return `${attrs.quote_party}合计${whole ? ` ${formatYuanText(total)}` : "待定"}`;
 }
 
-/** What a relaxed result misses, said in the ERP's own words; nothing on an exact match. */
+/**
+ * What a relaxed result misses, said in the ERP's own words; nothing on an exact match, and
+ * nothing on a line kept for its nearest date, whose 团期 footer states that in figures.
+ */
 export function mismatchNote(product: Product): string | null {
   const attrs = product.attributes ?? {};
-  if (!attrs.mismatch || attrs.match === "exact") return null;
+  if (!attrs.mismatch || attrs.match === "exact" || attrs.match === "adjacent_date") return null;
   return attrs.mismatch;
 }
 

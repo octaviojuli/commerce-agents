@@ -26,6 +26,24 @@ const ENABLED = process.env.NEXT_PUBLIC_TOUR_SHOWCASE === "1";
 /** `id` sets the data-component when a component repeats. */
 const SECTIONS: { component: string; id?: string; payload: unknown; status?: UISlotStatus }[] = [
   { component: "products", payload: SHOWCASE.products },
+  // 线路 as their reviewed documents state them: the picture, the three facts, what the line
+  // stops at, where it passes, and the button that asks for the whole 行程.
+  { component: "products", id: "products-routes", payload: SHOWCASE.route_products },
+  // The same cards after the advisor stated dates: each carries the 团期 it sells in the window.
+  { component: "products", id: "products-routes-dated", payload: SHOWCASE.route_products_dated },
+  // One 线路 as its 逐日行程, every day open, the 去程 and 回程 as flight strips.
+  { component: "route_days", payload: SHOWCASE.route_days },
+  // A short line whose document is still the parser's draft.
+  { component: "route_days", id: "route_days-draft", payload: SHOWCASE.route_days_short },
+  // The same call still streaming: the head and the first days, with the next one sized.
+  {
+    component: "route_days",
+    id: "route_days-streaming",
+    payload: SHOWCASE.route_days_streaming,
+    status: "partial",
+  },
+  // The 团期 of one 线路 in the window the advisor asked about.
+  { component: "departures", payload: SHOWCASE.route_departures },
   // The same component with 团期 instead of 线路: dates, seats, deadlines, one party's total.
   { component: "products", id: "products-departures", payload: SHOWCASE.departures },
   // A shortlist frozen mid-stream: two cards plus the skeleton the third lands in.
@@ -35,7 +53,8 @@ const SECTIONS: { component: string; id?: string; payload: unknown; status?: UIS
     payload: { ...SHOWCASE.products, items: SHOWCASE.products.items.slice(0, 2) },
     status: "partial",
   },
-  // A request too broad to shortlist: one question, the catalog's groups as chips.
+  // A request too broad to shortlist: one question, the catalog's groups as chips the advisor
+  // holds several of before the bar sends them as one filter.
   { component: "focus", payload: SHOWCASE.focus },
   // The 行程附件 the advisor asked for, as downloads under the agency's own file names.
   { component: "attachments", payload: SHOWCASE.attachments },

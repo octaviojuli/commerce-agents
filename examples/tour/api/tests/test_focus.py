@@ -1,14 +1,14 @@
 # Copyright 2026 Anthropic PBC
 # SPDX-License-Identifier: Apache-2.0
 
-"""``present_focus``, the 聚焦卡, and the gate around it: a search too broad to shortlist is
-put to the advisor as one question over the catalog's own groups, a shortlist over that search
-is held until it is, and the advisor's answer ends the asking."""
+"""``present_focus``, the 聚焦卡, and the gate around it: a search too wide to shortlist is put
+to the advisor as one question over the catalog's own groups, a shortlist over that search is
+held until it is asked, and once the advisor has narrowed the cards come first."""
 
 import pytest
 
 from commerce_common.skills import SkillRegistry
-from tour.api.focus import ALREADY_NARROWED, NOT_BROAD, build_focus_extension
+from tour.api.focus import NOT_BROAD, build_focus_extension
 from tour.api.tour_backend import FOCUS_FIRST_GATE, TourToolExecutor
 
 BROAD = {
@@ -24,7 +24,7 @@ BROAD = {
 }
 NARROW = {
     "query": "新疆",
-    "filters": {"attributes": {**BROAD["filters"]["attributes"], "region": "伊犁"}},
+    "filters": {"attributes": {**BROAD["filters"]["attributes"], "region": "喀纳斯"}},
 }
 
 
@@ -61,54 +61,54 @@ def test_the_tool_is_advertised_with_its_input_schema(main):
 async def test_the_card_carries_the_catalogs_groups_as_chips(executor, backend, session):
     """The model writes the question and names the dimension; the values, their counts and
     the words a tap sends are the backend's overview, so the advisor chooses among what the
-    catalog holds."""
+    documents hold."""
     await executor.execute("search_products", BROAD)
     result = await executor.execute(
-        "present_focus", {"question": "客人想走哪一片？", "dimension": "线路系"}
+        "present_focus", {"question": "客人想走哪一片？", "dimension": "目的地"}
     )
     assert not result.is_error, result.result_text
     ui = _ui(result)
     assert ui["component"] == "focus"
     card = ui["payload"]
-    assert card["question"] == "客人想走哪一片？" and card["dimension"] == "线路系"
+    assert card["question"] == "客人想走哪一片？" and card["dimension"] == "目的地"
     assert card["total"] == 7 and card["shown"] == 2
-    regions = next(g for g in card["groups"] if g["label"] == "线路系")
-    assert regions["filter"] == "region"
-    assert regions["values"][0] == {"value": "伊犁", "count": 4, "ask": "只看线路系：伊犁"}
-    # 成团 is a count and not a filter, so its values send nothing.
-    states = next(g for g in card["groups"] if g["label"] == "成团")
-    assert states["filter"] == "" and "ask" not in states["values"][0]
+    places = next(g for g in card["groups"] if g["label"] == "目的地")
+    assert places["filter"] == "region/destination"
+    assert places["values"][0] == {"value": "伊犁", "count": 4, "ask": "只看目的地：伊犁"}
+    assert {"value": "南疆", "count": 1, "ask": "只看目的地：南疆"} in places["values"]
+    hotels = next(g for g in card["groups"] if g["label"] == "酒店标准")
+    assert hotels["filter"] == "hotel_level"
     assert card["anchors"] == []
 
 
 async def test_a_dimension_that_does_not_split_the_set_is_replaced(executor):
-    """Every 新疆 line leaves from 乌鲁木齐 but one; asking about the departure city is a
-    question with an answer, so the card asks it — but a dimension with one value is not."""
+    """Every 新疆 line the fixtures sell is under 一万元, so 起价 is a question with one answer;
+    the card asks the first dimension that does split the set instead."""
     await executor.execute("search_products", BROAD)
     result = await executor.execute(
-        "present_focus", {"question": "先按天数？", "dimension": "起价"}
+        "present_focus", {"question": "先按预算？", "dimension": "起价"}
     )
     card = _ui(result)["payload"]
     prices = next(g for g in card["groups"] if g["label"] == "起价")
-    assert card["dimension"] == ("起价" if len(prices["values"]) > 1 else "线路系")
+    assert len(prices["values"]) == 1 and card["dimension"] == "目的地"
 
 
 async def test_footholds_come_from_provenance_and_only_on_a_modest_match(
     executor, backend, session
 ):
     await executor.execute("search_products", BROAD)
-    shown = [p for p in backend.overview(session.session_id).groups["线路系"]]
+    shown = [p for p in backend.overview(session.session_id).groups["目的地"]]
     assert shown
     result = await executor.execute(
         "present_focus",
-        {"question": "先看这两条？", "picks": ["RT-1021", "RT-999999"]},
+        {"question": "先看这两条？", "picks": ["RT-1032", "RT-999999"]},
     )
     card = _ui(result)["payload"]
     kept = [p["product_id"] for p in card["anchors"]]
-    # RT-1021 was in this search's results; the other id was never seen and is named as dropped.
-    assert kept in (["RT-1021"], []) and "RT-999999" in result.result_text
+    # RT-1032 was in this search's results; the other id was never seen and is named as dropped.
+    assert kept in (["RT-1032"], []) and "RT-999999" in result.result_text
     if kept:
-        assert "RT-1021" in backend.presented(session.session_id)
+        assert "RT-1032" in backend.presented(session.session_id)
 
 
 async def test_the_card_is_refused_when_the_last_search_fits(executor):
@@ -117,31 +117,36 @@ async def test_the_card_is_refused_when_the_last_search_fits(executor):
     assert result.is_error and NOT_BROAD in result.result_text
 
 
-async def test_a_shortlist_over_a_broad_search_is_held_until_the_question_is_asked(
-    executor, backend, session
+async def test_cards_and_chips_go_together_until_the_set_is_too_wide_to_read(
+    executor, backend, session, monkeypatch
 ):
-    """Eight cards over 26 lines is the answer the design forbids: the shortlist is held with
-    the step to take, three footholds pass, and once the card is up and the advisor has
-    narrowed, cards flow and a second question is refused."""
-    await executor.execute("search_products", BROAD)
-    held = await executor.execute(
-        "present_products", _picks("RT-1021", "RT-1022", "RT-1023", "RT-1024")
-    )
-    assert held.blocked == FOCUS_FIRST_GATE and "present_focus" in held.result_text
-    assert not [e for e in held.events if e.type == "ui"]
-    # A foothold of three passes while the match is modest.
-    foothold = await executor.execute("present_products", _picks("RT-1021", "RT-1022", "RT-1023"))
-    assert not foothold.blocked and not foothold.is_error
-    # The question is asked; the advisor answers with a narrowing search.
-    asked = await executor.execute("present_focus", {"question": "哪一片？", "dimension": "线路系"})
-    assert not asked.is_error
-    await executor.execute("search_products", {**BROAD, "limit": 2})  # still broad: answered
-    overview = backend.overview(session.session_id)
-    assert overview is not None and overview.answered
-    assert "已经" not in overview.text() and "do not ask again" in overview.text()
+    """Up to twelve matches the advisor gets the cards and the question after them; above
+    twelve the cards are held until the question has been asked, and once the advisor has
+    narrowed the cards flow with the chips beside them."""
+    await executor.execute("search_products", {**BROAD, "limit": 8})
     cards = await executor.execute(
         "present_products", _picks("RT-1021", "RT-1022", "RT-1023", "RT-1024")
     )
     assert not cards.blocked and not cards.is_error
+    asked = await executor.execute("present_focus", {"question": "哪一片？", "dimension": "目的地"})
+    assert not asked.is_error
+    await executor.execute("search_products", {**BROAD, "limit": 8})  # still wide: answered
+    overview = backend.overview(session.session_id)
+    assert overview is not None and overview.answered
+    assert "缩小范围后仍有 7 条" in overview.text()
+    assert "narrowed once already" in overview.text()
+    # The chips are welcome beside the cards while the set is still wider than a shortlist.
     again = await executor.execute("present_focus", {"question": "再缩一下？"})
-    assert again.is_error and ALREADY_NARROWED in again.result_text
+    assert not again.is_error
+
+
+async def test_a_shortlist_over_a_set_too_wide_to_read_is_held(executor, backend, monkeypatch):
+    """Eight cards over 26 lines is the answer the design forbids: the shortlist is held with
+    the step to take, and the 聚焦卡 that follows carries the question alone."""
+    monkeypatch.setattr("tour.api.tour_backend.FOCUS_ANCHORS_UP_TO", 3)
+    await executor.execute("search_products", {**BROAD, "limit": 8})
+    held = await executor.execute(
+        "present_products", _picks("RT-1021", "RT-1022", "RT-1023", "RT-1024")
+    )
+    assert held.blocked == FOCUS_FIRST_GATE and "present_focus" in held.result_text
+    assert not [event for event in held.events if event.type == "ui"]

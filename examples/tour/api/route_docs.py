@@ -63,6 +63,10 @@ class RouteDocStore:
     def get(self, route_id: int) -> RouteDoc | None:
         return self._docs.get(route_id)
 
+    def docs(self) -> list[RouteDoc]:
+        """Every document the store holds, by 线路 id: the catalog the search runs over."""
+        return [self._docs[route_id] for route_id in sorted(self._docs)]
+
     def __len__(self) -> int:
         return len(self._docs)
 

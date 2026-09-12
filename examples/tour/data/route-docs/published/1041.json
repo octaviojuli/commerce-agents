@@ -1,0 +1,525 @@
+{
+  "schema_version": "1.0",
+  "route_id": 1041,
+  "route_code": "NJHX",
+  "name": "南疆环线 11 日深度纯玩",
+  "department": "ACME 旅行社 新疆部",
+  "sale_type": "公开",
+  "summary": {
+    "days": 11,
+    "nights": 10,
+    "depart_city": "喀什",
+    "countries": [
+      "新疆"
+    ],
+    "region": "南疆"
+  },
+  "cover": {
+    "airline": "",
+    "hotel_standard": "全程当地四钻酒店，帕米尔高原连住两晚",
+    "meal_standard": "含 10 早 8 正",
+    "highlights": [
+      "喀什进乌鲁木齐出，帕米尔高原住两晚，全程零购物，适合有经验的客人。",
+      "喀什古城",
+      "帕米尔高原",
+      "白沙湖"
+    ],
+    "fields": {
+      "交通": "8座商务车"
+    }
+  },
+  "transport": [],
+  "days": [
+    {
+      "day": 1,
+      "title": "喀什",
+      "places": [
+        "喀什"
+      ],
+      "distances_km": [],
+      "transport": "8座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "不含",
+          "included": false
+        },
+        "lunch": {
+          "text": "不含",
+          "included": false
+        },
+        "dinner": {
+          "text": "不含",
+          "included": false
+        }
+      },
+      "hotel": {
+        "name": "喀什 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "喀什集合，接站后送酒店办理入住，晚上开行前说明会。"
+    },
+    {
+      "day": 2,
+      "title": "喀什—喀什古城",
+      "places": [
+        "喀什",
+        "喀什古城"
+      ],
+      "distances_km": [],
+      "transport": "8座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "喀什古城",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "喀什古城清晨开城仪式前排席",
+          "kind": "自费",
+          "duration": "",
+          "ticket_included": null
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "喀什古城 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早餐后前往喀什古城，全天在喀什古城游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 3,
+      "title": "喀什古城—帕米尔高原",
+      "places": [
+        "喀什古城",
+        "帕米尔高原"
+      ],
+      "distances_km": [],
+      "transport": "8座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "喀什古城",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "帕米尔高原",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "帕米尔高原 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早餐后前往帕米尔高原，全天在帕米尔高原游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 4,
+      "title": "帕米尔高原—白沙湖",
+      "places": [
+        "帕米尔高原",
+        "白沙湖"
+      ],
+      "distances_km": [],
+      "transport": "8座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "帕米尔高原",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "白沙湖",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "白沙湖 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早餐后前往白沙湖，全天在白沙湖游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 5,
+      "title": "白沙湖—塔县石头城",
+      "places": [
+        "白沙湖",
+        "塔县石头城"
+      ],
+      "distances_km": [],
+      "transport": "8座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "白沙湖",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "塔县石头城",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "塔县石头城 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早餐后前往塔县石头城，全天在塔县石头城游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 6,
+      "title": "塔县石头城—库车大峡谷",
+      "places": [
+        "塔县石头城",
+        "库车大峡谷"
+      ],
+      "distances_km": [],
+      "transport": "8座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "塔县石头城",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "库车大峡谷",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "库车大峡谷 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早餐后前往库车大峡谷，全天在库车大峡谷游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 7,
+      "title": "库车大峡谷—库车大峡谷",
+      "places": [
+        "库车大峡谷"
+      ],
+      "distances_km": [],
+      "transport": "8座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "库车大峡谷",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "库车大峡谷 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早餐后前往库车大峡谷，全天在库车大峡谷游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 8,
+      "title": "库车大峡谷—库车大峡谷",
+      "places": [
+        "库车大峡谷"
+      ],
+      "distances_km": [],
+      "transport": "8座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "库车大峡谷",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "库车大峡谷 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早餐后前往库车大峡谷，全天在库车大峡谷游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 9,
+      "title": "库车大峡谷—库车大峡谷",
+      "places": [
+        "库车大峡谷"
+      ],
+      "distances_km": [],
+      "transport": "8座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "库车大峡谷",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "库车大峡谷 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早餐后前往库车大峡谷，全天在库车大峡谷游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 10,
+      "title": "库车大峡谷—库车大峡谷",
+      "places": [
+        "库车大峡谷"
+      ],
+      "distances_km": [],
+      "transport": "8座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "库车大峡谷",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "库车大峡谷 · 当地酒店",
+        "or_similar": true,
+        "grade": "四钻"
+      },
+      "text": "早餐后前往库车大峡谷，全天在库车大峡谷游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 11,
+      "title": "喀什",
+      "places": [
+        "喀什"
+      ],
+      "distances_km": [],
+      "transport": "8座商务车",
+      "overnight": "home",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "路餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "不含",
+          "included": false
+        }
+      },
+      "hotel": null,
+      "text": "早餐后返回喀什，送站，行程结束。"
+    }
+  ],
+  "inclusions": [
+    "行程所列景点首道门票",
+    "全程用车与司导服务",
+    "行程所列住宿，按两人一间安排",
+    "行程所列餐食",
+    "旅行社责任险"
+  ],
+  "exclusions": [
+    "往返大交通（另行报价）",
+    "单房差",
+    "个人消费与自费项目",
+    "因不可抗力产生的额外费用"
+  ],
+  "shopping": [],
+  "optional": [
+    {
+      "name": "喀什古城清晨开城仪式前排席",
+      "price": "100 元/人",
+      "day": 2
+    }
+  ],
+  "policies": {
+    "single_room": "单房差按团期公布价收取，指定单房需在报名时提出。",
+    "child": "2 岁以下不占床按儿童价，2 岁以上占床按成人价。",
+    "visa": "国内线路无需签证，请携带身份证原件；儿童携带户口本。",
+    "cancellation": "出发前 15 日以上取消退全款，14—8 日扣 30%，7 日内扣 60%。",
+    "deposit": "报名时收取每人 1000 元定金，出发前 10 日付清尾款。"
+  },
+  "notices": [
+    "行程顺序可能因天气与路况调整，景点不减少。"
+  ],
+  "source": {
+    "attachment_name": "",
+    "attachment_url": "",
+    "etag": null,
+    "bytes": 0,
+    "parsed_at": "2026-08-20T09:00:00Z",
+    "parser": "fixture"
+  },
+  "quality": {
+    "completeness": 1.0,
+    "needs_review": [],
+    "reviewed_by": "产品部 · 林薇",
+    "reviewed_at": "2026-08-20T09:00:00Z"
+  }
+}

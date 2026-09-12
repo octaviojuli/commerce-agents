@@ -1,0 +1,272 @@
+{
+  "schema_version": "1.0",
+  "route_id": 1051,
+  "route_code": "QHCK",
+  "name": "青海湖·茶卡 5 日亲子小团",
+  "department": "ACME 旅行社 青海部",
+  "sale_type": "公开",
+  "summary": {
+    "days": 5,
+    "nights": 4,
+    "depart_city": "西宁",
+    "countries": [
+      "青海"
+    ],
+    "region": "青海湖"
+  },
+  "cover": {
+    "airline": "",
+    "hotel_standard": "青海湖畔特色民宿两晚，其余当地精品酒店",
+    "meal_standard": "含 4 早 3 正",
+    "highlights": [
+      "湖边特色民宿两晚，每日车程不超 4 小时，2 岁起可参团。",
+      "青海湖",
+      "茶卡盐湖",
+      "塔尔寺"
+    ],
+    "fields": {
+      "交通": "6座商务车"
+    }
+  },
+  "transport": [],
+  "days": [
+    {
+      "day": 1,
+      "title": "西宁",
+      "places": [
+        "西宁"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [],
+      "meals": {
+        "breakfast": {
+          "text": "不含",
+          "included": false
+        },
+        "lunch": {
+          "text": "不含",
+          "included": false
+        },
+        "dinner": {
+          "text": "不含",
+          "included": false
+        }
+      },
+      "hotel": {
+        "name": "西宁 · 当地酒店",
+        "or_similar": true,
+        "grade": "民宿"
+      },
+      "text": "西宁集合，接站后送酒店办理入住，晚上开行前说明会。"
+    },
+    {
+      "day": 2,
+      "title": "西宁—青海湖",
+      "places": [
+        "西宁",
+        "青海湖"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "青海湖",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "青海湖 · 当地酒店",
+        "or_similar": true,
+        "grade": "民宿"
+      },
+      "text": "早餐后前往青海湖，全天在青海湖游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 3,
+      "title": "青海湖—茶卡盐湖",
+      "places": [
+        "青海湖",
+        "茶卡盐湖"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "青海湖",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "茶卡盐湖",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "茶卡盐湖 · 当地酒店",
+        "or_similar": true,
+        "grade": "民宿"
+      },
+      "text": "早餐后前往茶卡盐湖，全天在茶卡盐湖游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 4,
+      "title": "茶卡盐湖—塔尔寺",
+      "places": [
+        "茶卡盐湖",
+        "塔尔寺"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "hotel",
+      "flights": [],
+      "sights": [
+        {
+          "name": "茶卡盐湖",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        },
+        {
+          "name": "塔尔寺",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "团餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "团餐",
+          "included": true
+        }
+      },
+      "hotel": {
+        "name": "塔尔寺 · 当地酒店",
+        "or_similar": true,
+        "grade": "民宿"
+      },
+      "text": "早餐后前往塔尔寺，全天在塔尔寺游览，晚上入住当地酒店。"
+    },
+    {
+      "day": 5,
+      "title": "黑马河日出",
+      "places": [
+        "黑马河日出"
+      ],
+      "distances_km": [],
+      "transport": "6座商务车",
+      "overnight": "home",
+      "flights": [],
+      "sights": [
+        {
+          "name": "黑马河日出",
+          "kind": "景点",
+          "duration": "",
+          "ticket_included": true
+        }
+      ],
+      "meals": {
+        "breakfast": {
+          "text": "酒店",
+          "included": true
+        },
+        "lunch": {
+          "text": "路餐",
+          "included": true
+        },
+        "dinner": {
+          "text": "不含",
+          "included": false
+        }
+      },
+      "hotel": null,
+      "text": "早餐后返回西宁，送站，行程结束。"
+    }
+  ],
+  "inclusions": [
+    "行程所列景点首道门票",
+    "全程用车与司导服务",
+    "行程所列住宿，按两人一间安排",
+    "行程所列餐食",
+    "旅行社责任险"
+  ],
+  "exclusions": [
+    "往返大交通（另行报价）",
+    "单房差",
+    "个人消费与自费项目",
+    "因不可抗力产生的额外费用"
+  ],
+  "shopping": [],
+  "optional": [],
+  "policies": {
+    "single_room": "单房差按团期公布价收取，指定单房需在报名时提出。",
+    "child": "2 岁以下不占床按儿童价，2 岁以上占床按成人价。",
+    "visa": "国内线路无需签证，请携带身份证原件；儿童携带户口本。",
+    "cancellation": "出发前 15 日以上取消退全款，14—8 日扣 30%，7 日内扣 60%。",
+    "deposit": "报名时收取每人 1000 元定金，出发前 10 日付清尾款。"
+  },
+  "notices": [
+    "行程顺序可能因天气与路况调整，景点不减少。"
+  ],
+  "source": {
+    "attachment_name": "",
+    "attachment_url": "",
+    "etag": null,
+    "bytes": 0,
+    "parsed_at": "2026-08-20T09:00:00Z",
+    "parser": "fixture"
+  },
+  "quality": {
+    "completeness": 1.0,
+    "needs_review": [],
+    "reviewed_by": "产品部 · 林薇",
+    "reviewed_at": "2026-08-20T09:00:00Z"
+  }
+}
