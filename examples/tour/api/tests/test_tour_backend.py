@@ -1263,3 +1263,15 @@ def test_the_demo_starts_with_no_cross_user_order_feed(backend):
     """Every 报名单 in this demo belongs to the salesperson the ERP logged in; the portal
     feed a merchant example fills has nothing to show here."""
     assert backend.recent_orders() == []
+
+
+def test_a_free_text_query_names_only_its_places():
+    """A model that sends no destination attribute still gets a search: the query's place
+    words, the holiday and product words dropped, so 德法意瑞 国庆 线路 is 德法意瑞 and not
+    three words that must all be on the line."""
+    from tour.api.tour_backend import _query_places
+
+    assert _query_places("德法意瑞 国庆 线路") == ("德法意瑞",)
+    assert _query_places("国庆 欧洲 线路") == ("欧洲",)
+    assert _query_places("4人 11月 斯里兰卡 纯玩") == ("斯里兰卡",)
+    assert _query_places("国庆 线路 推荐") == ()

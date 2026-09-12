@@ -261,6 +261,25 @@ def _date_of(raw: str | None, default: date) -> date:
         return default
 
 
+# Words a model puts in a free-text query that name no place: the holiday, the party, the
+# product word. A query with nothing else left names no destination at all.
+_QUERY_NOISE = re.compile(
+    r"^(?:国庆|春节|五一|端午|中秋|元旦|寒假|暑假|清明|线路|路线|旅游|旅行|跟团|跟团游|行程|推荐|团期|"
+    r"团|游|出发|期间|月份|多国|连线|深度|经典|精选|一地|纯玩|无购物|亲子|轻奢|豪华|三钻|四钻|五钻|"
+    r"\d+\s*[天日晚人月号]|\d+)$"
+)
+
+
+def _query_places(query: str) -> tuple[str, ...]:
+    """The free-text query as destinations, when the model sent no ``destination``: its
+    place words, the holiday and product words dropped, at most two of them — 德法意瑞 国庆
+    线路 is 德法意瑞, and 国庆 欧洲 线路 is 欧洲."""
+    words = [
+        w for w in re.split(r"[\s·、,，/+&]+", query.strip()) if w and not _QUERY_NOISE.match(w)
+    ]
+    return tuple(words[:2])
+
+
 def _values(raw: str | None) -> tuple[str, ...]:
     """A filter the advisor answered with several taps: the values joined by ``|``, in the
     order they were chosen and without repeats. One tap is one value and reads the same way."""
@@ -1740,7 +1759,7 @@ class TourBackend(StorefrontBackend):
         stated = Request(
             depart_from=context.depart_from,
             depart_to=context.depart_to,
-            destinations=_values(attributes.get("destination")) or _values(query.strip() or None),
+            destinations=_values(attributes.get("destination")) or _query_places(query),
             regions=_values(attributes.get("region")),
             days=_numbers(attributes.get("days")),
             days_min=_int_or_none(attributes.get("days_min")),

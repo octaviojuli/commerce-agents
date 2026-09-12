@@ -111,7 +111,7 @@ def build_shopping_config(*, live: bool = False) -> ShoppingAgentConfig:
             "when named; days for exact lengths (8|12) and days_min/days_max for a span; "
             "no_shopping=yes when the "
             "customer wants 纯玩; hotel_level (四钻, 五钻) when a standard is named; "
-            "departure_city when the customer says which city they fly from; family=yes when "
+            "departure_city ONLY when the customer says which city they fly from — never assume a city the customer did not name; family=yes when "
             "children travel, which sorts the 亲子 lines first rather than dropping the others; "
             "region when the advisor names a 线路系 (德法意瑞, 法意瑞, 西欧多国, 英爱, 西葡, 北欧, "
             "东欧巴尔干, 意大利一地 …); feature for a word that tells one version of a trip from "
