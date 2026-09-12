@@ -616,6 +616,7 @@ const attachments: AttachmentsPayload = {
 
 const focus: FocusPayload = {
   question: "新疆这批线路先缩一下，客人想走哪一片、走多少天？",
+  stated: ["新疆", "10/11–10/20", "2 人"],
   total: 14,
   shown: 3,
   dimension: "目的地",

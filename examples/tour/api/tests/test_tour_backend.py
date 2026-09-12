@@ -256,7 +256,9 @@ async def test_the_overview_says_how_many_of_the_matches_run_in_the_stated_dates
     # The cards the model is handed lead with those three.
     assert [p.attributes["match"] for p in products][:3] == ["exact"] * 3
     # The 出发月份 chips are counted off both reads, so a month past the advisor's dates shows.
-    assert overview.groups["出发月份"] == [("10月", 7), ("11月", 1)]
+    assert overview.counts["出发月份"] == [("10月", 7), ("11月", 1)]
+    # The dates are stated and three lines run in them, so 出发月份 is not asked again.
+    assert "出发月份" not in overview.groups and "10/11–10/12" in overview.stated
 
 
 async def test_a_cards_photo_is_the_erp_catalogs_own(erp, session):
@@ -1261,3 +1263,17 @@ def test_the_demo_starts_with_no_cross_user_order_feed(backend):
     """Every 报名单 in this demo belongs to the salesperson the ERP logged in; the portal
     feed a merchant example fills has nothing to show here."""
     assert backend.recent_orders() == []
+
+
+def test_a_free_text_query_names_only_its_places():
+    """A model that sends no destination attribute still gets a search: the query's place
+    words, the holiday and product words dropped, so 德法意瑞 国庆 线路 is 德法意瑞 and not
+    three words that must all be on the line."""
+    from tour.api.tour_backend import _query_places
+
+    assert _query_places("德法意瑞 国庆 线路") == ("德法意瑞",)
+    assert _query_places("国庆 欧洲 线路") == ("欧洲",)
+    assert _query_places("4人 11月 斯里兰卡 纯玩") == ("斯里兰卡",)
+    assert _query_places("国庆 线路 推荐") == ()
+    # A 线路系 the model adds beside the customer's wide word is a guess, not a fact.
+    assert _query_places("欧洲 德法意瑞 国庆") == ("欧洲",)

@@ -52,24 +52,117 @@ FEATURE_WORDS = (
 # The 起价 bands an advisor quotes in; a 线路 whose 起价 the ERP has not published is its own
 # band, because 0 is 未发布 and not free.
 PRICE_BANDS = ("1万以内", "1–1.5万", "1.5–2万", "2–2.5万", "2.5万以上", "起价未知")
-# The dimensions a card's chips are grouped by, and the filter each one goes back through.
+# The dimensions a card's chips are grouped by, the filter each one goes back through, and —
+# because the dict is ordered — the order an advisor asks them in: the widest question first,
+# and each of them only while the customer has not answered it already.
 FILTERS = {
     "目的地": "region/destination",
+    "出发月份": "depart_from/depart_to",
     "天数": "days_min/days_max",
     "出发城市": "departure_city",
-    "出发月份": "depart_from/depart_to",
     "酒店标准": "hotel_level",
     "纯玩": "no_shopping",
-    "特色": "destination",
+    "特色": "feature",
     "起价": "price_max",
 }
-# What a group with nothing to say writes instead of a value.
+# What a group with nothing to say writes instead of a value. It is never a chip: there is no
+# filter that asks for 未标注.
 UNSTATED = "未标注"
 NO_SHOPPING = "纯玩"
 SOME_SHOPPING = "含购物店"
+# The tail of a long group, as one chip that says how much was folded into it. Nobody taps it:
+# 其他 is not a filter, it is the count the primary row would otherwise have hidden.
+OTHER = "其他"
+# One question is at most two rows: the dimension it asks about, and the next one down as a
+# hint of what comes after it.
+PRIMARY_VALUES = 8
+SECONDARY_VALUES = 5
+# How many months a card offers when the advisor's own dates hold no 团期 at all.
+NEAREST_MONTHS = 3
+# The 天数 bands a longer catalog is asked in, with the span each one sends back: twenty
+# lengths are not a question, and four are.
+DAY_BANDS = (
+    ("7 天以内", None, 7),
+    ("8–10 天", 8, 10),
+    ("11–13 天", 11, 13),
+    ("14 天以上", 14, None),
+)
+# More distinct lengths than this and 天数 is asked as those bands rather than as exact days.
+BAND_DAYS_ABOVE = 6
+# A city the ERP wrote where it had none: 中国 is not a place a group leaves from, so the
+# line's own 参考航班 is asked instead and a line with neither says 未标注.
+VAGUE_CITIES = frozenset({"中国", "国内", "全国", "不限", "待定", "多地"})
 # What a destination the advisor wrote as several places is split on: a chip sends the
 # countries joined (法国·意大利·瑞士) and the line must carry every one of them.
 _SEPARATORS = "·、,，/ 　+&"
+# The European 线路系, named as ``data/tag-rules.json``'s own region vocabulary: what a
+# customer saying 欧洲 means, beside the departments that sell it.
+EUROPE_REGIONS = frozenset(
+    {
+        "西欧多国",
+        "德法意瑞",
+        "法意瑞",
+        "德奥捷",
+        "英爱",
+        "西葡",
+        "北欧",
+        "东欧巴尔干",
+        "希腊",
+        "土耳其",
+        "意大利一地",
+        "法国一地",
+        "瑞士一地",
+        "德国一地",
+        "俄罗斯",
+    }
+)
+
+
+@dataclass(frozen=True)
+class Scope:
+    """One of the wide words a customer's request arrives as — 欧洲, 东南亚, 美洲 — as the
+    lines it covers: the departments that sell it, the 线路系 it holds, and the countries.
+    A line inside any one of the three is inside the scope."""
+
+    departments: tuple[str, ...] = ()
+    regions: frozenset[str] = frozenset()
+    countries: frozenset[str] = frozenset()
+
+    def holds(self, facts: RouteFacts) -> bool:
+        return (
+            any(facts.department.startswith(prefix) for prefix in self.departments)
+            or facts.region in self.regions
+            or bool(self.countries.intersection(facts.countries))
+        )
+
+
+# The scopes themselves. A scope is not a substring: no document writes 欧洲 into a field, so
+# a 欧洲 matched as text could only land on a day's prose or a cover — which is how a 南美
+# 邮轮 and a 美国 6 天 arrived on a 欧洲 shortlist. 日本 names no department, because the
+# agency's 日本事业部 also sells 澳新; 澳新部 sells its own and is named.
+SCOPES: dict[str, Scope] = {
+    "欧洲": Scope(("欧洲部",), EUROPE_REGIONS),
+    "欧洲多国": Scope(("欧洲部",), EUROPE_REGIONS),
+    "南亚": Scope(
+        ("斯里兰卡",),
+        frozenset({"南亚", "斯里兰卡", "马尔代夫"}),
+        frozenset({"斯里兰卡", "马尔代夫", "印度", "尼泊尔"}),
+    ),
+    "东南亚": Scope(
+        (),
+        frozenset({"东南亚"}),
+        frozenset(
+            {"泰国", "新加坡", "马来西亚", "越南", "柬埔寨", "印度尼西亚", "菲律宾", "缅甸", "老挝"}
+        ),
+    ),
+    "日本": Scope((), frozenset({"日本"}), frozenset({"日本"})),
+    "澳新": Scope(("澳新",), frozenset({"澳新"}), frozenset({"澳大利亚", "新西兰"})),
+    "美洲": Scope(
+        (),
+        frozenset({"美洲"}),
+        frozenset({"美国", "加拿大", "南美", "巴西", "阿根廷", "智利", "秘鲁", "墨西哥"}),
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -168,6 +261,21 @@ def price_band(price: float) -> str:
     return PRICE_BANDS[next((i for i, edge in enumerate(edges) if price <= edge), 4)]
 
 
+def day_band(days: int) -> str:
+    """The length as the band an advisor asks in, where the catalog holds too many lengths to
+    put them all on a card."""
+    return next(
+        label
+        for label, low, high in DAY_BANDS
+        if (low is None or days >= low) and (high is None or days <= high)
+    )
+
+
+def band_span(label: str) -> tuple[int | None, int | None]:
+    """The 天数 band a chip sent, as the ``days_min``/``days_max`` it goes back through."""
+    return next(((low, high) for name, low, high in DAY_BANDS if name == label), (None, None))
+
+
 def month_label(day: date, year: int | None = None) -> str:
     """The month a chip says: bare where it is the year the advisor is working in, and with
     the year where it is not, because 1月 next year is a different question."""
@@ -186,6 +294,21 @@ def short_text(text: str, limit: int) -> str:
 def _feature_words(doc: RouteDoc) -> tuple[str, ...]:
     text = doc.name + " " + " ".join(s.name for day in doc.days for s in day.sights)
     return tuple(word for word in FEATURE_WORDS if word in text)
+
+
+def _depart_city(doc: RouteDoc) -> str:
+    """The city the group leaves from, as a city and not as a country: an ERP row that wrote
+    中国 into the field said nothing, so the first day's 参考航班 is read instead, and a line
+    with neither leaves it empty rather than filtering and grouping on 中国."""
+    stated = doc.summary.depart_city.strip()
+    if stated and stated not in VAGUE_CITIES:
+        return stated
+    for day in doc.days[:1]:
+        for flight in day.flights:
+            city = flight.from_place.strip()
+            if city and city not in VAGUE_CITIES:
+                return city
+    return ""
 
 
 def _places(doc: RouteDoc) -> tuple[str, ...]:
@@ -212,7 +335,7 @@ def facts_of(doc: RouteDoc, record: RouteRecord | None = None) -> RouteFacts:
         region=doc.summary.region,
         days=doc.summary.days,
         nights=doc.summary.nights,
-        depart_city=doc.summary.depart_city,
+        depart_city=_depart_city(doc),
         airline=doc.cover.airline,
         hotel_standard=doc.cover.hotel_standard,
         meal_standard=doc.cover.meal_standard,
@@ -244,29 +367,120 @@ def _parts(text: str) -> list[str]:
     return [part.strip() for part in parts if part.strip()]
 
 
+def _filed_under(facts: RouteFacts, part: str) -> bool:
+    """Whether one word of a destination is what this line is filed as: a scope it is inside
+    (欧洲, 东南亚 …), else its countries, its 线路系, either of its names or the department
+    that sells it.
+
+    The days' place names, the sights and the cover are deliberately not among them. A
+    destination is what the line *is*, and a word that merely appears somewhere in twenty days
+    of prose is not that: a 南美 邮轮 whose cover compares itself to 欧洲 is not a 欧洲 line,
+    and it took a 欧洲 shortlist to find that out. A place inside a country is asked for as a
+    ``feature`` instead, which is the filter that reads the sights."""
+    scope = SCOPES.get(part)
+    if scope is not None:
+        return scope.holds(facts)
+    fields = (*facts.countries, facts.region, facts.name, facts.catalog_name, facts.department)
+    return any(part in field for field in fields if field)
+
+
 def _mentions(facts: RouteFacts, text: str) -> bool:
-    """Whether the destination the advisor stated is written anywhere on the line: its
-    countries, its 线路系, its name, the department that sells it, the places its days pass
-    through or the sights it names. A distinctive word (观鲸, 一价全含) lands on the name and
-    the sights, which is where the catalog writes what tells one version from another."""
-    fields = (
-        *facts.countries,
-        facts.region,
-        facts.name,
-        facts.catalog_name,
-        facts.department,
-        facts.depart_city,
-        *facts.places,
-        *facts.sight_names,
-    )
-    return all(any(part in field for field in fields if field) for part in _parts(text))
+    """Whether the destination the advisor stated is what the line is filed as; a destination
+    written as several places (法国·意大利) has to carry every one of them."""
+    return all(_filed_under(facts, part) for part in _parts(text))
 
 
 def _has_feature(facts: RouteFacts, word: str) -> bool:
     """A feature the advisor tapped or typed: one of the words that tell the versions of a
-    trip apart, else anything the line's name or its sights carry."""
+    trip apart, else anything the line's name, its sights or the places its days pass through
+    carry — which is where the catalog writes what tells one version from another."""
     wanted = word.strip()
-    return bool(wanted) and (wanted in facts.feature_words or _mentions(facts, wanted))
+    fields = (facts.name, facts.catalog_name, *facts.sight_names, *facts.places)
+    if not wanted:
+        return False
+    return wanted in facts.feature_words or any(wanted in field for field in fields if field)
+
+
+@dataclass(frozen=True)
+class Stated:
+    """What the customer has already said, which is the half of a narrowing question nobody
+    asks twice: ``dimensions`` are the groups no chip is offered on, and ``labels`` are the
+    same facts in the words a card shows above the question (欧洲 · 国庆 10/01–10/07 · 4 人)."""
+
+    dimensions: frozenset[str] = frozenset()
+    labels: tuple[str, ...] = ()
+
+
+def _days_label(request: Request) -> str:
+    """The length the advisor stated, however they stated it: exact lengths as they were
+    tapped, a span as its two edges, and a one-sided span as the edge it has."""
+    if request.days:
+        return "、".join(f"{days} 天" for days in sorted(request.days))
+    low, high = request.days_min, request.days_max
+    if low is not None and high is not None:
+        return f"{low} 天" if low == high else f"{low}–{high} 天"
+    return f"{low} 天以上" if low is not None else f"{high} 天以内"
+
+
+def _price_label(request: Request) -> str:
+    low, high = request.price_min, request.price_max
+    if low and high:
+        return f"{low}–{high} 元"
+    return f"{low} 元以上" if low else f"{high} 元以内"
+
+
+def stated_of(request: Request, dates: str = "") -> Stated:
+    """The request as the facts it fixed. ``dates`` is the window in the advisor's own words
+    (国庆 10/01–10/07, 10月、11月), which the backend holds and the catalog does not: a
+    ``Request`` carries dates whether or not anybody stated any."""
+    locked: list[str] = []
+    labels: list[str] = []
+
+    def fix(dimension: str, label: str) -> None:
+        locked.append(dimension)
+        labels.append(label)
+
+    # A 线路系 the advisor tapped settles 目的地; a wider word (欧洲, 斯里兰卡) is said back
+    # but leaves the 线路系 inside it open to ask — and where it holds only one, the ≥2 rule
+    # in ``question_of`` skips the dimension anyway.
+    if request.regions:
+        fix("目的地", "、".join(dict.fromkeys(request.regions)))
+    elif request.named:
+        labels.append("、".join(dict.fromkeys(request.named)))
+    if dates:
+        fix("出发月份", dates)
+    if request.days or request.days_min is not None or request.days_max is not None:
+        fix("天数", _days_label(request))
+    if request.departure_cities:
+        fix("出发城市", "、".join(request.departure_cities) + "出发")
+    if request.hotel_levels:
+        fix("酒店标准", "、".join(wanted_grade(level) or level for level in request.hotel_levels))
+    if request.no_shopping:
+        fix("纯玩", NO_SHOPPING)
+    if request.features:
+        fix("特色", "、".join(request.features))
+    if request.price_min or request.price_max:
+        fix("起价", _price_label(request))
+    # The party is a fact the card says back and no dimension the catalog groups on.
+    if request.party:
+        labels.append(f"{request.party} 人")
+    return Stated(frozenset(locked), tuple(labels))
+
+
+@dataclass(frozen=True)
+class Question:
+    """The one question a search too wide to shortlist goes back to the advisor as.
+
+    ``dimension`` is what it asks about — the first dimension the customer has not already
+    answered and that actually splits the matches — and ``groups`` is that dimension's values
+    as the chips, with the next dimension down as a second row, and nothing else: a bar of
+    eight groups and seventy chips asks everything at once, which is to ask nothing.
+    ``counts`` is every dimension that splits the set, for the model to read rather than the
+    advisor to tap."""
+
+    dimension: str
+    groups: dict[str, list[tuple[str, int]]]
+    counts: dict[str, list[tuple[str, int]]]
 
 
 def _fits_region(facts: RouteFacts, region: str) -> bool:
@@ -303,12 +517,22 @@ class Catalog:
         drafts, a line of exactly the length asked for ahead of the rest, then the cheaper
         起价, then the name — so the order is the catalog's own and not a read's."""
         found = [facts for facts in self._facts.values() if self._fits(facts, request)]
+        if not found and request.destinations:
+            # A word no line is filed under (白哈巴, 卢浮宫) is a place inside a line: read
+            # the places and the sights for it, but only once the filed names gave nothing,
+            # so a wide word (欧洲) never reaches a line's prose.
+            found = [
+                facts for facts in self._facts.values() if self._fits(facts, request, inside=True)
+            ]
         return sorted(found, key=lambda facts: self._rank(facts, request))
 
-    def _fits(self, facts: RouteFacts, request: Request) -> bool:
-        """Every condition the request states, each met by any one of the values it lists."""
+    def _fits(self, facts: RouteFacts, request: Request, inside: bool = False) -> bool:
+        """Every condition the request states, each met by any one of the values it lists.
+        ``inside`` lets a destination match the places and sights a line holds."""
         if request.destinations and not any(
-            _mentions(facts, value) for value in request.destinations
+            _mentions(facts, value)
+            or (inside and all(_has_feature(facts, part) for part in _parts(value)))
+            for value in request.destinations
         ):
             return False
         if request.regions and not any(_fits_region(facts, value) for value in request.regions):
@@ -436,6 +660,58 @@ class Catalog:
             ("特色", lambda facts: facts.feature_words),
         )
         return [label for label, read in dimensions if len({read(f) for f in matches}) > 1]
+
+
+def _band_counts(matches: Sequence[RouteFacts]) -> list[tuple[str, int]]:
+    counted = _counts(day_band(facts.days) for facts in matches)
+    order = [label for label, _, _ in DAY_BANDS]
+    return sorted(counted, key=lambda item: order.index(item[0]))
+
+
+def question_of(
+    catalog: Catalog,
+    matches: Sequence[RouteFacts],
+    stated: Stated,
+    months: Mapping[int, Sequence[date]] | None = None,
+    year: int | None = None,
+    first: Sequence[str] = (),
+    nearest_months: bool = False,
+) -> Question:
+    """The one question these matches go back as. Every dimension is counted (``counts``); the
+    card gets the first dimension in ``FILTERS`` order — after ``first``, the ones an
+    ambiguous handful differ on — that the customer has not answered and that splits the set,
+    with its top ``PRIMARY_VALUES`` values and the rest folded into 其他, and the next such
+    dimension as a second row. 天数 is asked in bands once the set holds more lengths than
+    ``BAND_DAYS_ABOVE``; 未标注 is never a chip. ``nearest_months`` reopens 出发月份 although the
+    dates were stated: nothing runs in them, so the nearest ``NEAREST_MONTHS`` are the
+    question."""
+    counts = catalog.chips(matches, months, first=first, year=year)
+    if len(counts.get("天数", [])) > BAND_DAYS_ABOVE:
+        counts["天数"] = _band_counts(matches)
+    counts = {
+        label: [(value, count) for value, count in values if value and value != UNSTATED]
+        for label, values in counts.items()
+    }
+    if nearest_months:
+        counts["出发月份"] = counts.get("出发月份", [])[:NEAREST_MONTHS]
+    order = [*first, *(label for label in FILTERS if label not in first)]
+    open_to = [
+        label
+        for label in order
+        if len(counts.get(label, [])) >= 2
+        and (label not in stated.dimensions or (label == "出发月份" and nearest_months))
+    ]
+    if not open_to:
+        open_to = [label for label in order if counts.get(label)]
+    primary = open_to[0] if open_to else "目的地"
+    values = counts.get(primary, [])
+    if len(values) > PRIMARY_VALUES:
+        folded = sum(count for _, count in values[PRIMARY_VALUES:])
+        values = [*values[:PRIMARY_VALUES], (OTHER, folded)]
+    groups = {primary: values}
+    if len(open_to) > 1:
+        groups[open_to[1]] = counts[open_to[1]][:SECONDARY_VALUES]
+    return Question(dimension=primary, groups=groups, counts=counts)
 
 
 def _counts(values: Iterable[str]) -> list[tuple[str, int]]:

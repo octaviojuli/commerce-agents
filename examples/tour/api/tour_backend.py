@@ -64,10 +64,13 @@ from .catalog import (
     FILTERS as CHIP_FILTERS,
 )
 from .catalog import (
+    SCOPES,
     Catalog,
     Request,
     RouteFacts,
+    question_of,
     short_text,
+    stated_of,
 )
 from .erp_client import (
     ORDER_STATUS,
@@ -257,6 +260,28 @@ def _date_of(raw: str | None, default: date) -> date:
         return date.fromisoformat(str(raw).strip())
     except (TypeError, ValueError):
         return default
+
+
+# Words a model puts in a free-text query that name no place: the holiday, the party, the
+# product word. A query with nothing else left names no destination at all.
+_QUERY_NOISE = re.compile(
+    r"^(?:国庆|春节|五一|端午|中秋|元旦|寒假|暑假|清明|线路|路线|旅游|旅行|跟团|跟团游|行程|推荐|团期|"
+    r"团|游|出发|期间|月份|多国|连线|深度|经典|精选|一地|纯玩|无购物|亲子|轻奢|豪华|三钻|四钻|五钻|"
+    r"\d+\s*[天日晚人月号]|\d+)$"
+)
+
+
+def _query_places(query: str) -> tuple[str, ...]:
+    """The free-text query as destinations, when the model sent no ``destination``: its
+    place words, the holiday and product words dropped, at most two of them — 德法意瑞 国庆
+    线路 is 德法意瑞, and 国庆 欧洲 线路 is 欧洲."""
+    words = [
+        w for w in re.split(r"[\s·、,，/+&]+", query.strip()) if w and not _QUERY_NOISE.match(w)
+    ]
+    # A wide word (欧洲) is the customer's; a 线路系 the model wrote beside it (德法意瑞) is
+    # the model's guess at the answer, and the question the card asks — not a fact stated.
+    scopes = [w for w in words if w in SCOPES]
+    return tuple(scopes[:1]) if scopes else tuple(words[:2])
 
 
 def _values(raw: str | None) -> tuple[str, ...]:
@@ -720,6 +745,13 @@ class Overview:
     # them: a line that runs in none of them is on the cards as its nearest date.
     window: str = ""
     with_dates: int = 0
+    # What the customer has already said, in the card's words (欧洲 · 国庆 10/01–10/07 · 4 人):
+    # no chip is offered on those, and the model does not ask them again.
+    stated: tuple[str, ...] = ()
+    # The dimension the question asks about — the first one the customer has not answered
+    # that splits the set — and every dimension's counts for the model to read.
+    dimension: str = ""
+    counts: dict[str, list[tuple[str, int]]] = field(default_factory=dict)
 
     # The filter each group's values go back through (``catalog.FILTERS``).
     FILTERS = CHIP_FILTERS
@@ -747,9 +779,13 @@ class Overview:
 
     def _rows(self) -> list[str]:
         rows = []
-        for label, counts in self.groups.items():
+        if self.stated:
+            rows.append("已知（不要再问）：" + " · ".join(self.stated))
+        if self.dimension:
+            rows.append(f"建议追问：{self.dimension}（聚焦卡只带这一组和下一组的标签）")
+        for label, counts in (self.counts or self.groups).items():
             if counts:
-                cells = "、".join(f"{value} {count}" for value, count in counts)
+                cells = "、".join(f"{value} {count}" for value, count in counts[:8])
                 how = f"filter {key}" if (key := self.FILTERS.get(label, "")) else "无过滤"
                 rows.append(f"按{label}（{how}）：{cells}")
         return rows
@@ -776,8 +812,11 @@ class Overview:
             "线路系), 天数 to days, 出发城市 to departure_city, 出发月份 to months as YYYY-MM in "
             "the year those months next fall in, 酒店标准 to hotel_level, 纯玩 to no_shopping=yes "
             "(含购物店 adds no filter), 特色 to feature, and 起价 bands to price_min and price_max "
-            "— the lower edge of the lowest band and the upper edge of the highest. Everything "
-            "the advisor stated earlier still holds: send it again with the new filters. "
+            "— the lower edge of the lowest band and the upper edge of the highest; a 天数 band "
+            "maps to days_min/days_max (7 天以内 → days_max=7, 8–10 天 → 8..10, 11–13 天 → 11..13, "
+            "14 天以上 → days_min=14). Everything the advisor stated earlier still holds: send "
+            "it again with the new filters, and never ask again about a fact listed under 已知. "
+            "Ask the question about the dimension named under 建议追问, in one sentence. "
             "不限条件，直接看这些线路 is not a filter: search again with the conditions unchanged "
             "and present the cards. "
         )
@@ -1724,7 +1763,7 @@ class TourBackend(StorefrontBackend):
         stated = Request(
             depart_from=context.depart_from,
             depart_to=context.depart_to,
-            destinations=_values(attributes.get("destination")) or _values(query.strip() or None),
+            destinations=_values(attributes.get("destination")) or _query_places(query),
             regions=_values(attributes.get("region")),
             days=_numbers(attributes.get("days")),
             days_min=_int_or_none(attributes.get("days_min")),
@@ -1766,7 +1805,9 @@ class TourBackend(StorefrontBackend):
         ]
         for product in found:
             product.attributes["catalog_matches"] = str(len(matches))
-        self._note_overview(session, matches, dates, len(found), window if context.stated else None)
+        self._note_overview(
+            session, matches, dates, len(found), window if context.stated else None, stated
+        )
         return found
 
     def _stated_context(
@@ -1812,6 +1853,7 @@ class TourBackend(StorefrontBackend):
         dates: LineDates,
         shown: int,
         window: tuple[date, date] | None,
+        request: Request | None = None,
     ) -> None:
         """What the executor hands the model beside the cards. An overview stands while the
         set is wider than a shortlist, while the handful that matched are one trip sold several
@@ -1826,24 +1868,48 @@ class TourBackend(StorefrontBackend):
         months = dates.month_dates() if dates.read_all else None
         ambiguous = catalog.ambiguous(matches)
         dimensions = tuple(catalog.differences(matches)) if ambiguous else ()
+        label = _window_label(window) if window is not None else ""
+        stated = stated_of(request, label) if request is not None else stated_of(Request(""))
         if not matches:
+            # Nothing matched: the question is where else to go, over the whole catalog, with
+            # the customer's own facts still locked.
             whole = catalog.all()
+            asked = question_of(catalog, whole, stated, year=self.today.year)
             self._overviews[session.session_id] = Overview(
-                total=0, shown=0, groups=catalog.chips(whole, year=self.today.year), empty=True
+                total=0,
+                shown=0,
+                groups=asked.groups,
+                empty=True,
+                stated=stated.labels,
+                dimension=asked.dimension,
+                counts=asked.counts,
             )
             return
         if len(matches) <= OVERVIEW_ABOVE and not ambiguous:
             self._overviews.pop(session.session_id, None)
             return
+        with_dates = sum(1 for facts in matches if dates.runs_in_window(facts.route_id))
+        asked = question_of(
+            catalog,
+            matches,
+            stated,
+            months,
+            year=self.today.year,
+            first=dimensions,
+            nearest_months=window is not None and with_dates == 0,
+        )
         self._overviews[session.session_id] = Overview(
             total=len(matches),
             shown=shown,
-            groups=catalog.chips(matches, months, first=dimensions, year=self.today.year),
+            groups=asked.groups,
             answered=answered,
             ambiguous=ambiguous,
             dimensions=dimensions,
-            window=_window_label(window) if window is not None else "",
-            with_dates=sum(1 for facts in matches if dates.runs_in_window(facts.route_id)),
+            window=label,
+            with_dates=with_dates,
+            stated=stated.labels,
+            dimension=asked.dimension,
+            counts=asked.counts,
         )
 
     def overview(self, session_id: str) -> Overview | None:
