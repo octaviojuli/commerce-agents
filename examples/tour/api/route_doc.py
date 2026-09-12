@@ -172,6 +172,11 @@ class RouteDoc(_Doc):
     name: str
     department: str
     sale_type: str = ""
+    # The 线路 this document was reviewed as, where this line is the same product sold under a
+    # second name: its 行程 is that line's word for word, so the reviewed document is read
+    # under this line's own identity (``route_docs.py``). ``None`` on a document read from its
+    # own attachment, which is every document the parser writes.
+    twin_of: int | None = None
     summary: Summary
     cover: Cover = Field(default_factory=Cover)
     transport: list[Flight] = Field(default_factory=list)

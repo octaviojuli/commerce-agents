@@ -5,14 +5,17 @@
 
     python examples/tour/scripts/parse_attachments.py            # every public .docx and .pdf line
     python examples/tour/scripts/parse_attachments.py --select 30 --limit 200
+    python examples/tour/scripts/parse_attachments.py --select 30 --selling
     python examples/tour/scripts/parse_attachments.py --schema   # data/route-schema.json only
 
 Reads the ERP with the deployment's service account in ``examples/tour/.env`` (read-only:
-``route/list`` and the attachment store), writes one ``{routeId}.json`` per line under
-``$TOUR_STATE_DIR/route-docs/`` (``data/.state/route-docs/`` unset), an ``index.json`` and a
-``REPORT.md`` ranking the lines by completeness, and with ``--select N`` copies the N most
-complete into ``route-docs/selected/`` for the agency's product staff to review. Nothing here
-is committed: the documents are the agency's own product data."""
+``route/list``, the 团期 window and the attachment store), writes one ``{routeId}.json`` per
+line under ``$TOUR_STATE_DIR/route-docs/`` (``data/.state/route-docs/`` unset), an
+``index.json`` and a ``REPORT.md`` ranking the lines by completeness, and with ``--select N``
+copies N of them into ``route-docs/selected/`` for the agency's product staff to review.
+``--select`` alone takes the most complete documents; ``--selling`` takes the lines that have a
+团期 in the next 180 days and no review behind them yet, which is what a round is worth
+spending on. Nothing here is committed: the documents are the agency's own product data."""
 
 from __future__ import annotations
 
@@ -23,17 +26,20 @@ import os
 import shutil
 import sys
 from collections import Counter
+from collections.abc import Sequence
+from datetime import date, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).resolve()
 sys.path.insert(0, str(HERE.parents[2]))
 
-from tour.api.erp_client import RouteQuery, RouteRecord  # noqa: E402
+from tour.api.erp_client import ErpClient, RouteQuery, RouteRecord, WindowReader  # noqa: E402
 from tour.api.http_erp import HttpErpClient  # noqa: E402
 from tour.api.itinerary_source import fetch_attachment  # noqa: E402
 from tour.api.pdf_source import ImageOnlyPdf  # noqa: E402
 from tour.api.private_lines import load_private_line_rules  # noqa: E402
 from tour.api.route_doc import RouteDoc, json_schema  # noqa: E402
+from tour.api.route_docs import SELECTED, RouteDocStore, is_reviewed  # noqa: E402
 from tour.api.route_parser import parse_route  # noqa: E402
 
 EXAMPLE_DIR = HERE.parents[1]
@@ -68,10 +74,18 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--limit", type=int, default=0, help="parse at most this many lines")
     parser.add_argument(
-        "--select", type=int, default=0, help="copy the N most complete into selected/"
+        "--select", type=int, default=0, help="copy N documents into selected/ for review"
+    )
+    parser.add_argument(
+        "--selling",
+        action="store_true",
+        help="select the lines with a 团期 in the next 180 days, not the most complete",
     )
     parser.add_argument("--include-private", action="store_true", help="parse 包团/会销 lines too")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.selling and not args.select:
+        parser.error("--selling selects a round: pass --select N with it")
+    return args
 
 
 def _out_dir(given: Path | None) -> Path:
@@ -105,17 +119,26 @@ async def _one(
 # A document below this is not a first-round review candidate: the round is for checking
 # fields that were read, not for filling in ones that were not.
 SELECT_FLOOR = 0.9
+# What a 在售 round asks of a document instead: the line sells, so the round is worth a
+# reviewer's fields being filled in as well as checked, and a .pdf's lower score is no reason
+# to leave the line out of the catalog.
+SELLING_FLOOR = 0.6
+# How far ahead a 团期 counts as selling. A 线路 with none inside it is not what an advisor is
+# asked for this quarter, whatever its document scores.
+SELLING_DAYS = 180
+COMPLETE_CRITERION = f"completeness-{SELECT_FLOOR}"
+SELLING_CRITERION = f"selling-{SELLING_DAYS}d"
 
 
-def _spread(rows: list[dict], count: int) -> list[dict]:
-    """The ``count`` best documents at or above ``SELECT_FLOOR`` taken one department at a
-    time, so a first review round sees every department's layout and not thirty lines of
+def _spread(rows: list[dict], count: int, floor: float) -> list[dict]:
+    """The ``count`` best documents at or above ``floor`` taken one department at a
+    time, so a review round sees every department's layout and not thirty lines of
     one; the ranking within a department is the overall one, and only when the strong
     documents run out are weaker ones taken, the same way."""
     chosen: list[dict] = []
     for tier in (
-        [r for r in rows if r["completeness"] >= SELECT_FLOOR],
-        [r for r in rows if r["completeness"] < SELECT_FLOOR],
+        [r for r in rows if r["completeness"] >= floor],
+        [r for r in rows if r["completeness"] < floor],
     ):
         by_department: dict[str, list[dict]] = {}
         for row in tier:
@@ -126,6 +149,70 @@ def _spread(rows: list[dict], count: int) -> list[dict]:
                 if queue and len(chosen) < count:
                     chosen.append(queue.pop(0))
     return chosen
+
+
+def _window(today: date | None = None) -> tuple[date, date]:
+    """The 团期 window a 在售 round is read over: today and the ``SELLING_DAYS`` after it."""
+    start = today or date.today()
+    return start, start + timedelta(days=SELLING_DAYS)
+
+
+async def _selling_ids(erp: ErpClient, records: Sequence[RouteRecord], window: tuple) -> set[int]:
+    """The 线路 with a 团期 inside the window — what the agency is actually selling, which is
+    not what it has reviewed. One read where the client reads a window whole
+    (``erp_client.WindowReader``), else the ERP's own per-线路 period list, which is what the
+    fixtures and a client without the whole-window call cost."""
+    start, end = window
+    if isinstance(erp, WindowReader):
+        rows = await erp.list_window(start, end)
+    else:
+        rows = [
+            row
+            for record in records
+            for row in await erp.list_departures(record.route_id, record.route_name, start, end)
+        ]
+    return {row.route_id for row in rows if start <= row.depart_date <= end}
+
+
+def _reviewed_ids(out: Path) -> set[int]:
+    """The 线路 a review round has already answered for: the published documents, and the lines
+    reading one of them because their 行程 is the same word for word (``api/route_docs.py``'s
+    twins). Neither is worth a second round."""
+    store = RouteDocStore.load(out)
+    return {doc.route_id for doc in store.docs() if is_reviewed(doc)}
+
+
+def _selling(rows: list[dict], count: int, selling: set[int], reviewed: set[int]) -> list[dict]:
+    """The round the 团期 choose: the lines selling inside the window, none of them reviewed
+    already, none below ``SELLING_FLOOR``, spread over the departments like any other round."""
+    wanted = [
+        row
+        for row in rows
+        if row["route_id"] in selling
+        and row["route_id"] not in reviewed
+        and row["completeness"] >= SELLING_FLOOR
+    ]
+    return _spread(wanted, count, SELLING_FLOOR)
+
+
+def _write_selection(out: Path, chosen: list[dict], criterion: str, about: dict) -> None:
+    """The chosen documents copied into ``selected/``, with the criterion that chose them:
+    a round is read months later and the file has to say what it is a round of."""
+    folder = out / SELECTED
+    if folder.exists():
+        shutil.rmtree(folder)
+    folder.mkdir()
+    for row in chosen:
+        shutil.copy(out / row["file"], folder / row["file"])
+    (folder / "selected.json").write_text(
+        json.dumps(
+            {"criterion": criterion, **about, "count": len(chosen), "lines": chosen},
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def _reason(note: str) -> str:
@@ -142,7 +229,9 @@ def _reason(note: str) -> str:
     return note
 
 
-def _report(rows: list[dict], failures: list[dict], out: Path, selected: list[dict]) -> str:
+def _report(
+    rows: list[dict], failures: list[dict], out: Path, selected: list[dict], criterion: str = ""
+) -> str:
     lines = ["# 行程附件解析报告", ""]
     lines.append(
         f"解析 {len(rows) + len(failures)} 条线路：成功 {len(rows)}，失败 {len(failures)}。"
@@ -167,7 +256,7 @@ def _report(rows: list[dict], failures: list[dict], out: Path, selected: list[di
     if selected:
         lines += [
             "",
-            f"## 第一轮复核 {len(selected)} 条（selected/）",
+            f"## 本轮复核 {len(selected)} 条（selected/，{criterion or COMPLETE_CRITERION}）",
             "",
             "| routeId | 部门 | 天数 | 完整度 | 线路 |",
             "|---|---|---|---|---|",
@@ -208,21 +297,30 @@ async def run(args: argparse.Namespace) -> int:
     out = _out_dir(args.out)
     out.mkdir(parents=True, exist_ok=True)
     private = load_private_line_rules()
+    window = _window()
+    selling: set[int] = set()
     erp = HttpErpClient.from_login(base, mobile, password)
     try:
         catalog = await erp.search_routes(RouteQuery())
+        wanted = [
+            r
+            for r in catalog
+            if (r.attachment_url or "").lower().split("?")[0].endswith((".docx", ".pdf"))
+            and (args.include_private or not private.is_private(r))
+        ]
+        wanted.sort(key=lambda r: r.route_id)
+        if args.limit:
+            wanted = wanted[: args.limit]
+        if args.selling:
+            selling = await _selling_ids(erp, wanted, window)
     finally:
         await erp.aclose()
-    wanted = [
-        r
-        for r in catalog
-        if (r.attachment_url or "").lower().split("?")[0].endswith((".docx", ".pdf"))
-        and (args.include_private or not private.is_private(r))
-    ]
-    wanted.sort(key=lambda r: r.route_id)
-    if args.limit:
-        wanted = wanted[: args.limit]
     print(f"catalog {len(catalog)} lines; {len(wanted)} public .docx/.pdf to parse -> {out}")
+    if args.selling:
+        print(
+            f"团期 {window[0]}–{window[1]}: {len(selling)} lines selling, "
+            f"{len(selling & {r.route_id for r in wanted})} of them to parse"
+        )
     sem = asyncio.Semaphore(FETCH_CONCURRENCY)
     results = await asyncio.gather(*(_one(sem, r, out) for r in wanted))
     rows: list[dict] = []
@@ -251,18 +349,29 @@ async def run(args: argparse.Namespace) -> int:
         json.dumps(rows, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     selected: list[dict] = []
-    if args.select:
-        chosen = out / "selected"
-        if chosen.exists():
-            shutil.rmtree(chosen)
-        chosen.mkdir()
-        selected = _spread(rows, args.select)
-        for row in selected:
-            shutil.copy(out / row["file"], chosen / row["file"])
-        (chosen / "selected.json").write_text(
-            json.dumps(selected, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    criterion = ""
+    if args.select and args.selling:
+        # The published documents and their twins are read before selected/ is rewritten,
+        # because the round is what is not answered for yet.
+        reviewed = _reviewed_ids(out)
+        criterion = SELLING_CRITERION
+        selected = _selling(rows, args.select, selling, reviewed)
+        _write_selection(
+            out,
+            selected,
+            criterion,
+            {
+                "window": [window[0].isoformat(), window[1].isoformat()],
+                "completeness_floor": SELLING_FLOOR,
+                "selling_lines": len(selling),
+                "already_reviewed": len(reviewed),
+            },
         )
-    report = _report(rows, failures, out, selected)
+    elif args.select:
+        criterion = COMPLETE_CRITERION
+        selected = _spread(rows, args.select, SELECT_FLOOR)
+        _write_selection(out, selected, criterion, {"completeness_floor": SELECT_FLOOR})
+    report = _report(rows, failures, out, selected, criterion)
     print(report.split("\n## ")[0])
     return 0
 

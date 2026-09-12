@@ -128,13 +128,17 @@ registry: AdvisorRegistry = (
     else FixtureAdvisorRegistry(erp)
 )
 sessions = SqliteSessionStore(STATE_DIR / "sessions.sqlite")
-# The 线路 documents the review round produced (``docs/route-doc.md``): what has been
-# checked under route-docs/published/, the draft pick under route-docs/selected/.
-# An empty store is a deployment with no documents of its own: the backend then reads the
-# fixture catalog's, which is the demo's own 新疆 and 青海 lines.
+# The 线路 documents the parse and the review rounds produced (``docs/route-doc.md``): the
+# drafts under route-docs/, the round being checked under route-docs/selected/, what has been
+# checked under route-docs/published/. An empty store is a deployment with no documents of its
+# own: the backend then reads the fixture catalog's, which is the demo's own 新疆 and 青海 lines.
 route_docs = RouteDocStore.load(STATE_DIR / "route-docs")
 if len(route_docs):
-    log.info("tour: %d 线路 documents loaded", len(route_docs))
+    log.info(
+        "tour: %d 线路 documents loaded, %d of them another line's",
+        len(route_docs),
+        len(route_docs.twins()),
+    )
 
 backend = TourBackend(
     erp,

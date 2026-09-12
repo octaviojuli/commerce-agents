@@ -1,12 +1,13 @@
 # Copyright 2026 Anthropic PBC
 # SPDX-License-Identifier: Apache-2.0
 
-"""The 线路 catalog the advisor searches: the agency's reviewed 线路文档 (``route_docs.py``),
-read into the few facts a search filters and groups on.
+"""The 线路 catalog the advisor searches: the agency's 线路文档 (``route_docs.py``), reviewed
+and draft alike, read into the few facts a search filters and groups on.
 
 What a 线路 *is* — the countries, the length, the city it leaves from, the hotel standard, the
 购物店, the day-by-day programme — is the document's, because the document is the 行程附件 read
-into fields and checked by the agency's product staff. The ERP is asked only for the dynamic
+into fields; a reviewed one has the agency's product staff behind it and is ranked ahead of the
+drafts, and a card says which of the two it is. The ERP is asked only for the dynamic
 half: which 团期 run, their status, their seats and the 同业价. A 线路 with no document is not
 searched at all; nothing else in the catalog is trustworthy enough to put in front of a
 customer.
@@ -276,7 +277,7 @@ def _fits_region(facts: RouteFacts, region: str) -> bool:
 
 
 class Catalog:
-    """The reviewed documents as one searchable catalog. ``records`` is what the ERP's own
+    """The documents as one searchable catalog. ``records`` is what the ERP's own
     catalog says about the same 线路 — the 起价 and the cover photo — and a 线路 the process
     has read no row for is still searched, priced at 起价未知."""
 
