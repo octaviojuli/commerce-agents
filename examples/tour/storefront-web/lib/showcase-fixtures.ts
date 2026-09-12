@@ -593,8 +593,8 @@ const order_status: OrderStatusPayload = {
   },
 };
 
-// A request too broad to shortlist: the question, the catalog's own groups as chips, and the
-// footholds the advisor may open straight away.
+// A request too broad to shortlist: the question, the catalog's own groups as chips the advisor
+// holds several of at once, and the footholds they may open straight away.
 // The 行程附件 of the two 线路 the advisor asked for, each under the agency's own file name.
 const attachments: AttachmentsPayload = {
   note: "两条线的行程单，点下载即存到本机。",
@@ -615,38 +615,74 @@ const attachments: AttachmentsPayload = {
 };
 
 const focus: FocusPayload = {
-  question: "新疆这批线路先按方向缩一下，客人想走哪一片？",
-  total: 7,
+  question: "新疆这批线路先缩一下，客人想走哪一片、走多少天？",
+  total: 14,
   shown: 3,
-  dimension: "线路系",
+  dimension: "目的地",
   groups: [
     {
-      label: "线路系",
-      filter: "region",
+      label: "目的地",
+      filter: "region/destination",
       values: [
-        { value: "伊犁", count: 4, ask: "只看线路系：伊犁" },
-        { value: "喀纳斯", count: 2, ask: "只看线路系：喀纳斯" },
-        { value: "南疆", count: 1, ask: "只看线路系：南疆" },
-      ],
-    },
-    {
-      label: "出发城市",
-      filter: "departure_city",
-      values: [
-        { value: "乌鲁木齐", count: 6, ask: "只看出发城市：乌鲁木齐" },
-        { value: "喀什", count: 1, ask: "只看出发城市：喀什" },
+        { value: "伊犁", count: 6, ask: "只看目的地：伊犁" },
+        { value: "喀纳斯", count: 4, ask: "只看目的地：喀纳斯" },
+        { value: "南疆", count: 3, ask: "只看目的地：南疆" },
+        { value: "东疆", count: 1, ask: "只看目的地：东疆" },
       ],
     },
     {
       label: "天数",
       filter: "days_min/days_max",
       values: [
-        { value: "7 天以内", count: 2, ask: "只看天数：7 天以内" },
-        { value: "8–10 天", count: 4, ask: "只看天数：8–10 天" },
-        { value: "11–13 天", count: 1, ask: "只看天数：11–13 天" },
+        { value: "8 天", count: 5, ask: "只看天数：8 天" },
+        { value: "10 天", count: 6, ask: "只看天数：10 天" },
+        { value: "13 天", count: 3, ask: "只看天数：13 天" },
       ],
     },
-    { label: "成团", filter: "", values: [{ value: "已成团", count: 3 }, { value: "待成团", count: 4 }] },
+    {
+      label: "出发城市",
+      filter: "departure_city",
+      values: [
+        { value: "乌鲁木齐", count: 11, ask: "只看出发城市：乌鲁木齐" },
+        { value: "喀什", count: 2, ask: "只看出发城市：喀什" },
+        { value: "未标注", count: 1, ask: "只看出发城市：未标注" },
+      ],
+    },
+    {
+      label: "出发月份",
+      filter: "depart_from/depart_to",
+      values: [
+        { value: "10月", count: 9, ask: "只看出发月份：10月" },
+        { value: "11月", count: 4, ask: "只看出发月份：11月" },
+        { value: "12月", count: 1, ask: "只看出发月份：12月" },
+      ],
+    },
+    {
+      label: "酒店标准",
+      filter: "hotel_level",
+      values: [
+        { value: "四钻", count: 8, ask: "只看酒店标准：四钻" },
+        { value: "五钻", count: 4, ask: "只看酒店标准：五钻" },
+        { value: "未标注", count: 2, ask: "只看酒店标准：未标注" },
+      ],
+    },
+    {
+      label: "纯玩",
+      filter: "no_shopping",
+      values: [
+        { value: "纯玩", count: 6, ask: "只看纯玩：纯玩" },
+        { value: "含购物店", count: 8, ask: "只看纯玩：含购物店" },
+      ],
+    },
+    {
+      label: "起价",
+      filter: "price_max",
+      values: [
+        { value: "1万以内", count: 9, ask: "只看起价：1万以内" },
+        { value: "1–1.5万", count: 4, ask: "只看起价：1–1.5万" },
+        { value: "起价未知", count: 1, ask: "只看起价：起价未知" },
+      ],
+    },
   ],
   anchors: [XINJIANG_8, KALAJUN_10, LUXURY_8],
 };

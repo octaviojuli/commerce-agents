@@ -280,6 +280,52 @@ async def test_a_search_with_no_dates_carries_none_and_the_window_is_remembered(
     assert all(p.attributes["departures_window"] == "2026-10-11..2026-10-20" for p in again)
 
 
+async def test_the_chip_bars_answer_is_several_values_a_group(backend, session):
+    """The workbench sends one message for every chip the advisor tapped, and the model sends
+    each group as one filter with its values joined by ``|``: inside a group the values are
+    alternatives, and the groups are conditions on each other."""
+    both = await search(backend, session, "", region="伊犁|喀纳斯")
+    assert set(ids(both)) == {"RT-1021", "RT-1022", "RT-1023", "RT-1024", "RT-1031", "RT-1032"}
+    lengths = await search(backend, session, "", region="伊犁|喀纳斯", days="7|8")
+    assert set(ids(lengths)) == {"RT-1021", "RT-1024", "RT-1031"}
+    cities = await search(backend, session, "", departure_city="喀什|西宁")
+    assert set(ids(cities)) == {"RT-1041", "RT-1051"}
+    grades = await search(backend, session, "", hotel_level="三钻|五钻")
+    assert set(ids(grades)) == {"RT-1024", "RT-1032"}
+    features = await search(backend, session, "", feature="亲子|摄影")
+    assert set(ids(features)) == {"RT-1022", "RT-1051"}
+    band = await search(backend, session, "", price_min="4000", price_max="6000")
+    assert set(ids(band)) == {"RT-1021", "RT-1031"}
+
+
+async def test_the_months_the_advisor_tapped_are_the_window(backend, session):
+    """出发月份 chips come back as months: a line is a match for the dates when it has a 团期 in
+    any of them, and the card's 团期 are the ones those months hold. 伊犁五钻轻奢 departs on
+    11/01 and on no date in November after it, so it is exact for 10 月 and 11 月 together and
+    the nearest date it runs for 11 月 alone."""
+    november = await search(backend, session, "", region="伊犁", months="2026-11")
+    luxury = next(p for p in november if p.product_id == "RT-1024")
+    assert luxury.attributes["match"] == "exact"
+    assert luxury.attributes["departures"] == "2026-11-01:可报名"
+    assert luxury.attributes["departures_window"] == "2026-11-01..2026-11-30"
+    # The 8 日纯玩小团 runs out in October, so November is a window it does not depart in.
+    small = next(p for p in november if p.product_id == ROUTE)
+    assert small.attributes["match"] == "adjacent_date"
+    assert small.attributes["nearest_departure"] == ""
+    # Two months are a union: a line with a 团期 in either is a match, and both months' dates
+    # ride on the card.
+    autumn = await search(backend, session, "", region="伊犁", months="2026-10|2026-11")
+    both = next(p for p in autumn if p.product_id == "RT-1024")
+    assert both.attributes["match"] == "exact"
+    assert both.attributes["departures"].startswith("2026-10-04:")
+    assert both.attributes["departures"].endswith("|2026-11-01:可报名")
+    assert both.attributes["departures_window"] == "2026-10-01..2026-11-30"
+    assert all(p.attributes["match"] == "exact" for p in autumn)
+    # A month the catalog sells nothing in is a window like any other.
+    winter = await search(backend, session, "", region="伊犁", months="2027-02")
+    assert winter and all(p.attributes["match"] == "adjacent_date" for p in winter)
+
+
 async def test_a_hotel_standard_is_matched_however_the_advisor_spells_it(backend, session):
     """The standard is the one the document states, and 五钻, 5钻, 五星 and 5星 are all 五钻."""
     for level in ("五钻", "5钻", "五星", "5星"):

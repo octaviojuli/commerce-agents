@@ -53,7 +53,8 @@ const SECTIONS: { component: string; id?: string; payload: unknown; status?: UIS
     payload: { ...SHOWCASE.products, items: SHOWCASE.products.items.slice(0, 2) },
     status: "partial",
   },
-  // A request too broad to shortlist: one question, the catalog's groups as chips.
+  // A request too broad to shortlist: one question, the catalog's groups as chips the advisor
+  // holds several of before the bar sends them as one filter.
   { component: "focus", payload: SHOWCASE.focus },
   // The 行程附件 the advisor asked for, as downloads under the agency's own file names.
   { component: "attachments", payload: SHOWCASE.attachments },

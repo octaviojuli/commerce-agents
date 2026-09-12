@@ -133,9 +133,10 @@ export interface ShortlistPayload {
 
 /**
  * `present_focus`: one narrowing question over a search that matched more 线路 than a shortlist
- * shows. `dimension` names the group whose values are the chips; a value with an `ask` sends
- * those words when tapped, one without is a count alone. `anchors` are up to three results the
- * card carries as a foothold when the match is not huge.
+ * shows. `dimension` names the group the card puts first; a value with an `ask` behind it is one
+ * the advisor may hold, and the card sends every held value of every group as one message when
+ * they confirm, while a value without an `ask` is a count alone. `anchors` are up to three results
+ * the card carries as a foothold when the match is not huge.
  */
 export interface FocusPayload {
   question: string;

@@ -25,7 +25,6 @@ import logging
 import os
 import re
 import secrets
-from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -69,7 +68,6 @@ from .catalog import (
     Request,
     RouteFacts,
     short_text,
-    wanted_grade,
 )
 from .erp_client import (
     ORDER_STATUS,
@@ -153,16 +151,6 @@ MAX_POLICIES = 3
 # How far past the window a 团期 read reaches on each side, so a search around the same dates
 # costs no second read.
 WINDOW_PAD_DAYS = 7
-# How many routes the boot snapshot's own catalog read may keep; an advisor's search is the
-# documents' own matches and is not cut here.
-MAX_BROAD_MATCHES = 8
-# The cut is ranked, not the catalog's order: a 团期 the party fits into first, then the ones
-# nearest the advisor's dates in buckets of this many days, then 已成团 before 待成团.
-RANK_DATE_BUCKET_DAYS = 3
-# At most this many lines of one 线路系 in the cut, so eight 德法意瑞 walks are not the whole
-# answer to 欧洲; the rest of the cut is filled from the ranking once every 线路系 has had its
-# turn.
-MAX_PER_REGION = 2
 # How many 团期 one 团期卡 carries: the advisor reads a fortnight of dates out, not a year's.
 MAX_DEPARTURE_ITEMS = 12
 # How far past the advisor's dates a line that runs in none of them is looked up, so the card
@@ -271,6 +259,36 @@ def _date_of(raw: str | None, default: date) -> date:
         return default
 
 
+def _values(raw: str | None) -> tuple[str, ...]:
+    """A filter the advisor answered with several taps: the values joined by ``|``, in the
+    order they were chosen and without repeats. One tap is one value and reads the same way."""
+    return tuple(dict.fromkeys(part.strip() for part in str(raw or "").split("|") if part.strip()))
+
+
+def _numbers(raw: str | None) -> tuple[int, ...]:
+    """``8|12`` as whole numbers; a part that is not one is no filter."""
+    return tuple(
+        number for number in (_int_or_none(part) for part in _values(raw)) if number is not None
+    )
+
+
+def _months_of(raw: str | None) -> tuple[date, ...]:
+    """``2026-10|2026-11`` as the first day of each month, earliest first. The advisor taps a
+    month and the ERP is asked for the span those months cover."""
+    months = []
+    for value in _values(raw):
+        try:
+            months.append(date.fromisoformat(f"{value}-01"))
+        except ValueError:
+            continue
+    return tuple(sorted(set(months)))
+
+
+def _month_end(first: date) -> date:
+    """The last day of the month ``first`` opens."""
+    return (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+
+
 def _ages_of(raw: str | None) -> list[int]:
     """``"5|9"`` as whole years; a part that is not a whole number is dropped."""
     parts = (str(raw or "")).split("|")
@@ -309,49 +327,6 @@ def _raw_tags(record: RouteRecord) -> tuple[str, ...]:
 def _text_of(record: RouteRecord) -> str:
     """A route's searchable free text: its name and its tags, which is all the ERP has."""
     return record.route_name + " " + " ".join(_raw_tags(record))
-
-
-def _mentions(record: RouteRecord, facets: RouteFacets, text: str) -> bool:
-    """Whether the destination the advisor stated is written anywhere on the route. The ERP
-    matches a search on the 线路 name alone, and its editors do not put the destination in
-    every name: 欧洲 is the department that sells the line, 伊犁 a tag, 喀纳斯 a 亮点, and the
-    city a group leaves from is its own field. The normalised destinations come first, so
-    斯里兰卡 finds a line whose tags say 科伦坡 and nothing else; then a plain substring over
-    the raw text, because a destination the advisor typed and one the ERP's editors or its
-    extractor wrote are the same characters or nothing."""
-    if not text:
-        return False
-    fields = (
-        *facets.destinations,
-        record.route_name,
-        record.company_name,
-        record.depart_city,
-        *_raw_tags(record),
-        *record.features,
-    )
-    return any(text in field for field in fields)
-
-
-def _has_hotel_level(
-    record: RouteRecord, facets: RouteFacets, level: str, doc: RouteDoc | None = None
-) -> bool:
-    """The tags say this standard. A route whose tags name none is not admitted here: it is
-    not a no, so the step that drops the preferences takes it with a note saying so."""
-    stated = hotel_grade(doc) if doc is not None else ""
-    return (stated or facets.hotel_grade) == wanted_grade(level)
-
-
-def _is_no_shopping(record: RouteRecord, facets: RouteFacets, doc: RouteDoc | None = None) -> bool:
-    """纯玩 by the 线路 document where there is one — it names every 购物店 the attachment
-    does — else by the tags where they say anything about 购物 at all, else by the words in
-    the name and the tags, which is what the catalog offered before the ERP extracted a 购物
-    tag from the itinerary."""
-    if doc is not None:
-        return shopping_stops(doc) == 0
-    if facets.shopping != UNKNOWN:
-        return facets.shopping == "none"
-    text = _text_of(record)
-    return any(word in text for word in _NO_SHOPPING_WORDS)
 
 
 def _labels(record: RouteRecord, facets: RouteFacets) -> list[str]:
@@ -687,48 +662,6 @@ def _facts_summary(facts: RouteFacts) -> str:
 # -- the advisor's stated request, and how it relaxes when nothing meets it ----------------
 
 
-def _fits_days(record: RouteRecord, stated: Request) -> bool:
-    low = record.days if stated.days_min is None else stated.days_min
-    high = record.days if stated.days_max is None else stated.days_max
-    return low <= record.days <= high
-
-
-def _fits_city(record: RouteRecord, facets: RouteFacets, city: str) -> bool:
-    """The city the group leaves from, as the tags say it (上海出发, 昆明直飞) or as the ERP's
-    own ``departCityName`` does."""
-    wanted = city.strip()
-    return any(wanted in name for name in (*facets.departure_cities, record.depart_city))
-
-
-def _fits(
-    record: RouteRecord, facets: RouteFacets, stated: Request, doc: RouteDoc | None = None
-) -> bool:
-    """The filters the ERP cannot apply: the day count, 纯玩, the hotel standard and the city
-    the group leaves from. 亲子 is not one of them — a family that would take a line without
-    the tag is better served by it sorting first, so it orders the shortlist instead."""
-    if not _fits_days(record, stated):
-        return False
-    if stated.no_shopping and not _is_no_shopping(record, facets, doc):
-        return False
-    if stated.departure_city and not _fits_city(record, facets, stated.departure_city):
-        return False
-    if stated.region and not _fits_region(facets, stated.region):
-        return False
-    if stated.price_max and record.from_price > stated.price_max:
-        return False
-    return not (
-        stated.hotel_level and not _has_hotel_level(record, facets, stated.hotel_level, doc)
-    )
-
-
-def _fits_region(facets: RouteFacets, region: str) -> bool:
-    """The 线路系 the advisor narrowed to, either way round: 法意瑞 finds a 德法意瑞 line and
-    德法意瑞 a 法意瑞 one, because the trade says both for the same walk. A line whose name and
-    tags file it nowhere is not admitted — the advisor just asked for one 线路系."""
-    wanted = region.strip()
-    return bool(facets.region) and (wanted in facets.region or facets.region in wanted)
-
-
 def _inside(
     grouped: dict[int, list[DepartureRecord]], window: tuple[date, date]
 ) -> dict[int, list[DepartureRecord]]:
@@ -758,9 +691,6 @@ class Fetched:
     routes: dict[tuple[str, date, date], list[RouteRecord]] = field(default_factory=dict)
     departures: dict[tuple[int, date, date], list[DepartureRecord]] = field(default_factory=dict)
     windows: dict[tuple[date, date], dict[int, list[DepartureRecord]]] = field(default_factory=dict)
-    # How many catalog rows the last read found meeting the request inside its window, the ones
-    # past ``MAX_BROAD_MATCHES`` included.
-    matched: int = 0
 
 
 @dataclass
@@ -838,11 +768,18 @@ class Overview:
 
     def _instruction(self) -> str:
         mapping = (
-            "The advisor's answer comes back as 只看<维度>：<值> — map 目的地 to destination "
-            "(or to region when the value is a 线路系), 天数 to days_min and days_max, 出发城市 "
-            "to departure_city, 出发月份 to depart_from and depart_to, 酒店标准 to hotel_level, "
-            "纯玩 to no_shopping and a 起价 band to price_max (its upper edge) — then search "
-            "again."
+            "The advisor answers by tapping chips, and the workbench sends one message: "
+            "只看 目的地：德法意瑞、法意瑞；天数：12 天；出发月份：10月、11月 — the groups joined by "
+            "；and the values inside a group by 、. Values inside a group are alternatives and "
+            "the groups are conditions on each other, so send each group as one filter with its "
+            'values joined by "|": 目的地 to region (to destination for a value that is not a '
+            "线路系), 天数 to days, 出发城市 to departure_city, 出发月份 to months as YYYY-MM in "
+            "the year those months next fall in, 酒店标准 to hotel_level, 纯玩 to no_shopping=yes "
+            "(含购物店 adds no filter), 特色 to feature, and 起价 bands to price_min and price_max "
+            "— the lower edge of the lowest band and the upper edge of the highest. Everything "
+            "the advisor stated earlier still holds: send it again with the new filters. "
+            "不限条件，直接看这些线路 is not a filter: search again with the conditions unchanged "
+            "and present the cards. "
         )
         if self.empty:
             return (
@@ -1262,23 +1199,6 @@ class TourBackend(StorefrontBackend):
                 fetched.routes[key] = cached
         return cached
 
-    async def _broad(
-        self, erp: ErpClient, window: tuple[date, date], fetched: Fetched, *, read: bool
-    ) -> list[RouteRecord]:
-        """Every route the ERP sells inside the window: an empty name is not a filter, so one
-        read — paged to exhaustion inside the client — brings back the whole window's catalog,
-        and the run's cache holds it.
-
-        ``read=False`` spends no read at all and takes the routes the run has already read,
-        whichever window each was read for; the window is then applied by the departure list
-        that follows."""
-        if read:
-            return await self._routes_for(erp, "", window, fetched)
-        seen: dict[int, RouteRecord] = {}
-        for records in fetched.routes.values():
-            seen.update({record.route_id: record for record in records})
-        return list(seen.values())
-
     async def _listing_window(
         self, erp: ErpClient, window: tuple[date, date], fetched: Fetched
     ) -> dict[int, list[DepartureRecord]] | None:
@@ -1338,112 +1258,24 @@ class TourBackend(StorefrontBackend):
         simply has no departures; the record this route becomes reads the same rows again."""
         return bool(await self._list(erp, record, window, fetched))
 
-    def _sellable(self, record: RouteRecord, stated: Request) -> bool:
-        """Whether a search may offer the line: any line on general sale, and a private one
-        only when the advisor named it in full — the 会销 its own salesperson opens by name is
-        theirs to see, and nobody else's 欧洲 shortlist."""
-        if not self._private.is_private(record):
-            return True
-        return bool(stated.text) and stated.text.strip() == record.route_name.strip()
-
-    async def _search(
-        self,
-        erp: ErpClient,
-        stated: Request,
-        fetched: Fetched | None = None,
-        *,
-        broad_read: bool = True,
+    async def _listing_rows(
+        self, erp: ErpClient, window: tuple[date, date], fetched: Fetched | None = None
     ) -> list[RouteRecord]:
-        """The ERP's catalog rows for the text and the window, minus the ones the day count,
-        纯玩 or the hotel standard rules out and the ones with no 团期 inside the window at all,
-        which its loose date filter returns as matches. This is not the advisor's search — that
-        is the documents — but the boot snapshot's own read and the scan behind a pasted id,
-        both of which want the rows the ERP sells in a window.
+        """Every 线路 the ERP sells inside the window, minus the ones not on general sale. This
+        is not the advisor's search — that is the documents — but the boot snapshot's own read
+        and the scan behind a pasted id, both of which want the rows the ERP carries.
 
-        ``fetched`` is one run's own reads. A caller that passes none — a pasted id, the boot
-        snapshot — takes the named query alone and reads no departures."""
-        window = self._window(stated.depart_from, stated.depart_to)
-        records = await self._routes_for(erp, stated.text, window, fetched)
-        fits = [
+        ``fetched`` is one run's own reads; with it, a row whose 线路 has no 团期 inside the
+        window is dropped, because a snapshot record built from one carries no date, no seat
+        count and no price. A caller that passes none reads no departures at all."""
+        records = [
             record
-            for record in records
-            if _fits(record, self._facets(record), stated, self._doc(record))
-            and self._sellable(record, stated)
+            for record in await self._routes_for(erp, "", window, fetched)
+            if not self._private.is_private(record)
         ]
         if fetched is None:
-            return fits
-        found = [record for record in fits if await self._departs(erp, record, window, fetched)]
-        if not stated.text:
-            return found
-        seen = {record.route_id for record in found}
-        matched = list(found)
-        for record in await self._broad(erp, window, fetched, read=broad_read):
-            facets = self._facets(record)
-            if record.route_id in seen or not _mentions(record, facets, stated.text):
-                continue
-            if not self._sellable(record, stated):
-                continue
-            if _fits(record, facets, stated, self._doc(record)) and await self._departs(
-                erp, record, window, fetched
-            ):
-                matched.append(record)
-        fetched.matched = len(matched)
-        rows = {
-            record.route_id: fetched.departures.get((record.route_id, *window), [])
-            for record in matched
-        }
-        ranked = sorted(
-            matched, key=lambda record: self._rank(record, rows[record.route_id], stated, window)
-        )
-        return self._spread(ranked, MAX_BROAD_MATCHES)
-
-    def _rank(
-        self,
-        record: RouteRecord,
-        rows: list[DepartureRecord],
-        stated: Request,
-        window: tuple[date, date],
-    ) -> tuple:
-        """Smaller is better. A 团期 the party fits into, then the nearest 团期 to the middle
-        of the advisor's window in ``RANK_DATE_BUCKET_DAYS`` buckets, then 已成团, then the
-        destination written in the name, then a published 起价, then the cheaper."""
-        middle = window[0] + (window[1] - window[0]) / 2
-        nearest = min((abs((row.depart_date - middle).days) for row in rows), default=999)
-        party = max(stated.party, 1)
-        seats_ok = any(row.available_seats >= party for row in rows)
-        confirmed = any(_group_status(row) == "confirmed" for row in rows)
-        named = bool(stated.text) and stated.text.strip() in record.route_name
-        return (
-            not seats_ok,
-            nearest // RANK_DATE_BUCKET_DAYS,
-            not confirmed,
-            not named,
-            record.from_price <= 0,
-            record.from_price,
-        )
-
-    def _spread(self, ranked: list[RouteRecord], cap: int) -> list[RouteRecord]:
-        """The ``cap`` of the ranking that keeps at most ``MAX_PER_REGION`` per 线路系, in rank
-        order. A ranking that fits the cap is returned whole; over it, a line no rule files
-        anywhere is not held back, and once every 线路系 has had its turn the rest of the
-        ranking fills what is left."""
-        if len(ranked) <= cap:
-            return ranked
-        chosen: set[int] = set()
-        per_region: Counter[str] = Counter()
-        for record in ranked:
-            region = self._facets(record).region
-            if region and per_region[region] >= MAX_PER_REGION:
-                continue
-            per_region[region] += 1
-            chosen.add(record.route_id)
-            if len(chosen) == cap:
-                break
-        for record in ranked:
-            if len(chosen) == cap:
-                break
-            chosen.add(record.route_id)
-        return [record for record in ranked if record.route_id in chosen]
+            return records
+        return [record for record in records if await self._departs(erp, record, window, fetched)]
 
     async def _list(
         self,
@@ -1492,9 +1324,7 @@ class TourBackend(StorefrontBackend):
         if route_id in self._missing_routes:
             return None
         default = self._default_context()
-        await self._search(
-            erp, Request(text="", depart_from=default.depart_from, depart_to=default.depart_to)
-        )
+        await self._listing_rows(erp, self._window(default.depart_from, default.depart_to))
         if route_id not in self._routes:
             whole = await erp.search_routes(RouteQuery())
             self._routes.update({record.route_id: record for record in whole})
@@ -1728,8 +1558,10 @@ class TourBackend(StorefrontBackend):
         record = self._routes.get(facts.route_id)
         if record is None or not self._private.is_private(record):
             return True
-        named = stated.text.strip()
-        return bool(named) and named in (record.route_name.strip(), facts.name.strip())
+        # The 会销 its own salesperson opens by name is theirs to see, and nobody else's 欧洲
+        # shortlist: it is offered only where the advisor wrote the line's name in full.
+        names = {record.route_name.strip(), facts.name.strip()}
+        return any(named in names for named in stated.named)
 
     async def _line_dates(
         self,
@@ -1740,6 +1572,7 @@ class TourBackend(StorefrontBackend):
         *,
         stated: bool,
         limit: int,
+        chosen: tuple[date, ...] = (),
     ) -> LineDates:
         """Which of the matched lines run in the advisor's dates, and for the ones that do not,
         the nearest date they do run.
@@ -1751,25 +1584,28 @@ class TourBackend(StorefrontBackend):
         like the first. A client that reads a window whole (``WindowReader``) answers both from
         two paged reads; one that cannot is asked per line, which the catalog's size bounds.
 
+        ``chosen`` are the months the advisor tapped, which need not run together: the read is
+        the span they cover and a 团期 outside any of them is not inside the window.
+
         With no window stated there is nothing to weigh: the 团期 are read for the lines the
         cards will carry, and the months are then counted off those alone."""
         inside = await self._window_rows(
-            erp, matches if stated else matches[:limit], window, fetched
+            erp, matches if stated else matches[:limit], window, fetched, months=chosen
         )
         if not stated:
             return LineDates(inside=inside, nearest={}, read_all=len(inside) == len(matches))
         missing = [facts for facts in matches if not inside.get(facts.route_id)]
         nearest: dict[int, date] = {}
-        months = {route_id: [row.depart_date for row in rows] for route_id, rows in inside.items()}
+        read = {route_id: [row.depart_date for row in rows] for route_id, rows in inside.items()}
         if missing:
             later = self._window(window[0], window[0] + timedelta(days=NEAREST_WINDOW_DAYS))
             found = await self._window_rows(erp, missing, later, fetched)
             for facts in missing:
                 dates = sorted(row.depart_date for row in found.get(facts.route_id, ()))
-                months[facts.route_id] = dates
+                read[facts.route_id] = dates
                 if dates:
                     nearest[facts.route_id] = dates[0]
-        return LineDates(inside=inside, nearest=nearest, read_all=True, months=months)
+        return LineDates(inside=inside, nearest=nearest, read_all=True, months=read)
 
     async def _window_rows(
         self,
@@ -1777,9 +1613,13 @@ class TourBackend(StorefrontBackend):
         matches: list[RouteFacts],
         window: tuple[date, date],
         fetched: Fetched,
+        months: tuple[date, ...] = (),
     ) -> dict[int, list[DepartureRecord]]:
         """Each of these lines' 团期 inside one window, from the window's own paged read where
-        the client has one and a read per line where it has not; a line with none has no entry."""
+        the client has one and a read per line where it has not; a line with none has no entry.
+        ``months`` keeps only the 团期 inside the months the advisor tapped, which is what makes
+        10 月 and 12 月 two months rather than the whole of the autumn."""
+        wanted = {(month.year, month.month) for month in months}
         grouped = await self._listing_window(erp, window, fetched)
         rows: dict[int, list[DepartureRecord]] = {}
         for facts in matches:
@@ -1788,6 +1628,10 @@ class TourBackend(StorefrontBackend):
             else:
                 record = self._routes.get(facts.route_id)
                 found = await self._list(erp, record, window, fetched) if record is not None else []
+            if wanted:
+                found = [
+                    row for row in found if (row.depart_date.year, row.depart_date.month) in wanted
+                ]
             if found:
                 rows[facts.route_id] = sorted(found, key=lambda row: row.depart_date)
         return rows
@@ -1858,27 +1702,38 @@ class TourBackend(StorefrontBackend):
         """The 线路 whose document meets the advisor's request. Everything but the dates is
         answered off the documents (``api/catalog.py``): ``destination`` is matched against a
         line's countries, its 线路系, its name, the department that sells it, the places its
-        days pass through and the sights it names, and ``days_min``/``days_max``,
-        ``departure_city``, ``no_shopping``, ``hotel_level``, ``region`` and ``price_max``
-        filter on what the document states. A 线路 the agency has no document for is not
-        searched at all, and a request the documents do not meet returns nothing rather than
-        something near it — the chips beside it are then the catalog's own directions.
+        days pass through and the sights it names, and ``region``, ``days``,
+        ``days_min``/``days_max``, ``departure_city``, ``hotel_level``, ``feature``,
+        ``no_shopping``, ``price_min`` and ``price_max`` filter on what the document states. A
+        线路 the agency has no document for is not searched at all, and a request the documents
+        do not meet returns nothing rather than something near it — the chips beside it are
+        then the catalog's own directions.
 
-        The ERP is asked for the dynamic half only: which 团期 each matched line runs inside
-        the window, so a card can carry the sellable dates once the advisor has given any."""
+        The advisor answers a 聚焦卡 by tapping several chips at once, so ``destination``,
+        ``region``, ``days``, ``departure_city``, ``hotel_level``, ``feature`` and ``months``
+        each take several values joined by ``|``: inside one the values are alternatives, and
+        between them they are conditions on each other.
+
+        The ERP is asked for the dynamic half only: which 团期 each matched line runs in the
+        window — the advisor's dates, or the months they tapped — so a card can carry the
+        sellable dates once the advisor has given any."""
         attributes = dict(filters.attributes) if filters is not None else {}
-        context = self._stated_context(session, attributes)
+        months = _months_of(attributes.get("months"))
+        context = self._stated_context(session, attributes, months)
         stated = Request(
-            text=(attributes.get("destination") or query or "").strip(),
             depart_from=context.depart_from,
             depart_to=context.depart_to,
+            destinations=_values(attributes.get("destination")) or _values(query.strip() or None),
+            regions=_values(attributes.get("region")),
+            days=_numbers(attributes.get("days")),
             days_min=_int_or_none(attributes.get("days_min")),
             days_max=_int_or_none(attributes.get("days_max")),
+            departure_cities=_values(attributes.get("departure_city")),
+            hotel_levels=_values(attributes.get("hotel_level")),
+            features=_values(attributes.get("feature")),
             no_shopping=attributes.get("no_shopping", "").strip().lower() == "yes",
-            hotel_level=attributes.get("hotel_level") or None,
-            departure_city=(attributes.get("departure_city") or "").strip() or None,
             family=attributes.get("family", "").strip().lower() == "yes",
-            region=(attributes.get("region") or "").strip() or None,
+            price_min=_int_or_none(attributes.get("price_min")),
             price_max=_int_or_none(attributes.get("price_max")),
             party=context.adults + context.children,
         )
@@ -1891,7 +1746,7 @@ class TourBackend(StorefrontBackend):
         window = self._window(context.depart_from, context.depart_to)
         fetched = Fetched()
         dates = await self._line_dates(
-            erp, matches, window, fetched, stated=context.stated, limit=limit
+            erp, matches, window, fetched, stated=context.stated, limit=limit, chosen=months
         )
         if context.stated:
             # The lines that run in the advisor's dates lead, whatever else ranked them: a line
@@ -1914,12 +1769,27 @@ class TourBackend(StorefrontBackend):
         return found
 
     def _stated_context(
-        self, session: ShoppingSessionContext, attributes: dict[str, str]
+        self,
+        session: ShoppingSessionContext,
+        attributes: dict[str, str],
+        months: tuple[date, ...] = (),
     ) -> SearchContext:
-        """The window and party this search quotes for. A search that states no dates keeps
-        the ones the conversation already stated, because a card carries the sellable 团期
-        only while the advisor has given the customer's dates at all."""
+        """The window and party this search quotes for. Months the advisor tapped are the
+        window, from the first of the earliest to the last of the latest; otherwise it is the
+        dates they stated. A search that states neither keeps what the conversation already
+        stated, because a card carries the sellable 团期 only while the advisor has given the
+        customer's dates at all."""
         context = self._read_context(attributes)
+        if months:
+            return self._keep(
+                session,
+                replace(
+                    context,
+                    depart_from=months[0],
+                    depart_to=_month_end(months[-1]),
+                    stated=True,
+                ),
+            )
         earlier = self._contexts.get(session.session_id)
         if not context.stated and earlier is not None and earlier.stated:
             context = replace(
@@ -1928,6 +1798,9 @@ class TourBackend(StorefrontBackend):
                 depart_to=earlier.depart_to,
                 stated=True,
             )
+        return self._keep(session, context)
+
+    def _keep(self, session: ShoppingSessionContext, context: SearchContext) -> SearchContext:
         self._contexts[session.session_id] = context
         return context
 
@@ -2458,7 +2331,6 @@ class TourBackend(StorefrontBackend):
         the host from booting. This is also where the deployment's 同行 customer is resolved,
         because that costs one ERP call too."""
         context = self._default_context()
-        stated = Request(text="", depart_from=context.depart_from, depart_to=context.depart_to)
         window = self._window(context.depart_from, context.depart_to)
         await self._resolve_customer()
         # A reload reads the catalog again, so a route the last read did not carry is worth
@@ -2469,7 +2341,7 @@ class TourBackend(StorefrontBackend):
         try:
             if self.live:
                 fetched = Fetched()
-                for record in await self._search(self.erp, stated, fetched):
+                for record in await self._listing_rows(self.erp, window, fetched):
                     rows = await self._list(self.erp, record, window, fetched)
                     family = self._family(record, rows, context)
                     snapshot = self._details(record, family, None)
@@ -2479,7 +2351,7 @@ class TourBackend(StorefrontBackend):
                     snapshot.specs.pop("行程来源", None)
                     listings[family.product_id] = snapshot
             else:
-                for record in await self._search(self.erp, stated):
+                for record in await self._listing_rows(self.erp, window):
                     details = await self._route_details(self.erp, record.route_id, context)
                     if details is None:
                         continue

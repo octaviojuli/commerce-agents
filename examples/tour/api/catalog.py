@@ -73,23 +73,36 @@ _SEPARATORS = "·、,，/ 　+&"
 
 @dataclass(frozen=True)
 class Request:
-    """What the advisor asked for. The dates are the ERP's to answer; everything else is
-    answered off the documents."""
+    """What the advisor asked for. Every field but the dates is answered off the documents,
+    and the several-valued ones are what a chip bar sends when the advisor taps more than one:
+    inside a field the values are alternatives (德法意瑞 or 法意瑞), and the fields are
+    conditions on each other (that 线路系, and 12 days, and leaving from 上海)."""
 
-    text: str
     depart_from: date
     depart_to: date
+    destinations: tuple[str, ...] = ()
+    regions: tuple[str, ...] = ()
+    # Exact lengths the advisor named or tapped, and the span they gave in words.
+    days: tuple[int, ...] = ()
     days_min: int | None = None
     days_max: int | None = None
+    departure_cities: tuple[str, ...] = ()
+    hotel_levels: tuple[str, ...] = ()
+    # The words that tell one version of a trip from another (观鲸, 一价全含).
+    features: tuple[str, ...] = ()
     no_shopping: bool = False
-    hotel_level: str | None = None
-    departure_city: str | None = None
     family: bool = False
-    # The 线路系 the advisor narrowed to (a document's ``summary.region``), a ceiling on the
-    # 起价, and how many travel — the last decides whether a 团期 is 满员 for this party.
-    region: str | None = None
+    # The floor and the ceiling on the 起价, from the bands the advisor tapped, and how many
+    # travel — the last decides whether a 团期 is 满员 for this party. The months the advisor
+    # chose are the ERP's to answer and are not here: ``TourBackend`` reads them as the window.
+    price_min: int | None = None
     price_max: int | None = None
     party: int = 0
+
+    @property
+    def named(self) -> tuple[str, ...]:
+        """The destinations as written, which is where a 线路 named in full arrives."""
+        return tuple(value.strip() for value in self.destinations if value.strip())
 
 
 @dataclass(frozen=True)
@@ -248,6 +261,13 @@ def _mentions(facts: RouteFacts, text: str) -> bool:
     return all(any(part in field for field in fields if field) for part in _parts(text))
 
 
+def _has_feature(facts: RouteFacts, word: str) -> bool:
+    """A feature the advisor tapped or typed: one of the words that tell the versions of a
+    trip apart, else anything the line's name or its sights carry."""
+    wanted = word.strip()
+    return bool(wanted) and (wanted in facts.feature_words or _mentions(facts, wanted))
+
+
 def _fits_region(facts: RouteFacts, region: str) -> bool:
     """The 线路系 the advisor narrowed to, either way round: 法意瑞 finds a 德法意瑞 line and
     德法意瑞 a 法意瑞 one, because the trade says both for the same walk."""
@@ -285,29 +305,48 @@ class Catalog:
         return sorted(found, key=lambda facts: self._rank(facts, request))
 
     def _fits(self, facts: RouteFacts, request: Request) -> bool:
-        if request.text and not _mentions(facts, request.text):
+        """Every condition the request states, each met by any one of the values it lists."""
+        if request.destinations and not any(
+            _mentions(facts, value) for value in request.destinations
+        ):
+            return False
+        if request.regions and not any(_fits_region(facts, value) for value in request.regions):
+            return False
+        if request.features and not any(_has_feature(facts, word) for word in request.features):
+            return False
+        if request.days and facts.days not in request.days:
             return False
         low = facts.days if request.days_min is None else request.days_min
         high = facts.days if request.days_max is None else request.days_max
         if not low <= facts.days <= high:
             return False
-        if request.departure_city and request.departure_city.strip() not in facts.depart_city:
+        if request.departure_cities and not any(
+            city.strip() in facts.depart_city for city in request.departure_cities
+        ):
             return False
         if request.no_shopping and not facts.no_shopping:
             return False
-        if request.hotel_level and facts.hotel_grade != wanted_grade(request.hotel_level):
+        if request.hotel_levels and facts.hotel_grade not in {
+            wanted_grade(level) for level in request.hotel_levels
+        }:
             return False
-        if request.region and not _fits_region(facts, request.region):
+        # A 起价 the ERP has not published is 0, which is neither under a ceiling nor over a
+        # floor: the line stays, and the card says 起价未知.
+        if facts.from_price <= 0:
+            return True
+        if request.price_max and facts.from_price > request.price_max:
             return False
-        over = request.price_max and facts.from_price > request.price_max
-        # A 起价 the ERP has not published is 0, which is 未发布 and not under every ceiling.
-        return not (over and facts.from_price > 0)
+        return not (request.price_min and facts.from_price < request.price_min)
 
     def _rank(self, facts: RouteFacts, request: Request) -> tuple:
-        exact = request.days_min is not None and request.days_min == request.days_max
+        asked = set(request.days) | (
+            {request.days_min}
+            if request.days_min is not None and request.days_min == request.days_max
+            else set()
+        )
         return (
             not facts.reviewed,
-            not (exact and facts.days == request.days_min),
+            not (bool(asked) and facts.days in asked),
             facts.from_price <= 0,
             facts.from_price,
             facts.name,

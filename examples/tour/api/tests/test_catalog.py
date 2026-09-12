@@ -234,8 +234,11 @@ def catalog(tmp_path) -> Catalog:
     return Catalog(store, records)
 
 
-def ask(**fields) -> Request:
-    return Request(text=fields.pop("text", ""), **WINDOW, **fields)
+def ask(text: str = "", **fields) -> Request:
+    """One request, as the advisor's words and their chips reach the catalog: ``text`` is the
+    destination they stated, and a field the chip bar answers with several taps is a tuple."""
+    destinations = (text,) if text else ()
+    return Request(destinations=fields.pop("destinations", destinations), **WINDOW, **fields)
 
 
 def ids(matches) -> list[int]:
@@ -291,20 +294,42 @@ def test_a_feature_word_narrows_a_family_of_one_trip(catalog):
 
 def test_the_documents_own_fields_are_what_the_filters_read(catalog):
     assert ids(catalog.match(ask(days_min=11, days_max=12))) == [301, 302]
-    assert ids(catalog.match(ask(text="斯里兰卡", departure_city="广州"))) == [203]
+    assert ids(catalog.match(ask(text="斯里兰卡", departure_cities=("广州",)))) == [203]
     assert ids(catalog.match(ask(text="斯里兰卡", no_shopping=True))) == [203, 201, 204]
-    assert ids(catalog.match(ask(hotel_level="五钻"))) == [201]
-    assert ids(catalog.match(ask(hotel_level="5星"))) == [201]
-    assert ids(catalog.match(ask(region="北欧"))) == [302]
+    assert ids(catalog.match(ask(hotel_levels=("五钻",)))) == [201]
+    assert ids(catalog.match(ask(hotel_levels=("5星",)))) == [201]
+    assert ids(catalog.match(ask(regions=("北欧",)))) == [302]
     assert ids(catalog.match(ask(text="斯里兰卡", price_max=10000))) == [202, 204]
+
+
+def test_a_filter_the_advisor_tapped_twice_keeps_either(catalog):
+    """The chip bar sends every value the advisor tapped, and inside one group they are
+    alternatives: 德法意瑞 or 北欧, 11 or 12 days, 上海 or 广州, 四钻 or 五钻, 观鲸 or 一价全含."""
+    assert ids(catalog.match(ask(regions=("德法意瑞", "北欧")))) == [301, 302]
+    assert ids(catalog.match(ask(destinations=("德国·瑞士", "挪威")))) == [301, 302]
+    assert ids(catalog.match(ask(days=(11, 12)))) == [301, 302]
+    assert ids(catalog.match(ask(days=(7, 12)))) == [202, 203, 201, 301, 204]
+    assert ids(catalog.match(ask(departure_cities=("广州", "北京")))) == [203, 302]
+    assert ids(catalog.match(ask(hotel_levels=("四钻", "五钻")))) == [202, 203, 201, 301, 302, 204]
+    assert ids(catalog.match(ask(features=("观鲸", "一价全含")))) == [202, 201]
+    # Across groups the taps are conditions on each other, not alternatives.
+    assert ids(catalog.match(ask(regions=("德法意瑞", "北欧"), days=(12,)))) == [301]
+
+
+def test_a_price_band_is_a_floor_and_a_ceiling(catalog):
+    """The 起价 chips are bands, so the advisor's taps become the lower edge of the lowest and
+    the upper edge of the highest; a 起价 the ERP has not published is under neither."""
+    assert ids(catalog.match(ask(price_min=10000, price_max=20000))) == [203, 201, 301]
+    assert ids(catalog.match(ask(price_max=10000))) == [202, 204]
+    assert ids(catalog.match(ask(price_min=20000))) == [302]
 
 
 def test_the_ranking_is_the_reviewed_the_asked_for_length_then_the_price(catalog):
     # Reviewed first, then the cheaper 起价; the draft is last whatever it costs.
     assert ids(catalog.match(ask(text="斯里兰卡"))) == [202, 203, 201, 204]
     # A line of exactly the length asked for comes ahead of one that merely fits the span.
-    ranked = catalog.match(ask(days_min=11, days_max=11))
-    assert ids(ranked) == [302]
+    assert ids(catalog.match(ask(days_min=11, days_max=11))) == [302]
+    assert ids(catalog.match(ask(days=(12,), days_min=7, days_max=12))) == [301]
 
 
 # -- the chips a wide request goes back as ---------------------------------------------------

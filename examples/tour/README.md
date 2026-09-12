@@ -392,8 +392,10 @@ Single prompts worth trying after those turns:
   shortlist, one that matched a handful of versions of one trip, or one that matched nothing
   at all leaves an overview on the backend; the model writes one narrowing question and names
   the dimension (目的地, 天数, 出发城市, 出发月份, 酒店标准, 纯玩, 特色, 起价), and the card's
-  chips are that overview's groups with their counts, each tap sending `只看<维度>：<值>` into
-  the conversation as the advisor's words. Up to three results may stand on the card as a
+  chips are that overview's groups with their counts. A tap holds a chip rather than sending it —
+  several in a group and across groups — and the bar under the rows sends the whole pick as one
+  `只看 <维度>：<值>、<值>；<维度>：<值>` in the advisor's own words, or 不限条件 for the lines as
+  they stand. Up to three results may stand on the card as a
   foothold while the match is twelve or fewer. The card is refused when the last search fits a
   shortlist. Up to twelve matches the cards and the chips go together and nothing is held;
   above twelve `TourToolExecutor` holds `present_products` (`FOCUS_FIRST_GATE`) the way it
@@ -486,17 +488,20 @@ The filter keys the model writes into `filters.attributes` on every search:
 
 | Key | Value |
 |---|---|
-| `destination` | the customer's destination as text, matched against the document's countries, its 线路系, the line's name, the department that sells it, the places its days pass through and the sights it names; a distinctive word (观鲸, 一价全含) narrows one family of a trip, and places joined with · must all be on the line |
+| `destination` | the customer's destination as text, matched against the document's countries, its 线路系, the line's name, the department that sells it, the places its days pass through and the sights it names; places joined with · must all be on the line |
 | `depart_from`, `depart_to` | ISO dates; the window every match is weighed against, and the one this and every later quote is made for. A line with no 团期 in it is `match=adjacent_date` and names its `nearest_departure` |
-| `days_min`, `days_max` | whole days, against the document's own 天数 |
+| `days` | exact lengths (`8\|12`), against the document's own 天数 |
+| `days_min`, `days_max` | a span of whole days, against the same |
 | `adults`, `children` | the party every quote is made for, and the split `add_to_cart` writes onto the order |
 | `child_ages` | pipe-separated, `5\|9`; kept on the session's `SearchContext` and filters nothing, because the ERP states no minimum age |
 | `no_shopping` | `yes` keeps the 线路 whose document lists no 购物店 at all |
 | `hotel_level` | 四钻, 五钻; matched against the grade the document's 酒店标准 states, in every spelling the attachments use (五钻, 5钻, 五星, 5星) |
+| `feature` | a word that tells one version of a trip from another (观鲸, 一价全含, 国泰), read off the line's name and its sights |
+| `months` | `2026-10\|2026-11`; the months the customer named, which become the window — a line is a match for the dates when it has a 团期 in any of them |
 | `departure_city` | the city the group leaves from, as the document's `summary` states it |
 | `family` | `yes` sorts the 线路 whose document claims 亲子 to the front of the shortlist and drops nothing, because a family will take a line that never wrote the word down |
 | `region` | a 线路系 (德法意瑞, 西欧多国, 英爱, 西葡, 北欧, 东欧巴尔干, 意大利一地 …), matched either way round against the document's own `region`; a line filed nowhere is not admitted |
-| `price_max` | a ceiling on the ERP's 起价 in yuan; a 起价 it has not published (0) is not over it |
+| `price_min`, `price_max` | a floor and a ceiling on the ERP's 起价 in yuan, from the 起价 bands the advisor tapped; a 起价 it has not published (0) is under neither |
 
 Matches are ranked, not left in the catalog's order: the reviewed documents first, then a
 line of exactly the length asked for, then the lower published 起价, then the name. Every
@@ -510,6 +515,12 @@ the head says how many of the matches run in them. Between six
 and twelve matches that is cards and chips together: the cards are the answer and the model
 ends the reply with a `present_focus` question over those groups. Above twelve it is the
 question alone, and a shortlist over that overview is held until it has been asked.
+The advisor may tap as many chips as they like: the workbench sends one message
+(`只看 目的地：德法意瑞、法意瑞；天数：12 天；出发月份：10月、11月`, or
+`不限条件，直接看这些线路`), and the model sends each group as one filter with its values joined
+by `|` — alternatives inside a group, conditions between them. `destination`, `region`, `days`,
+`departure_city`, `hotel_level`, `feature` and `months` all read that way.
+
 Two to five matches that are the same countries over the same number of days are one trip
 sold several ways: the overview stands for those too, names the dimensions that differ first,
 and the model asks which the customer wants rather than choosing. A search that matched

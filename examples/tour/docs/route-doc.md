@@ -84,8 +84,9 @@ their 成团 state, the seats left and the 同业价.
 
 - `api/catalog.py` reads each document into `RouteFacts` and matches a request on them: the
   destination against the countries, the 线路系, the name, the department, the places the days
-  pass through and the sights they name; the day count, 出发城市, 纯玩, the hotel standard and
-  the 线路系 against what the document states. A 线路 with no document is not searched at all.
+  pass through and the sights they name; the day count, 出发城市, 纯玩, the hotel standard, the
+  feature words and the 线路系 against what the document states, each filter meeting any one of
+  the values the advisor's chips sent. A 线路 with no document is not searched at all.
 - a 线路 card is the document's own fields, and its labels say 纯玩 or 购物店N家, the 钻 grade
   the 酒店标准 states where it states one, the airline and 已复核 or 解析稿 (`doc`);
 - `present_route_days` draws the whole 逐日行程 off the document — the days with their 车程
