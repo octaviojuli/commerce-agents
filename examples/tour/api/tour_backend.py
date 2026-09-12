@@ -7,7 +7,7 @@ a 线路 is a product family, its dated 团期 are that family's variants, and a
 window and party the advisor last searched are kept per session and restated in every
 record's attributes.
 
-What a 线路 *is* comes from the agency's reviewed 线路文档 and not from this ERP: its catalog
+What a 线路 *is* comes from the agency's 线路文档 and not from this ERP: its catalog
 carries no destination, hotel, vehicle or shopping field, so the search runs over the
 documents (``api/catalog.py``) and a 线路 without one is not offered at all. The ERP answers
 the dynamic half — which 团期 run, their 成团 state, the seats left and the 同业价 — and two
@@ -1052,9 +1052,10 @@ class TourBackend(StorefrontBackend):
         ``registry`` is where the logged-in advisors are; with none — the tests, and a host
         that has not built one — every call goes out on ``erp``.
 
-        ``route_docs`` is the reviewed 线路文档 the search runs over, which is the catalog
-        itself: with none the fixture catalog's own documents under ``data/route-docs`` are
-        read, and an empty store is a deployment with no catalog at all.
+        ``route_docs`` is the 线路文档 the search runs over, which is the catalog itself —
+        every document the parser wrote, the reviewed ones ranked ahead of the drafts: with
+        none the fixture catalog's own documents under ``data/route-docs`` are read, and an
+        empty store is a deployment with no catalog at all.
 
         ``state_dir`` is where the parsed 行程附件 are kept between restarts; with none the
         attachment is parsed again in every process that reads the 线路.

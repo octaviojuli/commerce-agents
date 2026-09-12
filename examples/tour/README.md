@@ -220,12 +220,15 @@ Single prompts worth trying after those turns:
   (poppler); a scanned .pdf is refused as `ImageOnlyPdf`.
 - `api/route_parser.py`: the .docx or .pdf 行程附件 read into a `RouteDoc` by rule, on top of
   `itinerary_source`'s days; `score` is the completeness the batch ranks the catalog by.
-- `api/route_docs.py`: `RouteDocStore`, the documents the runtime reads — `route-docs/published/`
-  (reviewed) over `route-docs/selected/` (the review round's draft) — and what the backend
-  reads off one ahead of the tags: the 行程, the card's 参考航班 / 购物店 / 费用包含 / 单房差
-  规格, the `doc` / `shopping_stops` / `meals_included` / `doc_hotel_grade` / `flights`
+- `api/route_docs.py`: `RouteDocStore`, the documents the runtime reads — every parsed
+  document, `route-docs/published/` (reviewed) over `route-docs/selected/` (the round being
+  checked) over the draft beside them — the twins, a line reading the reviewed document of the
+  line whose 逐日行程 its own parse repeats word for word (`twin_of`), and what the backend
+  reads off a document ahead of the tags: the 行程, the card's 参考航班 / 购物店 / 费用包含 /
+  单房差 规格, the `doc` / `shopping_stops` / `meals_included` / `doc_hotel_grade` / `flights`
   attributes, and the 纯玩 and hotel-standard filters.
-- `api/catalog.py`: `Catalog`, the reviewed documents as the catalog a search runs over.
+- `api/catalog.py`: `Catalog`, the documents as the catalog a search runs over, the reviewed
+  ones ranked ahead of the drafts.
   `RouteFacts` is one document as a search reads it — the countries, the 线路系, the length,
   the city it leaves from, the 酒店标准 and its 钻 grade, the 购物店 and 自费 counts, the 门票
   and 赠送 counts, the places its days pass through, the sights it names, the cover's first
@@ -505,7 +508,8 @@ The filter keys the model writes into `filters.attributes` on every search:
 | `region` | a 线路系 (德法意瑞, 西欧多国, 英爱, 西葡, 北欧, 东欧巴尔干, 意大利一地 …), matched either way round against the document's own `region`; a line filed nowhere is not admitted |
 | `price_min`, `price_max` | a floor and a ceiling on the ERP's 起价 in yuan, from the 起价 bands the advisor tapped; a 起价 it has not published (0) is under neither |
 
-Matches are ranked, not left in the catalog's order: the reviewed documents first, then a
+Matches are ranked, not left in the catalog's order: the reviewed documents ahead of the
+drafts, then a
 line of exactly the length asked for, then the lower published 起价, then the name. Every
 result carries `catalog_matches`, the number of 线路 that met the request. Above five matches
 the executor appends a 目录概览 to the tool result — the total and the matches grouped by
@@ -609,8 +613,9 @@ gitignored, created at boot — holds all three:
 | `sessions.sqlite` | `api/store.py`'s `SqliteSessionStore` | one row per conversation (the advisor it belongs to, the session state, the version a write is checked against) and one row per message |
 | `memory-store.json` | the core's `JsonFileMemoryStore` | the facts the post-turn extraction pass keeps about each advisor |
 | `itineraries/{routeId}.json` | `api/itinerary_source.py`'s `cache_write` | one 线路's days as parsed out of its 行程附件, with the URL and the ETag they were read at |
-| `route-docs/{routeId}.json`, `index.json`, `REPORT.md`, `selected/` | `scripts/parse_attachments.py` | one `RouteDoc` per public .docx or .pdf line, the ranking, and the first review round's pick; the agency's product data, never committed |
-| `route-docs/published/{routeId}.json` | the agency's product staff | the reviewed documents (`quality.reviewed_by` set), read at boot ahead of `selected/` |
+| `route-docs/{routeId}.json`, `index.json`, `REPORT.md` | `scripts/parse_attachments.py` | one `RouteDoc` per public .docx or .pdf line and the ranking; the drafts are the catalog too, behind the documents a round has answered for; the agency's product data, never committed |
+| `route-docs/selected/{routeId}.json`, `selected.json` | `scripts/parse_attachments.py --select N` | the round the product staff are checking, and the criterion that chose it (`selling-180d`, `completeness-0.9`), its window and its lines |
+| `route-docs/published/{routeId}.json` | the agency's product staff | the reviewed documents (`quality.reviewed_by` set), read at boot ahead of `selected/` and of the drafts |
 
 `SqliteSessionStore` is a subclass of `demo_common.sessions.SessionStore` with the six
 storage methods over one SQLite file, which is what that class's docstring describes a
@@ -644,11 +649,13 @@ reports only — nothing is written, and the words it lists are candidates to re
 change to the vocabulary or the prompt is made by hand afterwards. The sections and the parsing
 are `api/review.py`, which is where the tests read them.
 
-`scripts/parse_attachments.py [--select N] [--limit N] [--include-private] [--out DIR]` reads the
-catalog's public .docx and .pdf 行程附件 into one `RouteDoc` per 线路 under the state directory's
-`route-docs/`, with `index.json` and `REPORT.md` ranking them by completeness and, with
-`--select`, the N most complete copied into `selected/` for the agency's product staff to
-review (`docs/route-doc.md`); `--schema` writes `data/route-schema.json` and stops.
+`scripts/parse_attachments.py [--select N] [--selling] [--limit N] [--include-private] [--out DIR]`
+reads the catalog's public .docx and .pdf 行程附件 into one `RouteDoc` per 线路 under the state
+directory's `route-docs/`, with `index.json` and `REPORT.md` ranking them by completeness and,
+with `--select`, N of them copied into `selected/` for the agency's product staff to review:
+the most complete documents, or with `--selling` the lines that have a 团期 in the next 180 days
+and no review behind them yet (`docs/route-doc.md`). `--schema` writes `data/route-schema.json`
+and stops.
 
 `python scripts/run_demo.py tour --fresh-memory` deletes `memory-store.json` and leaves the
 conversations beside it alone. The fixture seed in `data/memory-seed.json` is loaded at every

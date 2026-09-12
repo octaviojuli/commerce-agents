@@ -14,6 +14,7 @@ One document per 线路, `data/route-schema.json` being its JSON Schema:
 | Field | What it holds | Where it comes from |
 |---|---|---|
 | `route_id`, `route_code`, `name`, `department`, `sale_type` | identity | the ERP's `route/list` row |
+| `twin_of` | the 线路 whose reviewed document this line reads, where the two parses are identical | `api/route_docs.py`, never the parser |
 | `summary` | `days` (the ERP's), `nights` (the hotel nights read), `depart_city`, `countries`, `region` | the row, then `api/tags.py` over its tags and name |
 | `cover` | 航空公司, 酒店标准, 用餐安排, the ★ highlights, every labelled front-matter row | the attachment's cover table or its 吃/住/行 lines |
 | `transport` | every 参考航班 segment: day, flight number, carrier, route, times as written | the day headers and programmes |
@@ -79,8 +80,18 @@ attachment (.docx / .pdf) ──parse──▶ {routeId}.json (draft, needs_revi
 `scripts/parse_attachments.py` runs the first arrow over the catalog: every public `.docx`
 and `.pdf` line (包团/会销/定制 skipped unless asked), four downloads at a time, one JSON per line under
 `$TOUR_STATE_DIR/route-docs/`, `index.json` and `REPORT.md` ranking them, and with
-`--select N` the N most complete copied into `selected/` for the first review round. The
-documents are the agency's product data and are not committed.
+`--select N` N of them copied into `selected/` for a review round. The documents are the
+agency's product data and are not committed.
+
+A round is chosen one of two ways. `--select N` alone takes the most complete documents,
+0.9 and over first, one department at a time so the round sees every department's layout.
+`--select N --selling` takes what sells instead: the 团期 of the next 180 days read in one
+window call (`erp_client.WindowReader`; a call per 线路 for a client without it), the lines with
+one inside it, the lines a round has already answered for — the published documents and the
+twins reading them — left out, a completeness floor of 0.6 because a selling line is worth a
+reviewer filling a field in and a `.pdf` scores lower than a `.docx`, then the same round-robin
+over the departments. `selected/selected.json` carries the criterion that chose the round
+(`selling-180d` or `completeness-0.9`), the window it was read over and the lines it holds.
 
 The review is the agency's product staff's: they read each `selected/` document against the
 attachment, correct the fields, set `quality.reviewed_by` and `reviewed_at`, and move the
@@ -88,12 +99,25 @@ file to `route-docs/published/`.
 
 ## The runtime
 
-`api/route_docs.py`'s `RouteDocStore` reads `published/` and `selected/` at boot, a published
-document winning over a selected one for the same 线路. The documents are the catalog: a
-search is answered off them and the ERP is asked only for the dynamic half — which 团期 run,
-their 成团 state, the seats left and the 同业价.
+`api/route_docs.py`'s `RouteDocStore` reads three directories at boot — the drafts under
+`route-docs/`, the round being checked under `selected/`, the checked documents under
+`published/` — a published document winning over a selected one and a selected one over the
+draft beside it. Every document is the catalog, the drafts included: the 线路 selling this month
+are mostly ones no round has reached, so a search over the reviewed documents alone answers with
+the lines that do not sell. A reviewed document is ranked ahead of a draft and the card says
+which of the two it is. The ERP is asked only for the dynamic half — which 团期 run, their 成团
+state, the seats left and the 同业价.
 
-- `api/catalog.py` reads each document into `RouteFacts` and matches a request on them: the
+Two lines whose parsed 逐日行程 is identical word for word are one product sold under two names
+— a second 出发城市, an 加班 line, a second airline — and the draft of such a line reads the
+reviewed document of the line it copies: that document's 行程, its corrections and the review
+that signed it, under the twin's own 线路 id, code, name, department, 出发城市 and attachment,
+with `twin_of` naming where it came from. The reviewed line is matched on its *draft* — the
+`selected/` copy, or the draft beside it — because that is the same parser's reading as the
+twin's; where several reviewed lines share one 行程 the lowest 线路 id is the one inherited, they
+being the same product too. The store logs how many lines read another's document.
+
+- `api/catalog.py` reads every document into `RouteFacts` and matches a request on them: the
   destination against the countries, the 线路系, the name, the department, the places the days
   pass through and the sights they name; the day count, 出发城市, 纯玩, the hotel standard, the
   feature words and the 线路系 against what the document states, each filter meeting any one of

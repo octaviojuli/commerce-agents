@@ -535,6 +535,18 @@
       "title": "Sale Type",
       "type": "string"
     },
+    "twin_of": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Twin Of"
+    },
     "summary": {
       "$ref": "#/$defs/Summary"
     },
