@@ -176,7 +176,9 @@ _DURATION = re.compile(
 _GRADE = re.compile(r"([三四五3-5](?:\s*[-~至]\s*[三四五3-5])?)\s*([钻星])")
 # The grade written after the hotel names (AMAYA LAKE 或五钻): it is the standard and not the
 # tail of the last name.
-_GRADE_TAIL = re.compile(r"\s*或?[三四五3-5](?:\s*[-~至]\s*[三四五3-5])?\s*[钻星]级?(?:酒店)?\s*$")
+# ``… 或五钻同级酒店``: only a tail introduced by 或 is the standard beside the names;
+# ``科伦坡网评五钻酒店`` and ``当地五钻`` are the name as written.
+_GRADE_TAIL = re.compile(r"\s*或[三四五3-5](?:\s*[-~至]\s*[三四五3-5])?\s*[钻星]级?(?:酒店)?\s*$")
 _MEAL_TRIPLE = re.compile(r"(早餐?|午餐|中餐?|晚餐?)\s*[：:]\s*")
 _NOT_INCLUDED = {"", "x", "×", "✕", "无", "自理", "不含", "-", "—", "/"}
 _PRICE = re.compile(
@@ -304,9 +306,13 @@ _NO_ENTRY = re.compile(r"不入内|非入内|不登顶")
 _NO_TICKET = re.compile(r"不含[^，。）)】]{0,4}门票|不含首道")
 # What is glued to a sight's name and is not part of it: the ticket and guide notes after it,
 # and the 独家安排---/打卡机位1--- the attachments write before it.
-_NAME_LEAD = re.compile(r"^(?:[^【】]{0,8}?-{2,}\s*)+")
+# ``独家安排---【X】`` outside the bracket and ``【特别安排-彩色岛含船票】``/``【特别赠送：X】``
+# inside it: the label before the dash or colon is not the name.
+_NAME_LEAD = re.compile(
+    r"^(?:[^【】]{0,8}?-{2,}\s*)+|^(?:特别安排|独家安排|特别赠送|独家赠送|贴心安排|升级安排)\s*[-—–:：]\s*"
+)
 _NAME_TAIL = re.compile(
-    r"(?:\s*[，,]?\s*(?:不?含[^，。\s（）()【】]{0,4}?(?:门票|官导|讲解|导游)\*?|门票|入内))+$"
+    r"(?:\s*[，,]?\s*(?:不?含[^，。\s（）()【】]{0,4}?(?:门票|票|官导|讲解|导游)\*?|门票|入内))+$"
 )
 _COVER_LABELS = {
     "airline": ("航空公司", "航空", "行", "交通篇", "航空篇", "航班篇"),
