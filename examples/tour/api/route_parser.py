@@ -657,9 +657,10 @@ def _sights(text: str) -> list[Sight]:
         seen.add(name)
         kind = "景点"
         ticket: bool | None = None
-        # ``【奥斯曼大道】（自由活动，时间不少于1小时）``: the parenthesis names the stop a
-        # 自由活动, whatever the sentence says about shops around it.
-        leisure_note = re.match(r"\s*[（(]\s*自由活动", near) is not None
+        # ``【奥斯曼大道】（自由活动，时间不少于1小时）``: a parenthesis that opens with 自由活动
+        # and a comma names the stop a 自由活动, whatever the sentence says about shops around
+        # it; ``（自由活动约30分钟）`` is a duration on a sight and leaves its kind alone.
+        leisure_note = re.match(r"\s*[（(]\s*自由活动\s*[，,、]", near) is not None
         if leisure_note and not any(word in name for word in _SHOP_WORDS):
             kind = "自由活动"
         elif (
