@@ -165,7 +165,7 @@ def test_layout_one_reads_flights_places_sights_meals_hotels_and_terms():
     )
     assert doc.notices[0] == "旅行团须知"
     assert doc.quality.completeness == 1.0 and doc.quality.needs_review == []
-    assert doc.source.parser == "docx-rules-2" and doc.source.bytes == len(LAYOUT_ONE)
+    assert doc.source.parser == "docx-rules-2/docx" and doc.source.bytes == len(LAYOUT_ONE)
 
 
 def test_layout_two_reads_inline_cover_km_figures_and_the_overview_fallback():
