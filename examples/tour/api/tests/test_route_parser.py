@@ -132,7 +132,7 @@ def test_layout_one_reads_flights_places_sights_meals_hotels_and_terms():
         (1, "MU6017", "上海浦东", "科伦坡"),
         (3, "MU6018", "科伦坡", "上海浦东"),
     ]
-    assert doc.transport[0].carrier == "东航" and "1425-1900" in doc.transport[0].times
+    assert doc.transport[0].carrier == "中国东方航空" and "1425-1900" in doc.transport[0].times
     assert doc.transport[1].times == "2020-0535+1"
     d1, d2, d3, d4 = doc.days
     assert d1.places == ["上海", "科伦坡"] and d1.overnight == "hotel"

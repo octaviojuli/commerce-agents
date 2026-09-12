@@ -481,7 +481,53 @@ def _route(text: str) -> tuple[str, str] | None:
     return None
 
 
-_CARRIERS = {"MU": "东航", "CA": "国航", "CZ": "南航", "HU": "海航", "HO": "吉祥", "FM": "上航"}
+# The carrier as the cover writes it in full, which is what the card shows beside the flight.
+_CARRIERS = {
+    "MU": "中国东方航空",
+    "CA": "中国国际航空",
+    "CZ": "中国南方航空",
+    "HU": "海南航空",
+    "HO": "吉祥航空",
+    "FM": "上海航空",
+    "3U": "四川航空",
+    "MF": "厦门航空",
+    "ZH": "深圳航空",
+    "SC": "山东航空",
+    "GS": "天津航空",
+    "JD": "首都航空",
+    "9C": "春秋航空",
+    "KN": "中国联合航空",
+    "CX": "国泰航空",
+    "UL": "斯里兰卡航空",
+    "SK": "北欧航空",
+    "JU": "塞尔维亚航空",
+    "FI": "冰岛航空",
+    "AY": "芬兰航空",
+    "TK": "土耳其航空",
+    "EK": "阿联酋航空",
+    "QR": "卡塔尔航空",
+    "LH": "汉莎航空",
+    "AF": "法国航空",
+    "KL": "荷兰皇家航空",
+    "BA": "英国航空",
+    "LX": "瑞士国际航空",
+    "OS": "奥地利航空",
+    "AZ": "意大利航空",
+    "IB": "西班牙国家航空",
+    "TP": "葡萄牙航空",
+    "SU": "俄罗斯航空",
+    "EY": "阿提哈德航空",
+    "SQ": "新加坡航空",
+    "TG": "泰国国际航空",
+    "NH": "全日空",
+    "JL": "日本航空",
+    "KE": "大韩航空",
+    "OZ": "韩亚航空",
+    "QF": "澳洲航空",
+    "NZ": "新西兰航空",
+    "VN": "越南航空",
+    "MH": "马来西亚航空",
+}
 
 
 def _carrier(flight_no: str) -> str:
@@ -542,7 +588,7 @@ def _unglue(place: str) -> list[str]:
 
 
 _NOT_SIGHT = re.compile(
-    r"^(?:约|不少于|不低于|\d)|^(?:特别提醒|温馨提示|备注|注意|例如|如遇|以上|以下|特别说明"
+    r"^(?:约\s*\d|约\s*[一二三四五六七八九十半]|不少于|不低于|\d)|^(?:特别提醒|温馨提示|备注|注意|例如|如遇|以上|以下|特别说明"
     r"|重要提醒|今日特别安排|特别安排|贴心提示|特别提示|注[：:])|"
     r"(?:餐|三道式)$"
 )
@@ -611,7 +657,12 @@ def _sights(text: str) -> list[Sight]:
         seen.add(name)
         kind = "景点"
         ticket: bool | None = None
-        if (
+        # ``【奥斯曼大道】（自由活动，时间不少于1小时）``: the parenthesis names the stop a
+        # 自由活动, whatever the sentence says about shops around it.
+        leisure_note = re.match(r"\s*[（(]\s*自由活动", near) is not None
+        if leisure_note and not any(word in name for word in _SHOP_WORDS):
+            kind = "自由活动"
+        elif (
             any(word in inner or word in before for word in _OPTIONAL_WORDS)
             or any(word in near[:12] for word in _OPTIONAL_WORDS)
             or (zone is not None and zone.start() < match.start() < zone_end)
