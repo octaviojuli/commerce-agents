@@ -216,7 +216,9 @@ Single prompts worth trying after those turns:
   the three meals, the hotel, the programme whole), the 包含/不含 lists, 购物 and 自费, the
   policy sentences, and `source` and `quality` saying which attachment it was read from and
   what a reviewer should check. `data/route-schema.json` is its JSON Schema.
-- `api/route_parser.py`: the .docx 行程附件 read into a `RouteDoc` by rule, on top of
+- `api/pdf_source.py`: a .pdf 行程附件 as the lines a .docx gives, through `pdftotext`
+  (poppler); a scanned .pdf is refused as `ImageOnlyPdf`.
+- `api/route_parser.py`: the .docx or .pdf 行程附件 read into a `RouteDoc` by rule, on top of
   `itinerary_source`'s days; `score` is the completeness the batch ranks the catalog by.
 - `api/route_docs.py`: `RouteDocStore`, the documents the runtime reads — `route-docs/published/`
   (reviewed) over `route-docs/selected/` (the review round's draft) — and what the backend
@@ -607,7 +609,7 @@ gitignored, created at boot — holds all three:
 | `sessions.sqlite` | `api/store.py`'s `SqliteSessionStore` | one row per conversation (the advisor it belongs to, the session state, the version a write is checked against) and one row per message |
 | `memory-store.json` | the core's `JsonFileMemoryStore` | the facts the post-turn extraction pass keeps about each advisor |
 | `itineraries/{routeId}.json` | `api/itinerary_source.py`'s `cache_write` | one 线路's days as parsed out of its 行程附件, with the URL and the ETag they were read at |
-| `route-docs/{routeId}.json`, `index.json`, `REPORT.md`, `selected/` | `scripts/parse_attachments.py` | one `RouteDoc` per public .docx line, the ranking, and the first review round's pick; the agency's product data, never committed |
+| `route-docs/{routeId}.json`, `index.json`, `REPORT.md`, `selected/` | `scripts/parse_attachments.py` | one `RouteDoc` per public .docx or .pdf line, the ranking, and the first review round's pick; the agency's product data, never committed |
 | `route-docs/published/{routeId}.json` | the agency's product staff | the reviewed documents (`quality.reviewed_by` set), read at boot ahead of `selected/` |
 
 `SqliteSessionStore` is a subclass of `demo_common.sessions.SessionStore` with the six
@@ -643,7 +645,7 @@ change to the vocabulary or the prompt is made by hand afterwards. The sections 
 are `api/review.py`, which is where the tests read them.
 
 `scripts/parse_attachments.py [--select N] [--limit N] [--include-private] [--out DIR]` reads the
-catalog's public .docx 行程附件 into one `RouteDoc` per 线路 under the state directory's
+catalog's public .docx and .pdf 行程附件 into one `RouteDoc` per 线路 under the state directory's
 `route-docs/`, with `index.json` and `REPORT.md` ranking them by completeness and, with
 `--select`, the N most complete copied into `selected/` for the agency's product staff to
 review (`docs/route-doc.md`); `--schema` writes `data/route-schema.json` and stops.

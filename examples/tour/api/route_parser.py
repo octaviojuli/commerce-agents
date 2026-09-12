@@ -1,7 +1,7 @@
 # Copyright 2026 Anthropic PBC
 # SPDX-License-Identifier: Apache-2.0
 
-"""A 线路's .docx 行程附件 read into a ``RouteDoc``.
+"""A 线路's .docx or .pdf 行程附件 read into a ``RouteDoc``.
 
 ``itinerary_source`` reads the document's lines and splits them into days with a title, a
 programme, a 住宿 and a 用餐; this module reads further into each of those and into the
@@ -30,6 +30,7 @@ from .itinerary_source import (
     document_lines,
     split_days,
 )
+from .pdf_source import PDF_MAGIC, PDF_MODES, pdf_lines
 from .route_doc import (
     Cover,
     Day,
@@ -50,7 +51,8 @@ from .tags import normalize
 
 PARSER_VERSION = "docx-rules-2"
 
-_FLIGHT_NO = re.compile(r"\b([A-Z]{2}\d{2,4})\b")
+# ``MU6017``, also glued to its times (``MU601714:25-19:00``).
+_FLIGHT_NO = re.compile(r"\b([A-Z]{2}\d{2,4})(?:(?!\d)|(?=\d{1,2}:\d{2}))")
 # ``1425-1900``, ``01:20-07:40``, ``14:25/19:00`` and a ``+1`` day: the separator is a dash or,
 # between two clock times, a slash.
 _FLIGHT_TIMES = re.compile(
@@ -267,7 +269,7 @@ def _flights(text: str, day: int) -> list[Flight]:
     yields one per flight number."""
     found: list[Flight] = []
     for chunk in _FLIGHT_MARK.split(text)[1:] or ([text] if _FLIGHT_NO.search(text) else []):
-        chunk = _nfkc(chunk).split(PARAGRAPH_SEPARATOR)[0]
+        chunk = re.split(re.escape(PARAGRAPH_SEPARATOR) + r"|[;；。]", _nfkc(chunk))[0]
         numbers = _FLIGHT_NO.findall(chunk)
         if not numbers:
             continue
@@ -456,7 +458,7 @@ def _meals(line: str | None) -> Meals:
     text = _nfkc(line).replace(CELL_SEPARATOR, " ")
     parts = _MEAL_TRIPLE.split(text)
     if len(parts) < 3:
-        return Meals()
+        return _meals_short(text)
     meals = Meals()
     lead = re.sub(r"^\s*(?:餐饮|用餐)\s*[：:]\s*", "", parts[0]).strip()
     if lead and parts[1].startswith(("午", "中")):
@@ -472,13 +474,29 @@ def _meals(line: str | None) -> Meals:
     return meals
 
 
+_MEALS_SHORT = re.compile(r"^[早中午晚/X×x自理无、，,\s]+$")
+
+
+def _meals_short(text: str) -> Meals:
+    """``早午晚``, ``早、/、/``, ``X``: the .pdf attachments' way of writing the three meals
+    as the ones served, in order, with / or X for one not served."""
+    clean = text.strip()
+    if not clean or not _MEALS_SHORT.match(clean):
+        return Meals()
+    served = {"早": "早" in clean, "午": "午" in clean or "中" in clean, "晚": "晚" in clean}
+    meals = Meals()
+    for label, field in (("早", "breakfast"), ("午", "lunch"), ("晚", "dinner")):
+        setattr(meals, field, Meal(text=label if served[label] else "X", included=served[label]))
+    return meals
+
+
 def _hotel(text: str | None) -> tuple[Hotel | None, str]:
     """The night's hotel and where the night is spent: ``hotel``, ``flight`` (飞机上),
     ``home`` (无 on the last day) or ``unknown``."""
     if text is None:
         return None, "unknown"
     clean = _nfkc(text).strip()
-    if not clean or clean in ("/", "-", "—", "无酒店"):
+    if not clean or clean in ("/", "-", "—", "无酒店", "X", "x", "×"):
         return None, "unknown"
     if any(word in clean for word in _FLIGHT_STAY):
         return None, "flight"
@@ -733,7 +751,7 @@ def _day(
         )
     for line in raw_lines:
         if "交通：" in line or "交通:" in line:
-            tail = line.split("交通")[-1].strip("：: ")
+            tail = line.split("交通")[-1].split(CELL_SEPARATOR)[0].strip("：: ")
             transport = f"{transport}；{tail}" if transport else tail
             break
     return Day(
@@ -865,8 +883,25 @@ def parse_route(
     record: RouteRecord, data: bytes, *, etag: str | None = None, sale_type: str = ""
 ) -> RouteDoc:
     """The 线路's attachment as a ``RouteDoc``. Raises ``ValueError`` for a document the
-    reader cannot open, as ``itinerary_source.document_lines`` does."""
-    lines = document_lines(data)
+    reader cannot open, as ``itinerary_source.document_lines`` does. A .pdf is read in each
+    of pdftotext's two orders and the more complete document is kept."""
+    if data.startswith(PDF_MAGIC):
+        docs = [
+            _build(record, pdf_lines(data, mode), data, etag, sale_type, f"pdf-{mode}")
+            for mode in PDF_MODES
+        ]
+        return max(docs, key=lambda d: d.quality.completeness)
+    return _build(record, document_lines(data), data, etag, sale_type, "docx")
+
+
+def _build(
+    record: RouteRecord,
+    lines: list[str],
+    data: bytes,
+    etag: str | None,
+    sale_type: str,
+    reading: str,
+) -> RouteDoc:
     cover_lines, day_lines, term_lines = _split(lines)
     raw_by_day = _day_raw_lines(day_lines)
     overview = _overview(cover_lines)
@@ -930,7 +965,7 @@ def parse_route(
             etag=etag,
             bytes=len(data),
             parsed_at=datetime.now(UTC),
-            parser=PARSER_VERSION,
+            parser=f"{PARSER_VERSION}/{reading}",
         ),
         quality=Quality(completeness=0.0),
     )

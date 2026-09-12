@@ -52,6 +52,17 @@ table's HOTEL column; the 退改 policy is the 团体订位…概不退回 sente
 the 不可抗力 clause; a 单人间房差…; 儿童… line is split at the semicolon; a 另行付费 table is
 read by column with the unit from its 价格(欧元/人) header.
 
+A `.pdf` goes through `api/pdf_source.py` first: `pdftotext` (poppler, on the PATH) gives
+the page text, runs of three or more spaces become the `||` cell separator so a table row
+reads like a .docx row, and the two day-header shapes the .pdf attachments use — `DAY` with
+the number drawn as a picture and the bare number on the line below, or a day written as a
+number alone — are rewritten into `第N天`. pdftotext reads a page in two orders, `-layout`
+(columns kept) and default (text blocks in sequence); the parser reads each .pdf both ways
+and keeps the more complete document, and `source.parser` says which (`docx-rules-2/pdf-layout`).
+A .pdf with fewer than 300 Chinese characters of text is a scan and is refused. The .pdf
+attachments' own labels — `餐食：早午晚`, `酒店：…`, `餐：/ 住：飞机上 行：无` — are read by
+`itinerary_source.split_days` cell by cell.
+
 `score` is the completeness: the attachment's day count against the ERP's (0.20), a night
 read for every day (0.15), meals read for every day away from home (0.15), at least one
 flight (0.10), the 包含 and 不含 lists (0.10 each), sights on the hotel days (0.10), a cover
@@ -60,13 +71,13 @@ flight (0.10), the 包含 and 不含 lists (0.10 each), sights on the hotel days
 ## The pipeline
 
 ```
-attachment (.docx) ──parse──▶ {routeId}.json (draft, needs_review) ──review──▶ published
+attachment (.docx / .pdf) ──parse──▶ {routeId}.json (draft, needs_review) ──review──▶ published
                                      │                                     │
                               index.json, REPORT.md                 search facets, cards
 ```
 
 `scripts/parse_attachments.py` runs the first arrow over the catalog: every public `.docx`
-line (包团/会销/定制 skipped unless asked), four downloads at a time, one JSON per line under
+and `.pdf` line (包团/会销/定制 skipped unless asked), four downloads at a time, one JSON per line under
 `$TOUR_STATE_DIR/route-docs/`, `index.json` and `REPORT.md` ranking them, and with
 `--select N` the N most complete copied into `selected/` for the first review round. The
 documents are the agency's product data and are not committed.
@@ -102,7 +113,8 @@ prices are never in a document.
 
 ## Not yet
 
-- `.pdf` attachments (65 of the production catalog's 269), image attachments (34), `.xlsx` (3).
+- Scanned `.pdf` attachments (no text layer; `pdf_source.ImageOnlyPdf`, listed in the report
+  as skipped), image attachments (34), `.xlsx` (3).
 - Filters off `inclusions` and the meals; the customer page.
 - A review tool. The first round is the JSON files and the report.
 - The ERP holding the document. `erp-contract.md` asks for a structured itinerary endpoint;
