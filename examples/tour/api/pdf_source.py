@@ -34,6 +34,16 @@ MIN_TEXT_CHARS = 300
 CELL_SEPARATOR = " || "
 
 _CELL_GAP = re.compile(r"[ \t　]{3,}")
+# What a row of a table opens with: the label of a field, a day marker or a 参考航班 note. A
+# line that opens with one of them is a row and its gaps are its columns.
+_ROW_LABEL = re.compile(
+    r"^(?:用餐|住宿|餐饮|餐食|酒店|交通|住|餐|行|参考航班|DAY|D\d|第\s*[0-9０-９一二三四五六七八九十]{1,3}\s*天)",
+    re.IGNORECASE,
+)
+# A justified paragraph is printed with its words spread out to the margin, which leaves runs
+# of spaces inside a sentence (华尔   街铜牛). Past this many Chinese characters before the
+# first run, the line is prose being justified and not a row being ruled into columns.
+PROSE_CHARS = 30
 # Wingdings and the other private-use characters (U+E000–U+F8FF) a Word document draws: an
 # airplane (U+F051) between two place names, a bullet (U+F0B2) before an item. Between two
 # words the character separates them and reads as a dash; anywhere else it is decoration and
@@ -58,6 +68,12 @@ _LABEL = r"(?:住宿|用餐|餐饮|餐食|酒店|交通|住|餐|行)\s*[：:]"
 _LABEL_SPLIT = re.compile(r"\s+(?=" + _LABEL + ")")
 _LABELS = re.compile(_LABEL)
 _HEADER_ONLY = re.compile(r"^第\s*\d{1,2}\s*天$")
+# Where the itinerary stops and the terms begin. Past one of these headings the attachments'
+# numbered lists are the terms' own and never day headers.
+_TERMS_HEAD = re.compile(
+    r"^(?:服务所[包不]|费用[包不]|报价[包不]|包含项目|不包含项目|价格[包不]|自费|另行付费|购物"
+    r"|预定须知|报名注意事项|旅行团须知|旅游注意事项|旅游补充协议|补充协议|附录)"
+)
 # What a day title is: the A-B-C route of the day, short and with no sentence in it. Anything
 # else beside a day number is the programme paragraph the number was printed against.
 _NOT_A_TITLE = re.compile(
@@ -129,13 +145,24 @@ def strip_private_use(line: str) -> str:
     return _PRIVATE.sub("", _PRIVATE_BETWEEN.sub("-", line))
 
 
+def _cells(line: str) -> str:
+    """One line with its column gaps as cells. A line that opens with no label and runs past
+    ``PROSE_CHARS`` Chinese characters before its first gap is a justified paragraph, not a
+    row: its gaps are the printing spreading a sentence to the margin, and they read as one
+    space — a cell boundary there cuts a word in two (华尔 || 街铜牛)."""
+    gap = _CELL_GAP.search(line)
+    if gap is None:
+        return line
+    if not _ROW_LABEL.match(line.lstrip()) and len(_CJK.findall(line[: gap.start()])) > PROSE_CHARS:
+        return _CELL_GAP.sub(" ", line)
+    return _CELL_GAP.sub(CELL_SEPARATOR, line)
+
+
 def normalise_lines(raw: list[str]) -> list[str]:
     """Layout text as document lines: column gaps as cells, dashes as one dash, the private-use
     characters read, the .pdf day headers rewritten, blank lines dropped."""
     lines = [
-        _CELL_GAP.sub(
-            CELL_SEPARATOR, _DASHES.sub("-", _date_stamp(strip_private_use(line)).strip())
-        ).strip()
+        _cells(_DASHES.sub("-", _date_stamp(strip_private_use(line)).strip())).strip()
         for line in raw
         if line.strip()
     ]
@@ -149,6 +176,7 @@ def normalise_lines(raw: list[str]) -> list[str]:
     out: list[str] = []
     day_count = 0
     bare_next = 1
+    terms = False
     skip = 0
     anchor = 0
     for index, line in enumerate(lines):
@@ -197,11 +225,18 @@ def normalise_lines(raw: list[str]) -> list[str]:
             day_count += 1
             out.append(f"DAY-{day_count} {title}")
             continue
+        if _TERMS_HEAD.match(re.sub(r"\s+", "", line)) and len(re.sub(r"\s+", "", line)) <= 20:
+            terms = True
         bare = _BARE_NUMBER.match(line)
-        if bare is not None and int(bare[1]) == bare_next:
+        if bare is not None and not terms and int(bare[1]) == bare_next:
+            # A bare number is a day only in the itinerary: under 服务所不含项目 the same shape
+            # is the numbering of the terms (1 / 2 / 3), and a day header there would swallow
+            # the rest of the document.
             title = (bare[2] or "").strip()
             following = lines[index + 1] if index + 1 < len(lines) else ""
-            if (title and _CJK.search(title)) or _DAY_FOLLOWERS.match(following):
+            if (title and _CJK.search(title) and _title_like(title)) or _DAY_FOLLOWERS.match(
+                following
+            ):
                 bare_next += 1
                 out.append(f"第{bare[1]}天 {title}".strip())
                 continue

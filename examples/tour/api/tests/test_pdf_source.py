@@ -186,3 +186,34 @@ def test_a_private_use_character_between_two_names_is_a_separator():
         "上海-米兰-310KM-佛罗伦萨"
     )
     assert normalise_lines([" 全程国际连锁四星酒店"])[0] == "全程国际连锁四星酒店"
+
+
+def test_a_justified_prose_line_keeps_its_words_whole():
+    """A page that spreads a paragraph to the margin leaves runs of spaces inside the
+    sentence; they are the printing and not a column, so the words stay whole (华尔街, not
+    华尔 || 街)."""
+    prose = (
+        "早餐后前往华尔街金融区，这里是纽约乃至全球的金融中心，街口的铜牛雕像是游客必到的"
+        "打卡点，我们在此停留拍照，随后步行前往   华尔   街铜牛与自由女神像观景平台。"
+    )
+    assert "||" not in normalise_lines([prose])[0]
+    assert "华尔街铜牛" in normalise_lines([prose])[0].replace(" ", "")
+    # A row that opens with a label is a row however long it runs.
+    assert normalise_lines(["用餐   早：酒店内   中：自理   晚：当地餐"])[0].count("||") == 3
+
+
+def test_a_numbered_line_under_the_terms_is_no_day_header():
+    """``1 / 2 / 3`` under 服务所不含项目 is the numbering of the terms; a day header there
+    would swallow the rest of the document."""
+    lines = normalise_lines(
+        [
+            "     1",
+            "用餐   早：自理",
+            "游览老城。",
+            "服 务 所 不 含 项 目",
+            "     2   护照费用",
+            "     3   个人消费",
+        ]
+    )
+    assert lines[0] == "第1天"
+    assert lines[-2:] == ["2 || 护照费用", "3 || 个人消费"]
