@@ -34,17 +34,36 @@ MIN_TEXT_CHARS = 300
 CELL_SEPARATOR = " || "
 
 _CELL_GAP = re.compile(r"[ \t　]{3,}")
+# Wingdings and the other private-use characters (U+E000–U+F8FF) a Word document draws: an
+# airplane (U+F051) between two place names, a bullet (U+F0B2) before an item. Between two
+# words the character separates them and reads as a dash; anywhere else it is decoration and
+# goes, because a private-use character has no glyph outside Word and reaches an advisor as a
+# blank box. Both layouts go through here (``itinerary_source.document_lines`` calls it for a
+# .docx), so a line is clean wherever it was read.
+_PRIVATE_BETWEEN = re.compile(r"(?<=[^\W_])[-]+(?=[^\W_])")
+_PRIVATE = re.compile(r"[-]")
+_DATE_STAMP = re.compile(
+    r"(?<=[一-鿿])(?:1[0-2]|[1-9])\.(?:3[01]|[12]\d|[1-9])"
+    r"(?=[一-鿿])(?!(?:小时|分钟|公里|千米|米|元|万|个|天|晚|度|星|钻|人|倍))"
+)
 _CJK = re.compile(r"[一-鿿]")
 _DAY_NO_NUMBER = re.compile(r"^DAY(?:\s*\|\|)?\s+(?!\d)(.*)$", re.IGNORECASE)
 _BARE_NUMBER = re.compile(r"^(\d{1,2})(?:\s*\|\|\s*(\S.*))?$")
 _DAY_FOLLOWERS = re.compile(r"^(?:用餐|住宿|餐饮|餐食|交通|早餐|早[：:])")
 _DAY_CN = re.compile(r"^(第\s*\d{1,2}\s*天)\s*(?:\|\|)?\s*(.*)$")
-_FIELD_CELL = re.compile(r"^(?:用餐|住宿|餐饮|餐食|酒店|交通)[：:]")
+_FIELD_CELL = re.compile(r"^(?:用餐|住宿|餐饮|餐食|酒店|交通)\s*[：:]")
 _DASHES = re.compile(r"[⸺—–]+")
-_LABEL = r"(?:住宿|用餐|餐饮|餐食|酒店|交通|住|餐|行)[：:]"
+# ``餐饮 ：`` — a space between the label and its colon — is the label all the same.
+_LABEL = r"(?:住宿|用餐|餐饮|餐食|酒店|交通|住|餐|行)\s*[：:]"
 _LABEL_SPLIT = re.compile(r"\s+(?=" + _LABEL + ")")
 _LABELS = re.compile(_LABEL)
 _HEADER_ONLY = re.compile(r"^第\s*\d{1,2}\s*天$")
+# What a day title is: the A-B-C route of the day, short and with no sentence in it. Anything
+# else beside a day number is the programme paragraph the number was printed against.
+_NOT_A_TITLE = re.compile(
+    r"[。！，、；]|\|\||^(?:早上|上午|中午|下午|晚上|晚间|参考航班|餐|住|行|酒店|交通)\s*[：:]"
+)
+_TITLE_CHARS = 40
 
 
 class ImageOnlyPdf(ValueError):
@@ -80,11 +99,43 @@ def pdf_lines(data: bytes, mode: str = "layout") -> list[str]:
     return normalise_lines(text.replace("\f", "\n").splitlines())
 
 
+def _title_like(line: str) -> bool:
+    """Whether a line could be a day's title rather than a line of its programme."""
+    text = line.strip()
+    return bool(text) and len(text) <= _TITLE_CHARS and not _NOT_A_TITLE.search(text)
+
+
+def _hoistable(out: list[str], anchor: int) -> bool:
+    """Whether the day that is starting can be moved back to where its block began. There has
+    to be a block; it must hold no day of its own already; and the 餐/住/行 row that opened it
+    must end a day rather than open one — an attachment that writes 用餐 and 住宿 under each
+    day header keeps its days where they are printed."""
+    if anchor < 2 or any(_DAY_CN.match(line) for line in out[anchor:]):
+        return False
+    return not any(_DAY_CN.match(line) for line in out[anchor - 2 : anchor])
+
+
+def _date_stamp(line: str) -> str:
+    """A page-edge 出发日期 stamp (9.23, 10.1) that ``-layout`` prints inside the sentence it
+    stands beside (特别安排❀佛罗9.23伦萨深度游). It is a stamp only between two Chinese
+    characters on a line of prose, and never a figure the sentence itself carries — 约1.5小时
+    and 4.5公里 keep their unit after them."""
+    return _DATE_STAMP.sub("", line) if len(_CJK.findall(line)) >= 20 else line
+
+
+def strip_private_use(line: str) -> str:
+    """One line with its private-use characters read: one standing between two words as a
+    dash, the rest dropped."""
+    return _PRIVATE.sub("", _PRIVATE_BETWEEN.sub("-", line))
+
+
 def normalise_lines(raw: list[str]) -> list[str]:
-    """Layout text as document lines: column gaps as cells, dashes as one dash, the .pdf day
-    headers rewritten, blank lines dropped."""
+    """Layout text as document lines: column gaps as cells, dashes as one dash, the private-use
+    characters read, the .pdf day headers rewritten, blank lines dropped."""
     lines = [
-        _CELL_GAP.sub(CELL_SEPARATOR, _DASHES.sub("-", line.strip())).strip()
+        _CELL_GAP.sub(
+            CELL_SEPARATOR, _DASHES.sub("-", _date_stamp(strip_private_use(line)).strip())
+        ).strip()
         for line in raw
         if line.strip()
     ]
@@ -99,6 +150,7 @@ def normalise_lines(raw: list[str]) -> list[str]:
     day_count = 0
     bare_next = 1
     skip = 0
+    anchor = 0
     for index, line in enumerate(lines):
         if skip:
             skip -= 1
@@ -153,5 +205,30 @@ def normalise_lines(raw: list[str]) -> list[str]:
                 bare_next += 1
                 out.append(f"第{bare[1]}天 {title}".strip())
                 continue
+        marked = _DAY_CN.match(line)
+        if marked is not None:
+            rest = marked[2].strip()
+            if rest and len(_LABELS.findall(rest)) >= 2:
+                # ``第 12 天 || 餐：/ || 住：温暖的家 || 行：飞机``: the day number printed in the
+                # same row as the day's fields. The marker is the header and the fields are the
+                # row under it, or the day is read as having neither.
+                out.extend([marked[1], rest])
+                anchor = len(out)
+                continue
+            if not _title_like(rest) and _hoistable(out, anchor):
+                # The day number printed against the middle of the right column's paragraph,
+                # or on a line of its own inside it. The paragraph above it is this day's too,
+                # so the header goes where the day began — after the 餐/住/行 row that closed
+                # the day before it — and takes that line as its title where one is printed
+                # there.
+                if anchor < len(out) and _title_like(out[anchor]):
+                    out[anchor] = f"{marked[1]} {out[anchor]}"
+                else:
+                    out.insert(anchor, marked[1])
+                if rest:
+                    out.append(rest)
+                continue
         out.append(line)
+        if len(_LABELS.findall(line)) >= 2 or _HEADER_ONLY.match(line):
+            anchor = len(out)
     return out

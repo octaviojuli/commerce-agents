@@ -34,7 +34,7 @@ from typing import Any
 import httpx
 
 from .erp_client import Itinerary, ItineraryDay
-from .pdf_source import PDF_MAGIC, PDF_TYPE, pdf_lines
+from .pdf_source import PDF_MAGIC, PDF_TYPE, pdf_lines, strip_private_use
 
 log = logging.getLogger(__name__)
 
@@ -70,11 +70,17 @@ _SECTION = re.compile(
     r"^(包含项目|不包含项目|费用包含|费用不含|预\s*定\s*须\s*知|服\s*务\s*所\s*包\s*含"
     r"|旅行团须知|另行付费|购物|自费|温馨提示|注意事项)"
 )
+# A 温馨提示 or 注意事项 is a note inside a day as often as the head of the terms: a .pdf
+# reading writes one on a line of its own in the middle of the itinerary. It ends the days
+# only where no day header follows it; the 费用/包含 family ends them wherever it stands.
+_SOFT_SECTIONS = ("温馨提示", "注意事项")
 # The 住宿 and 用餐 labels of the .docx rows, and the 酒店：/餐食：/住：/餐： of the .pdf ones.
-_HOTEL = re.compile(r"^(?:住宿[：:\s]*|(?:酒店|住)[：:]\s*)")
-_MEALS = re.compile(r"^(?:用餐[：:\s]*|(?:餐饮|餐食|餐)[：:]\s*)")
+# A label is written with a space between it and its colon as often as without (``餐饮 ：早餐：
+# 酒店内``), and is the same label either way.
+_HOTEL = re.compile(r"^(?:住宿[：:\s]*|(?:酒店|住)\s*[：:]\s*)")
+_MEALS = re.compile(r"^(?:用餐[：:\s]*|(?:餐饮|餐食|餐)\s*[：:]\s*)")
 # The 内陆交通 the first layout writes into the 住宿 row; it is not the night's hotel.
-_TRANSPORT = re.compile(r"^交通[：:]")
+_TRANSPORT = re.compile(r"^交通\s*[：:]")
 _SPACES = re.compile(r"[ \t　]+")
 
 _CN_DIGITS = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
@@ -133,7 +139,7 @@ def document_lines(data: bytes) -> list[str]:
             lines.append(_text_of(node))
         elif node.tag == f"{_W}tbl":
             lines.extend(_row_line(row) for row in node.findall(f"{_W}tr"))
-    return [_SPACES.sub(" ", line).strip() for line in lines]
+    return [_SPACES.sub(" ", strip_private_use(line)).strip() for line in lines]
 
 
 def _header(line: str, chinese: bool) -> tuple[int, str] | None:
@@ -214,8 +220,9 @@ def split_days(lines: list[str]) -> list[ItineraryDay]:
     reading. The 住宿 and 用餐 lines of a day become its two fields and are not repeated in its
     text."""
     chinese = any(_header(line, True) for line in lines)
+    last = max((i for i, line in enumerate(lines) if _header(line, chinese)), default=-1)
     days: list[_Day] = []
-    for line in lines:
+    for index, line in enumerate(lines):
         if not line:
             continue
         found = _header(line, chinese)
@@ -223,7 +230,9 @@ def split_days(lines: list[str]) -> list[ItineraryDay]:
             days.append(_Day(found[0], *_title_and_flight(found[1])))
         elif not days:
             continue
-        elif _SECTION.match(line):
+        elif _SECTION.match(line) and not (
+            index < last and _SPACES.sub("", line).startswith(_SOFT_SECTIONS)
+        ):
             break
         else:
             days[-1].add(line)
