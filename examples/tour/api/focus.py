@@ -26,7 +26,7 @@ from commerce_common.presentation import (
 )
 from shopping_agent import Product
 
-from .catalog import FILTERS
+from .catalog import FILTERS, OTHER
 
 MAX_ANCHORS = 3
 # The advisor's foothold: above this many matches, the card carries no results at all.
@@ -76,6 +76,8 @@ class FocusCard(BaseModel):
     dimension: str
     groups: list[FocusGroup]
     anchors: list[Product]
+    # What the customer already said, shown locked above the question (欧洲 · 国庆 · 4 人).
+    stated: list[str] = Field(default_factory=list)
 
 
 _INPUT_SCHEMA: dict[str, Any] = {
@@ -95,7 +97,11 @@ def _groups(overview: Any) -> list[FocusGroup]:
     for label, counts in overview.groups.items():
         key = overview.FILTERS.get(label, "")
         values = [
-            FocusValue(value=value, count=count, ask=f"只看{label}：{value}" if key else None)
+            FocusValue(
+                value=value,
+                count=count,
+                ask=f"只看{label}：{value}" if key and value != OTHER else None,
+            )
             for value, count in counts
         ]
         if values:
@@ -141,9 +147,10 @@ async def _enrich(payload: FocusPayload, context: EnrichmentContext) -> dict[str
         question=payload.question,
         total=overview.total,
         shown=overview.shown,
-        dimension=_dimension(payload.dimension, groups),
+        dimension=getattr(overview, "dimension", "") or _dimension(payload.dimension, groups),
         groups=groups,
         anchors=anchors,
+        stated=list(getattr(overview, "stated", ()) or ()),
     )
     # The card is the question the conversation asked: the next search is the answer, and
     # the results it shows are presented — so are the footholds this card carries.

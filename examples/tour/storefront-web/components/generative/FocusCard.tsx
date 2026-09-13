@@ -84,7 +84,20 @@ export default function FocusCard({ payload }: { payload: FocusPayload }) {
   return (
     <section className="tg-card ac-reveal p-5">
       <div className="tg-label">共 {payload.total} 条线路符合 · 先缩小范围</div>
-      <h3 className="mt-1 text-[17px] font-semibold tracking-[-0.01em] text-(--ink)">
+      {payload.stated?.length ? (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <span className="tg-label">已知</span>
+          {payload.stated.map((fact) => (
+            <span
+              key={fact}
+              className="rounded-full border border-(--line) bg-(--well) px-2.5 py-0.5 text-[12.5px] text-(--ink-2)"
+            >
+              {fact}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <h3 className="mt-2 text-[17px] font-semibold tracking-[-0.01em] text-(--ink)">
         {payload.question}
       </h3>
 

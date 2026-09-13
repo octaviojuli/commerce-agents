@@ -142,6 +142,8 @@ export interface FocusPayload {
   question: string;
   total: number;
   shown: number;
+  /** What the customer already said, locked above the question: `欧洲 · 国庆 10/01–10/07 · 4 人`. */
+  stated?: string[];
   dimension: string;
   groups: { label: string; filter: string; values: { value: string; count: number; ask?: string }[] }[];
   anchors: Product[];

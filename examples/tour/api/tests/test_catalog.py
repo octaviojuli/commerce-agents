@@ -279,8 +279,10 @@ def test_a_line_with_no_document_is_not_in_the_catalog(catalog):
 def test_a_destination_is_matched_on_every_name_the_document_carries(catalog):
     assert ids(catalog.match(ask(text="斯里兰卡"))) == [202, 203, 201, 204]
     assert ids(catalog.match(ask(text="德法意瑞"))) == [301]
-    assert ids(catalog.match(ask(text="巴黎"))) == [301]  # a place its days pass through
-    assert ids(catalog.match(ask(text="卢浮宫"))) == [301]  # a sight it names
+    # A place its days pass through or a sight it names is read only once no line is filed
+    # under the word, so a wide word never reaches a line's prose (see the scope test).
+    assert ids(catalog.match(ask(text="巴黎"))) == [301]
+    assert ids(catalog.match(ask(text="卢浮宫"))) == [301]
     assert ids(catalog.match(ask(text="欧洲部"))) == [301, 302]  # the department that sells it
     # A destination written as several places has to be carried in full.
     assert ids(catalog.match(ask(text="德国·瑞士"))) == [301]
@@ -388,3 +390,74 @@ def test_a_choice_of_trips_is_not_ambiguous(catalog):
     assert not catalog.ambiguous(catalog.match(ask(days_min=11, days_max=12)))
     # One line is nobody's question.
     assert not catalog.ambiguous(catalog.match(ask(text="德法意瑞")))
+
+
+# -- the question a wide request goes back as -------------------------------------------
+
+
+def _wide_request(**kwargs):
+    return ask(**kwargs)
+
+
+def test_a_scope_is_read_off_the_lines_filing_and_never_off_their_prose(catalog):
+    """欧洲 is the departments and 线路系 that sell it: a line filed under 斯里兰卡 whose sights
+    or cover mention 欧洲 is not on a 欧洲 shortlist, and a 线路 filed under 欧洲部 is."""
+    from tour.api.catalog import SCOPES, Scope
+
+    europe = SCOPES["欧洲"]
+    assert isinstance(europe, Scope)
+    inside = [facts.route_id for facts in catalog.all() if europe.holds(facts)]
+    assert 301 in inside and 302 in inside and not {201, 202, 203, 204} & set(inside)
+    assert ids(catalog.match(ask(text="欧洲"))) == [301, 302]
+
+
+def test_the_question_locks_what_was_stated_and_asks_one_dimension(catalog):
+    from tour.api.catalog import OTHER, question_of, stated_of
+
+    matches = catalog.match(ask())
+    # Nothing stated: the first dimension that splits the set is asked, with the next as a row.
+    asked = question_of(catalog, matches, stated_of(ask()))
+    assert asked.dimension == "目的地" and list(asked.groups) == ["目的地", "天数"]
+    assert all(value != OTHER for value, _ in asked.groups["目的地"])
+    # A 线路系 tapped and a length stated are locked: neither is asked, and the card says them.
+    request = ask(regions=("斯里兰卡",), days_min=7, days_max=7, party=3)
+    stated = stated_of(request, "10/01–10/07")
+    assert stated.labels == ("斯里兰卡", "10/01–10/07", "7 天", "3 人")
+    assert {"目的地", "出发月份", "天数"} <= stated.dimensions
+    narrowed = question_of(catalog, catalog.match(request), stated)
+    assert narrowed.dimension not in stated.dimensions
+    # A wide word is said back but leaves the 线路系 inside it open to ask.
+    wide = stated_of(ask(text="斯里兰卡"))
+    assert wide.labels == ("斯里兰卡",) and "目的地" not in wide.dimensions
+
+
+def test_the_months_reopen_only_when_nothing_runs_in_the_stated_dates(catalog):
+    from datetime import date
+
+    from tour.api.catalog import question_of, stated_of
+
+    matches = catalog.match(ask(text="斯里兰卡"))
+    months = {facts.route_id: [date(2026, 11, 5), date(2026, 12, 2)] for facts in matches}
+    stated = stated_of(ask(text="斯里兰卡"), "10/01–10/07")
+    closed = question_of(catalog, matches, stated, months, year=2026)
+    assert "出发月份" not in closed.groups
+    reopened = question_of(catalog, matches, stated, months, year=2026, nearest_months=True)
+    assert reopened.dimension == "出发月份"
+    assert reopened.groups["出发月份"] == [("11月", 4), ("12月", 4)]
+
+
+def test_a_long_dimension_folds_and_days_become_bands():
+    from tour.api.catalog import OTHER, PRIMARY_VALUES, band_span, day_band
+
+    assert [day_band(d) for d in (5, 7, 8, 10, 11, 13, 14, 30)] == [
+        "7 天以内",
+        "7 天以内",
+        "8–10 天",
+        "8–10 天",
+        "11–13 天",
+        "11–13 天",
+        "14 天以上",
+        "14 天以上",
+    ]
+    assert band_span("8–10 天") == (8, 10) and band_span("14 天以上") == (14, None)
+    assert PRIMARY_VALUES == 8 and OTHER == "其他"

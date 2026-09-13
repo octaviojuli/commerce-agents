@@ -76,8 +76,9 @@ async def test_the_card_carries_the_catalogs_groups_as_chips(executor, backend, 
     assert places["filter"] == "region/destination"
     assert places["values"][0] == {"value": "伊犁", "count": 4, "ask": "只看目的地：伊犁"}
     assert {"value": "南疆", "count": 1, "ask": "只看目的地：南疆"} in places["values"]
-    hotels = next(g for g in card["groups"] if g["label"] == "酒店标准")
-    assert hotels["filter"] == "hotel_level"
+    # One question is at most two rows: the dimension asked and the next one down.
+    assert [g["label"] for g in card["groups"]][0] == "目的地" and len(card["groups"]) <= 2
+    assert card["stated"][0] == "新疆" and "2 人" in card["stated"]
     assert card["anchors"] == []
 
 
@@ -89,8 +90,8 @@ async def test_a_dimension_that_does_not_split_the_set_is_replaced(executor):
         "present_focus", {"question": "先按预算？", "dimension": "起价"}
     )
     card = _ui(result)["payload"]
-    prices = next(g for g in card["groups"] if g["label"] == "起价")
-    assert len(prices["values"]) == 1 and card["dimension"] == "目的地"
+    assert card["dimension"] == "目的地"
+    assert all(g["label"] != "起价" for g in card["groups"])
 
 
 async def test_footholds_come_from_provenance_and_only_on_a_modest_match(

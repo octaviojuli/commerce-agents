@@ -397,7 +397,12 @@ Single prompts worth trying after those turns:
   shortlist, one that matched a handful of versions of one trip, or one that matched nothing
   at all leaves an overview on the backend; the model writes one narrowing question and names
   the dimension (目的地, 天数, 出发城市, 出发月份, 酒店标准, 纯玩, 特色, 起价), and the card's
-  chips are that overview's groups with their counts. A tap holds a chip rather than sending it —
+  chips are the one question the overview chose — the first dimension the customer has not
+  answered that splits the set, in the order 目的地, 出发月份, 天数, 出发城市, 酒店标准, 纯玩,
+  特色, 起价 — as up to eight values plus 其他, with the next dimension as a second row; what
+  the customer already said stands locked above the question (`stated`) and is never asked
+  again. A destination such as 欧洲 is a scope read off the departments and 线路系 that sell
+  it, never off a line's prose. A tap holds a chip rather than sending it —
   several in a group and across groups — and the bar under the rows sends the whole pick as one
   `只看 <维度>：<值>、<值>；<维度>：<值>` in the advisor's own words, or 不限条件 for the lines as
   they stand. Up to three results may stand on the card as a
