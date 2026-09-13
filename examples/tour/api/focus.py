@@ -15,6 +15,7 @@ search fits a shortlist and the answer is cards."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -29,6 +30,9 @@ from shopping_agent import Product
 from .catalog import FILTERS, OTHER
 
 MAX_ANCHORS = 3
+# How many chips a card may offer already held. More than a couple and the question is
+# answered before it is asked.
+MAX_PRESELECT = 3
 # The advisor's foothold: above this many matches, the card carries no results at all.
 ANCHORS_UP_TO = 12
 # The dimensions the catalog groups on, which are the chips the card offers (``catalog.py``).
@@ -49,15 +53,20 @@ class FocusPayload(BaseModel):
     question: str = Field(min_length=1, max_length=80)
     dimension: str | None = None
     picks: list[str] = Field(default_factory=list, max_length=MAX_ANCHORS)
+    # The chips to offer already held, which is how a habit on file about the advisor reaches
+    # a search: not as a filter the customer never asked for, but as a tap they can undo.
+    preselect: list[str] = Field(default_factory=list, max_length=MAX_PRESELECT)
 
 
 class FocusValue(BaseModel):
     """One chip: the group's value, how many 线路 it holds, and the words the workbench sends
-    when it is chosen; a group with no filter behind it has no ``ask``."""
+    when it is chosen; a group with no filter behind it has no ``ask``. ``selected`` is a chip
+    the card offers already held — the advisor's own habit, theirs to confirm or drop."""
 
     value: str
     count: int
     ask: str | None = None
+    selected: bool = False
 
 
 class FocusGroup(BaseModel):
@@ -86,13 +95,19 @@ _INPUT_SCHEMA: dict[str, Any] = {
         "question": {"type": "string", "minLength": 1, "maxLength": 80},
         "dimension": {"type": "string", "enum": list(DIMENSIONS)},
         "picks": {"type": "array", "items": {"type": "string"}, "maxItems": MAX_ANCHORS},
+        "preselect": {
+            "type": "array",
+            "items": {"type": "string"},
+            "maxItems": MAX_PRESELECT,
+        },
     },
     "required": ["question"],
     "additionalProperties": False,
 }
 
 
-def _groups(overview: Any) -> list[FocusGroup]:
+def _groups(overview: Any, preselect: Sequence[str] = ()) -> list[FocusGroup]:
+    held = {value.strip() for value in preselect if value.strip()}
     groups: list[FocusGroup] = []
     for label, counts in overview.groups.items():
         key = overview.FILTERS.get(label, "")
@@ -101,6 +116,7 @@ def _groups(overview: Any) -> list[FocusGroup]:
                 value=value,
                 count=count,
                 ask=f"只看{label}：{value}" if key and value != OTHER else None,
+                selected=bool(key) and value != OTHER and value in held,
             )
             for value, count in counts
         ]
@@ -142,7 +158,7 @@ async def _enrich(payload: FocusPayload, context: EnrichmentContext) -> dict[str
     if anchors and overview.total > ANCHORS_UP_TO:
         context.notes.append(f"{_ANCHORS_DROPPED}{'、'.join(p.product_id for p in anchors)}。")
         anchors = []
-    groups = _groups(overview)
+    groups = _groups(overview, payload.preselect)
     card = FocusCard(
         question=payload.question,
         total=overview.total,
@@ -171,7 +187,10 @@ def build_focus_extension() -> PresentationExtension:
             "a shortlist can show (the search result carries a 目录概览 block). Write the "
             "question and name the dimension it asks about (线路系, 出发城市, 天数, 起价); the "
             "card fills in the groups and their counts as chips the advisor taps, which come "
-            "back as 只看<维度>：<值>. Between 7 and 12 matches, up to three result ids may "
+            "back as 只看<维度>：<值>. A habit on file about the advisor — their customers "
+            "usually leave from 上海, they lean towards 纯玩 — is never a search filter; name "
+            "its chip values in preselect instead and the card offers them already held, for "
+            "the advisor to confirm or drop. Between 7 and 12 matches, up to three result ids may "
             "stand on the card as picks; above 12, none. Not for a search that fits, and not "
             "twice in a row."
         ),

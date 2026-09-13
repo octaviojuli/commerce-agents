@@ -85,3 +85,26 @@ def test_the_agents_memory_runs_under_the_advisors_prompt_and_filter(main):
     for key, value in PLAN_CARD:
         with pytest.raises(MemoryWriteRejected):
             runtime.validate(key, value, "context", source_session_id="s1")
+
+
+def test_one_searchs_narrowing_is_not_a_habit():
+    """A 聚焦卡 chip sends 只看目的地：德法意瑞 as the advisor's own words, and a model reading
+    the turn back writes it as a standing rule; every later customer would then be narrowed to
+    that 线路系. The same for a leaning written as a demand: the workbench applies a habit by
+    ordering and pre-selecting, so a fact that reads as a condition would be applied as one."""
+    refused = advisor_write_filter()
+    for key, value in (
+        ("destination_area", "该顾问查看/筛选产品时，目的地固定在“德法意瑞”这条线"),
+        ("product_scope_rule", "该顾问筛选欧洲线路时，只按“线路系”这一类来分组/查看"),
+        ("pure_play_rule", "该顾问要求纯玩产品"),
+        ("hotel_rule", "该顾问必须五钻酒店"),
+        ("this_one", "本次客人只看 12 天的线"),
+    ):
+        assert refused.rejects(key, value), (key, value)
+    # A leaning is kept, worded as one.
+    for key, value in (
+        ("departure_city", "该顾问的客人多从上海出发"),
+        ("quote_layout", "该顾问报价按人均列，不含单房差"),
+        ("itinerary_view", "该顾问习惯先看逐日行程再谈价"),
+    ):
+        assert not refused.rejects(key, value), (key, value)
