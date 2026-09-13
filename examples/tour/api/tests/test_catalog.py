@@ -461,3 +461,19 @@ def test_a_long_dimension_folds_and_days_become_bands():
     ]
     assert band_span("8–10 天") == (8, 10) and band_span("14 天以上") == (14, None)
     assert PRIMARY_VALUES == 8 and OTHER == "其他"
+
+
+def test_a_department_answers_a_scope_only_when_the_document_says_nothing(catalog):
+    """欧洲部-上海 sells a 南美 line and a 美东 line, so a scope read off the department put
+    both on a 欧洲 shortlist. Where a document names a 线路系 or a country, that is the
+    answer; the department speaks only for a parse that named neither."""
+    from dataclasses import replace
+
+    from tour.api.catalog import SCOPES
+
+    europe = SCOPES["欧洲"]
+    line = next(facts for facts in catalog.all() if facts.region)
+    south = replace(line, region="南美六国", countries=("巴西", "阿根廷"), department="欧洲部-上海")
+    assert not europe.holds(south)
+    thin = replace(line, region="", countries=(), department="欧洲部-上海")
+    assert europe.holds(thin)

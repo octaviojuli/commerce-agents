@@ -165,7 +165,7 @@ def test_layout_one_reads_flights_places_sights_meals_hotels_and_terms():
     )
     assert doc.notices[0] == "旅行团须知"
     assert doc.quality.completeness == 1.0 and doc.quality.needs_review == []
-    assert doc.source.parser == "docx-rules-3/docx" and doc.source.bytes == len(LAYOUT_ONE)
+    assert doc.source.parser == "docx-rules-4/docx" and doc.source.bytes == len(LAYOUT_ONE)
 
 
 def test_layout_two_reads_inline_cover_km_figures_and_the_overview_fallback():
@@ -618,3 +618,163 @@ def test_a_hotel_row_that_writes_its_grade_after_the_names():
         ("康提歌舞表演", "赠送"),
         ("观鲸", "赠送"),
     ]
+
+
+# The lines the fourth review round found the rules reading wrong: a country word inside a
+# longer place name, a 自由活动 parenthesis on a street, a 自由活动 in the middle of a
+# sentence, an upgraded meal written as a 【】, a stop the day numbers instead of bracketing,
+# a 首道门票 list spelling a cathedral its own way, the cover's markers and its 特别赠送 label,
+# a meal the customer buys themselves, and the carrier the cover names in full.
+ROUND_FOUR = docx(
+    paragraph("产品特色"),
+    paragraph("行 优选五星中国海南航空，上海往返直飞"),
+    paragraph("吃 中式六菜一汤，特别升级1顿&lt;土耳其烤肉卷&gt;"),
+    paragraph("行程亮点"),
+    paragraph("/ 打卡北英格兰古都约克"),
+    paragraph("特别赠送"),
+    paragraph("❀ 都柏林城堡入境纪念章（每人限盖一次）"),
+    table(
+        [
+            ["第 1 天 上海-都柏林 参考航班：HU7921 PVGDUB 01:35-07:30"],
+            ["餐饮：早餐：X 午餐：推荐自由就餐 晚餐：敬请自理"],
+            ["住宿", "都柏林精选酒店 4星", "交通：飞机"],
+            [
+                "抵达后前往【奥斯曼大道】（自由活动时间不少于2小时），这里是购物血拼的天堂，"
+                "汇聚着著名的老佛爷百货公司。【老佛爷百货】。【玫瑰公园】（自由活动约30分钟）。"
+                "之后玻璃金字塔广场自由活动。"
+            ],
+            ["第 2 天 都柏林-40KM-高威"],
+            ["餐饮：早餐：酒店内 午餐：自由用餐 晚餐：X"],
+            ["住宿", "", "交通：旅游用车"],
+            [
+                [
+                    "上午自由活动。",
+                    "1. 吉布拉法罗城堡+阿尔卡萨巴，位于山顶的摩尔式城堡，可俯瞰全城。",
+                    "游览【塞维利亚大教堂】，随后【阿尔卡萨巴城堡 含门票】。"
+                    "特别安排❀【墨鱼面】。漫步瓦杜兹商业街自由活动。",
+                ]
+            ],
+            ["第 3 天 高威-上海"],
+            ["餐饮：早餐：打包 午餐：X 晚餐：X"],
+            ["住宿", "无", "交通：飞机"],
+        ]
+    ),
+    paragraph("包含项目"),
+    paragraph("所含景点首道门票（其余景点均为外观）：塞维利亚主教堂（含官导*）、王宫"),
+    paragraph("不包含项目"),
+    paragraph("单人间房差：7000元/间;因自身原因中途退出的，所交费用不退"),
+    paragraph("境外司机导游服务费共计1000元如遇不可抗力产生的额外费用由客人自理"),
+    paragraph("自费项目"),
+    paragraph("罗卡角风车小镇 || 60欧元/人 || 含车费"),
+    paragraph("如遇天气或宗教活动 || 该项目可能取消"),
+    paragraph("四 旅游注意事项"),
+    paragraph("中国驻爱尔兰大使馆 || 地址：都柏林 || 电话：0000"),
+)
+
+
+def test_a_country_word_inside_a_longer_place_name_is_no_country_of_the_line():
+    """``都柏林`` names 爱尔兰 and never 德国: a place word counts at a boundary and not
+    inside a longer name. The cover's 吃 row names a dish (土耳其烤肉卷) and no country."""
+    doc = parse_route(record(3, "爱尔兰全景10天"), ROUND_FOUR)
+    assert doc.summary.countries == ["爱尔兰"]
+    assert doc.summary.region == "英爱"
+
+
+def test_the_region_answers_for_the_countries_the_document_read():
+    """The ERP's auto tags file a line under another line's 线路系; where the name's own
+    reading contradicts the countries, the countries settle it."""
+    doc = parse_route(record(3, "伊比利亚狂曲 西葡深度"), ROUND_FOUR)
+    assert doc.summary.countries == ["爱尔兰"]
+    assert doc.summary.region == "爱尔兰"
+    # A name that says nothing keeps the 线路系 its countries name.
+    assert parse_route(record(3, "海岛假期"), ROUND_FOUR).summary.region == "爱尔兰"
+
+
+def test_a_自由活动_parenthesis_on_a_street_names_the_whole_stop():
+    """``【奥斯曼大道】（自由活动时间不少于2小时）`` is a 自由活动 whatever the sentence says
+    about the shops along it; the 购物店 is the 【老佛爷百货】 written beside it. On a park the
+    same parenthesis is a duration and leaves the kind alone."""
+    doc = parse_route(record(3, "爱尔兰全景10天"), ROUND_FOUR)
+    kinds = {s.name: (s.kind, s.duration) for s in doc.days[0].sights}
+    assert kinds["奥斯曼大道"] == ("自由活动", "2小时")
+    assert kinds["老佛爷百货"][0] == "购物"
+    assert kinds["玫瑰公园"] == ("景点", "30分钟")
+    assert all(s.name != "奥斯曼大道" for s in doc.shopping)
+
+
+def test_a_自由活动_inside_a_sentence_is_no_entry_of_its_own():
+    """A day's 自由活动 is the one a clause states (上午自由活动); 之后玻璃金字塔广场自由活动
+    and 漫步瓦杜兹商业街自由活动 are what the group does at a stop already read."""
+    doc = parse_route(record(3, "爱尔兰全景10天"), ROUND_FOUR)
+    d1, d2, _ = doc.days
+    assert [s.name for s in d1.sights if s.kind == "自由活动"] == ["奥斯曼大道"]
+    assert [s.name for s in d2.sights if s.kind == "自由活动"] == ["上午自由活动"]
+
+
+def test_an_upgraded_meal_and_a_numbered_stop_are_both_read():
+    """``特别安排❀【墨鱼面】`` is a gift and not a sight; ``1. 吉布拉法罗城堡+阿尔卡萨巴，…``
+    is a stop the day numbers instead of bracketing."""
+    doc = parse_route(record(3, "爱尔兰全景10天"), ROUND_FOUR)
+    kinds = {s.name: s.kind for s in doc.days[1].sights}
+    assert kinds["墨鱼面"] == "赠送"
+    assert kinds["吉布拉法罗城堡+阿尔卡萨巴"] == "景点"
+
+
+def test_the_首道门票_list_matches_a_name_spelled_another_way():
+    """塞维利亚主教堂 in the list and 塞维利亚大教堂 in the day are one sight; a stop the day
+    itself says 含门票 keeps its ticket though the list leaves it out."""
+    doc = parse_route(record(3, "爱尔兰全景10天"), ROUND_FOUR)
+    tickets = {s.name: s.ticket_included for s in doc.days[1].sights}
+    assert tickets["塞维利亚大教堂"] is True
+    assert tickets["阿尔卡萨巴城堡"] is True
+
+
+def test_a_meal_the_customer_buys_is_not_included():
+    doc = parse_route(record(3, "爱尔兰全景10天"), ROUND_FOUR)
+    d1, d2, _ = doc.days
+    assert d1.meals.lunch.included is False and d1.meals.lunch.text == "推荐自由就餐"
+    assert d1.meals.dinner.included is False and d2.meals.lunch.included is False
+    assert d2.meals.breakfast.included is True
+
+
+def test_the_cover_reads_its_markers_and_merges_a_特别赠送_label():
+    doc = parse_route(record(3, "爱尔兰全景10天"), ROUND_FOUR)
+    assert doc.cover.highlights == [
+        "打卡北英格兰古都约克",
+        "特别赠送：都柏林城堡入境纪念章（每人限盖一次）",
+    ]
+
+
+def test_the_carrier_is_the_name_the_cover_spells():
+    """``优选五星中国海南航空`` beside an HU flight is the agency's own spelling of 海南航空."""
+    doc = parse_route(record(3, "爱尔兰全景10天"), ROUND_FOUR)
+    assert doc.transport[0].carrier == "中国海南航空"
+
+
+def test_the_terms_keep_a_notice_table_out_of_the_自费_list():
+    """A 旅游注意事项 heading the attachment numbers is a heading; the 使领馆 table under it is
+    a notice. The 自费 section takes the row the attachment prices and leaves the rest."""
+    doc = parse_route(record(3, "爱尔兰全景10天"), ROUND_FOUR)
+    assert [(o.name, o.price) for o in doc.optional] == [("罗卡角风车小镇", "60欧元/人")]
+    assert any("大使馆" in notice for notice in doc.notices)
+    assert any("如遇天气或宗教活动" in notice for notice in doc.notices)
+
+
+def test_a_lost_bullet_does_not_run_two_terms_together():
+    doc = parse_route(record(3, "爱尔兰全景10天"), ROUND_FOUR)
+    assert doc.exclusions == [
+        "单人间房差：7000元/间",
+        "因自身原因中途退出的，所交费用不退",
+        "境外司机导游服务费共计1000元",
+        "如遇不可抗力产生的额外费用由客人自理",
+    ]
+    assert doc.policies.single_room == "单人间房差：7000元/间"
+
+
+def test_an_empty_住宿_row_takes_no_hotel_from_the_day_before():
+    """``住宿 ||  || 交通：旅游用车``: the day writes no hotel, so the night is unknown and the
+    hotel stays empty — never the one the day before named."""
+    doc = parse_route(record(3, "爱尔兰全景10天"), ROUND_FOUR)
+    d1, d2, _ = doc.days
+    assert d1.hotel is not None and d1.hotel.name == "都柏林精选酒店 4星"
+    assert d2.hotel is None and d2.overnight == "unknown"

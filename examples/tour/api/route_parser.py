@@ -49,7 +49,7 @@ from .route_doc import (
 )
 from .tags import normalize
 
-PARSER_VERSION = "docx-rules-3"
+PARSER_VERSION = "docx-rules-4"
 
 # ``MU6017``, also glued to its times (``MU601714:25-19:00``).
 _FLIGHT_NO = re.compile(r"\b([A-Z]{2}\d{2,4})(?:(?!\d)|(?=\d{1,2}:\d{2}))")
@@ -181,6 +181,9 @@ _GRADE = re.compile(r"([三四五3-5](?:\s*[-~至]\s*[三四五3-5])?)\s*([钻�
 _GRADE_TAIL = re.compile(r"\s*或[三四五3-5](?:\s*[-~至]\s*[三四五3-5])?\s*[钻星]级?(?:酒店)?\s*$")
 _MEAL_TRIPLE = re.compile(r"(早餐?|午餐|中餐?|晚餐?)\s*[：:]\s*")
 _NOT_INCLUDED = {"", "x", "×", "✕", "无", "自理", "不含", "-", "—", "/"}
+# A meal cell that says the customer feeds themselves, however the attachment words it:
+# 推荐自由就餐, 自由用餐, 敬请自理, 自行安排 are all 不含.
+_MEAL_SELF = re.compile(r"自理|自由就餐|自由用餐|自由觅食|自行(?:安排|解决|用餐|品尝)|^不含")
 _PRICE = re.compile(
     r"(\d+(?:\.\d+)?\s*(?:美金|美元|欧元|欧|英镑|镑|磅|元|RMB|USD|EUR|GBP)\s*(?:/\s*(?:人|位))?)"
 )
@@ -193,12 +196,19 @@ _REFUND = re.compile(r"退(?:门票|票款|费用)|直退|退还门票")
 # What tells a sentence from a name in a 另行付费 line with no columns.
 _SENTENCE_NAME = re.compile(r"[：:，。！]")
 _NUMBERED = re.compile(r"^\s*(?:\d+|[一二三四五六七八九十]+)\s*[、.．:：)]\s*")
+# Where a paragraph runs two items together because the bullet between them was lost: the
+# first closes on a price or a 单房差 charge and the second opens with 因/如/若.
+_LOST_BULLET = re.compile(r"(?<=元)\s*(?=[因如若])|(?<=[;；])\s*(?=[因如若])")
 _SECTION_HEAD = re.compile(
     r"^\s*(包含项目|不包含项目|费用包含|费用不含|费用不包含|服\s*务\s*所\s*包\s*含\s*项\s*目"
     r"|服\s*务\s*所\s*不\s*含\s*项\s*目|报价包含|报价不含|购物安排|购物说明|购物|自费项目|自费|另行付费项目"
     r"|另行付费|预\s*定\s*须\s*知|报\s*名\s*注\s*意\s*事\s*项|旅行团须知|温馨提示|注意事项|特别注意"
+    r"|旅游注意事项|旅游补充协议|补充协议|附录|使领馆|退税"
     r"|退改|取消|签证|[^，。]{0,4}(?:旅行须知|出行须知|行前须知))"
 )
+# A heading the attachments number (四 旅游注意事项, 3、购物安排): the numbering is not part of
+# the heading and is taken off before the line is matched.
+_HEADING_NUMBER = re.compile(r"^\s*(?:\d{1,2}|[一二三四五六七八九十]{1,3})\s*[、.．:：)]?\s*")
 # A heading that is a note inside a day as often as a section of the terms; it ends the
 # itinerary only where no day follows it.
 _SOFT_HEADS = ("温馨提示", "注意事项", "特别提醒", "特别注意", "贴心提示", "特别说明")
@@ -271,11 +281,22 @@ _FREE_PREFIX = re.compile(r"^(?:特别|独家|额外)?赠送(?:体验|游览|参
 _OPTIONAL_WORDS = ("自费",)
 # The head of a 自费 day: every 【】 after it is part of the package, not the tour.
 _OPTIONAL_ZONE = re.compile(r"参考行程如下|参考行程[：:]|推荐自费套餐|自费套餐")
+# A stop whose name says it is a street, a square or a market: a 自由活动 parenthesis on one of
+# them names the whole stop, because that is all the group does there.
+_LEISURE_PLACE = re.compile(r"(?:大道|大街|步行街|商业街|街|广场|市场|集市)$")
+# A 【】 that is a meal the 线路 upgrades (墨鱼面, 西班牙海鲜饭, 三道式火腿餐), which is a 赠送.
+_MEAL_UPGRADE = re.compile(r"(?:餐|面|披萨|比萨|牛排|海鲜饭|烤乳猪)$")
 _OUTSIDE_WORDS = ("外观", "远观", "车游", "远眺")
 # ``…【A】，【B】，【C】均为外观或车游``: the tail applies to every 【】 in the sentence.
 _ALL_OUTSIDE = re.compile(r"(?:均|皆|都|以上)[^【】。；;]{0,12}(?:外观|车游|远观|远眺)")
 _SENTENCE = re.compile(r"[^。；;！!\n/]+")
-_FREE_ACTIVITY = re.compile(r"(全天|一整天|整天|全日|上午|下午|晚上|晚间|傍晚)?\s*自由活动")
+# A clause of a day's programme: what a 自由活动 has to stand at the head of to be one of the
+# day's own entries. ``之后玻璃金字塔广场自由活动`` and ``漫步瓦杜兹商业街自由活动`` are the
+# last words of a clause about a 【】 that is already a sight, and name no entry of their own.
+_CLAUSE = re.compile(r"[^。；;！!\n/，,]+")
+_FREE_ACTIVITY = re.compile(
+    r"^\s*(?:(全天|一整天|整天|全日|上午|下午|晚上|晚间|傍晚|抵达后)\s*自由活动|自由活动\s*$)"
+)
 # A sentence the day does not do: the 温馨提示's alternative for a booking that does not come
 # through. Its 【】 is a place the group may see instead of the one above, so it is not a sight
 # of the day; the sentence stays in ``text``, where a reviewer reads it.
@@ -290,6 +311,20 @@ _PROSE_OUTSIDE = re.compile(
     r"[（(][^（）()]{0,8}(?:外观|车游)[^（）()]{0,8}[)）]\s*[：:]\s*([^。；;]+)"
 )
 _PROSE_NAME_MAX = 12
+# ``1. 吉布拉法罗城堡+阿尔卡萨巴，…``: a stop the day numbers instead of bracketing. The name is
+# the head of the line, short, with the description after the comma.
+_NUMBERED_SIGHT = re.compile(r"^\d{1,2}\s*[.、]\s*([^，,。；;：:|\n【】]{3,20})[，,]")
+# A numbered line that is a notice and not a stop: a 备注 the day ends on, and anything with a
+# 的 in its head, which describes rather than names.
+_NOT_A_LISTED_SIGHT = re.compile(
+    r"的|不|为|需|在|后|各|请|注意|提示|备注|费用|自理|保险|护照|签证|如遇|以上|以下|行程|项目"
+    r"|时间|我社|客人|团队|导游|司机|酒店|儿童|建议|须知|安排|自愿|属于|按照|提前|反复|进入|抵达|规定"
+)
+# Where a day stops describing its programme and starts reminding the customer of things.
+_DAY_NOTICE = re.compile(r"温馨提示|备注[：:]|注意事项|特别提醒|贴心提示|特别说明")
+# Where one line of a day's programme ends and the next begins: the paragraphs of a cell are
+# joined by ``/`` and the rows of a day by ``；``.
+_LINE_BREAK = re.compile(r"[；;\n]|\s/\s")
 # ``赠送观鲸``, ``特别赠送海边小火车``: a gift named in prose, with no 【】 around it.
 _GIFT_PROSE = re.compile(
     r"(?:特别|独家|额外)?赠送(?:体验|游览|参观|品尝)?\s*([^，。；;、！：:\s（()）【】]{2,12})"
@@ -319,7 +354,10 @@ _COVER_LABELS = {
     "hotel_standard": ("酒店标准", "酒店", "住", "住宿篇", "酒店篇"),
     "meal_standard": ("用餐安排", "用餐", "餐饮", "吃", "美食篇", "餐饮篇"),
 }
-_HIGHLIGHT_LABELS = ("行程亮点", "产品特色", "特别安排", "亮点")
+_HIGHLIGHT_LABELS = ("行程亮点", "产品特色", "特别安排", "特别赠送", "亮点")
+# A cover label that stays with what follows it: 特别赠送 alone on a line is the label of the
+# gift on the next, and the highlight the card shows is the two together.
+_MERGED_LABELS = ("特别赠送",)
 _HOME_WORDS = ("家", "无", "结束", "温馨的家")
 _FLIGHT_STAY = ("飞机上", "机上", "夜宿飞机")
 _SHIP_STAY = ("邮轮", "游轮", "船上", "夜船")
@@ -408,6 +446,55 @@ _COUNTRY_WORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("新西兰", ("新西兰", "奥克兰", "皇后镇", "基督城")),
 )
 _REGION_WORDS = ("东欧", "西欧", "中欧", "南欧", "北欧", "欧洲", "巴尔干")
+# A place whose name holds another place's: the longer one is the place, and the shorter is
+# no country of the itinerary.
+_LONGER_NAMES = ("都柏林", "新德里", "东柏林", "西柏林", "北爱尔兰", "新奥尔良", "新西兰")
+_CJK_CHAR = re.compile(r"[一-鿿]")
+# The 线路系 the trade files a walk under, as the countries it covers. ``summary.region`` has to
+# answer for the countries the document reads: a 西葡 line whose days name 英国 and 爱尔兰 is
+# filed wrong, and the table reads the 线路系 off the countries instead.
+_REGION_COUNTRIES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("西葡", ("西班牙", "葡萄牙")),
+    ("德法意瑞", ("德国", "法国", "意大利", "瑞士")),
+    ("法意瑞", ("法国", "意大利", "瑞士")),
+    ("法意", ("法国", "意大利")),
+    ("西欧多国", ("荷兰", "比利时", "卢森堡", "法国", "德国")),
+    ("德奥捷", ("德国", "奥地利", "捷克")),
+    ("英爱", ("英国", "爱尔兰")),
+    ("土希", ("土耳其", "希腊")),
+    ("北欧", ("挪威", "瑞典", "丹麦", "芬兰", "冰岛")),
+    (
+        "东欧巴尔干",
+        (
+            "捷克",
+            "匈牙利",
+            "斯洛伐克",
+            "波兰",
+            "克罗地亚",
+            "斯洛文尼亚",
+            "塞尔维亚",
+            "波黑",
+            "黑山",
+            "北马其顿",
+            "阿尔巴尼亚",
+            "罗马尼亚",
+            "保加利亚",
+        ),
+    ),
+    ("中东北非", ("摩洛哥", "埃及", "迪拜")),
+    ("东南亚", ("泰国", "新加坡", "马来西亚")),
+    ("澳新", ("澳大利亚", "新西兰")),
+    ("希腊", ("希腊",)),
+    ("土耳其", ("土耳其",)),
+    ("意大利一地", ("意大利",)),
+    ("法国一地", ("法国",)),
+    ("瑞士一地", ("瑞士",)),
+    ("德国一地", ("德国",)),
+    ("斯里兰卡", ("斯里兰卡", "马尔代夫")),
+    ("斯里兰卡", ("斯里兰卡",)),
+    ("马尔代夫", ("马尔代夫",)),
+    ("日本", ("日本",)),
+)
 
 
 def _nfkc(text: str) -> str:
@@ -417,7 +504,7 @@ def _nfkc(text: str) -> str:
 # -- flights ---------------------------------------------------------------------------------
 
 
-def _flights(text: str, day: int) -> list[Flight]:
+def _flights(text: str, day: int, airline: str = "") -> list[Flight]:
     """Every 参考航班 segment a day writes: the flight number, the route beside it and the
     times, each as written. A line with several segments (夏令时/冬令时 pairs, a connection)
     yields one per flight number. ``raw`` is the sentence as the attachment wrote it, the
@@ -455,7 +542,7 @@ def _flights(text: str, day: int) -> list[Flight]:
                 Flight(
                     day=day,
                     flight_no=number[1],
-                    carrier=_carrier(number[1]),
+                    carrier=_carrier(number[1], airline),
                     from_place=origin,
                     to_place=destination,
                     times=times,
@@ -536,8 +623,27 @@ _CARRIERS = {
 }
 
 
-def _carrier(flight_no: str) -> str:
-    return _CARRIERS.get(flight_no[:2], "")
+# The airline named in a cover row (优选五星海南航空, 搭乘中国海南航空), and the words the row
+# writes before the name, which are the agency's selling and not part of it.
+_COVER_CARRIER = re.compile(r"[一-鿿]{2,8}航空(?:公司)?")
+_CARRIER_LEAD = re.compile(
+    r"^(?:优选|精选|甄选|特选|搭乘|乘坐|全程|五星|四星|豪华|独家|超值|直飞)+"
+)
+
+
+def _carrier(flight_no: str, airline: str = "") -> str:
+    """The carrier of a flight number, as the table writes it in full, or as the cover
+    spells it where the cover names the same carrier: a cover writing 中国海南航空 beside a
+    HU flight is the agency's own spelling of 海南航空 and is what the card shows."""
+    full = _CARRIERS.get(flight_no[:2], "")
+    if not full or not airline:
+        return full
+    for found in _COVER_CARRIER.finditer(airline):
+        named = _CARRIER_LEAD.sub("", found[0]).strip()
+        core = named.removesuffix("公司")
+        if named and (core in full or full in core):
+            return named
+    return full
 
 
 # -- the day title ---------------------------------------------------------------------------
@@ -596,13 +702,14 @@ def _unglue(place: str) -> list[str]:
 _NOT_SIGHT = re.compile(
     r"^(?:约\s*\d|约\s*[一二三四五六七八九十半]|不少于|不低于|\d)|^(?:特别提醒|温馨提示|备注|注意|例如|如遇|以上|以下|特别说明"
     r"|重要提醒|今日特别安排|特别安排|贴心提示|特别提示|注[：:])|"
-    r"(?:餐|三道式)$"
+    r"^(?:早|午|中|晚|正|用|含)?餐$|三道式$"
 )
 
 
 def _not_a_sight(name: str) -> bool:
-    """A 【…】 that is a duration, a reminder, a meal or a sentence rather than a place. A
-    sentence is 29 Chinese characters or more; a long Latin name is not one."""
+    """A 【…】 that is a duration, a reminder, the word 餐 alone or a sentence rather than a
+    place. A named meal (墨鱼面, 三道式火腿餐) is a 赠送 and is read; a sentence is 29 Chinese
+    characters or more, a long Latin name not being one."""
     return bool(_NOT_SIGHT.search(name)) or len(re.sub(r"[A-Za-z0-9\s\-&'.]", "", name)) >= 29
 
 
@@ -663,11 +770,15 @@ def _sights(text: str) -> list[Sight]:
         seen.add(name)
         kind = "景点"
         ticket: bool | None = None
-        # ``【奥斯曼大道】（自由活动，时间不少于1小时）``: a parenthesis that opens with 自由活动
-        # and a comma names the stop a 自由活动, whatever the sentence says about shops around
-        # it; ``（自由活动约30分钟）`` is a duration on a sight and leaves its kind alone.
+        # ``【奥斯曼大道】（自由活动，时间不少于1小时）``, ``（自由活动时间不少于2小时）``: a
+        # parenthesis that opens with 自由活动 on a street, a square or a market names the stop
+        # a 自由活动, whatever the sentence says about the shops along it — the 购物店 of such a
+        # day is the 【老佛爷百货】 the attachment writes beside it. On a park or a sight,
+        # ``（自由活动约30分钟）`` is a duration and leaves the kind alone.
+        leisure_paren = re.match(r"\s*[（(]\s*自由活动", near) is not None
         leisure_note = re.match(r"\s*[（(]\s*自由活动\s*[，,、]", near) is not None
-        if leisure_note and not any(word in name for word in _SHOP_WORDS):
+        shop_name = any(word in name for word in _SHOP_WORDS)
+        if (leisure_paren and _LEISURE_PLACE.search(name)) or (leisure_note and not shop_name):
             kind = "自由活动"
         elif (
             any(word in inner or word in before for word in _OPTIONAL_WORDS)
@@ -676,9 +787,7 @@ def _sights(text: str) -> list[Sight]:
         ):
             kind = "自费"
             ticket = False
-        elif any(word in name for word in _SHOP_WORDS) or any(
-            word in window for word in _SHOP_CONTEXT
-        ):
+        elif shop_name or any(word in window for word in _SHOP_CONTEXT):
             kind = "购物"
         elif (
             free
@@ -686,6 +795,10 @@ def _sights(text: str) -> list[Sight]:
             or "赠送" in inner
             or any(part in gift for part in name.split("+") for gift in gifts)
         ):
+            kind = "赠送"
+        # ``特别安排❀【墨鱼面】``, ``【西班牙海鲜饭】``: a meal the 线路 upgrades, written as a
+        # 【】 of the day's programme. It is a gift and never a sight of its own.
+        if kind in ("景点", "赠送") and _MEAL_UPGRADE.search(name):
             kind = "赠送"
         if (
             any(word in inner + near[:12] for word in _OUTSIDE_WORDS)
@@ -712,14 +825,56 @@ def _sights(text: str) -> list[Sight]:
                 ),
             )
         )
-    found.extend(_prose_sights(text, seen, [m.span() for m in _BRACKET.finditer(text)]))
-    leisure = _FREE_ACTIVITY.search(masked)
-    if leisure is not None:
-        span = {"一整天": "全天", "整天": "全天", "全日": "全天"}.get(
-            leisure[1] or "", leisure[1] or ""
-        )
-        found.append((leisure.start(), Sight(name=f"{span}自由活动", kind="自由活动")))
+    brackets = [m.span() for m in _BRACKET.finditer(text)]
+    found.extend(_prose_sights(text, seen, brackets))
+    found.extend(_numbered_sights(text, seen, brackets))
+    found.extend(_leisure(masked))
     return [sight for _, sight in sorted(found, key=lambda pair: pair[0])]
+
+
+def _leisure(masked: str) -> list[tuple[int, Sight]]:
+    """The day's own 自由活动, where a clause states one: 全天/上午/下午/晚上/抵达后自由活动, or
+    a clause that is the words alone. A 自由活动 in the middle of a clause is what the group
+    does at the 【】 the clause is about (之后玻璃金字塔广场自由活动) and is no entry."""
+    for clause in _CLAUSE.finditer(masked):
+        stated = _FREE_ACTIVITY.match(clause[0])
+        if stated is None:
+            continue
+        span = {"一整天": "全天", "整天": "全天", "全日": "全天"}.get(
+            stated[1] or "", stated[1] or ""
+        )
+        return [(clause.start(), Sight(name=f"{span}自由活动", kind="自由活动"))]
+    return []
+
+
+def _numbered_sights(
+    text: str, seen: set[str], brackets: list[tuple[int, int]]
+) -> list[tuple[int, Sight]]:
+    """``1. 吉布拉法罗城堡+阿尔卡萨巴，位于山顶的摩尔式城堡…``: a day that lists its stops as a
+    numbered line each, with no 【】 around any of them. The head of the line up to the first
+    comma is the name, and what follows it is the description; a head that reads as a notice
+    (请…, 费用…) is not a stop, and neither is anything under the day's own 备注 or 温馨提示,
+    where the same numbering carries the reminders the day ends on."""
+    found: list[tuple[int, Sight]] = []
+    notice = _DAY_NOTICE.search(text)
+    text = text[: notice.start()] if notice else text
+    starts = [0, *(sep.end() for sep in _LINE_BREAK.finditer(text))]
+    for start in starts:
+        rest = text[start:]
+        ends = _LINE_BREAK.search(rest)
+        line = rest[: ends.start()] if ends else rest
+        listed = _NUMBERED_SIGHT.match(line.strip())
+        if listed is None:
+            continue
+        name = listed[1].strip(" *·")
+        at = start + len(line) - len(line.lstrip())
+        if any(start <= at < end for start, end in brackets):
+            continue
+        if name in seen or _not_a_sight(name) or _NOT_A_LISTED_SIGHT.search(name):
+            continue
+        seen.add(name)
+        found.append((at, Sight(name=name, kind="景点")))
+    return found
 
 
 def _prose_sights(
@@ -753,7 +908,7 @@ def _prose_sights(
 
 def _meal(text: str) -> Meal:
     clean = _nfkc(text).strip(" ：:；;，,")
-    included = clean.lower() not in _NOT_INCLUDED and not clean.startswith(("自理", "不含"))
+    included = clean.lower() not in _NOT_INCLUDED and not _MEAL_SELF.search(clean)
     return Meal(text=clean, included=included if clean else None)
 
 
@@ -805,6 +960,10 @@ def _hotel(text: str | None) -> tuple[Hotel | None, str]:
     clean = _nfkc(text).strip()
     if not clean or clean in ("/", "-", "—", "无酒店", "X", "x", "×"):
         return None, "unknown"
+    if not re.search(r"[一-鿿A-Za-z0-9]", clean):
+        # A cell holding only punctuation — a stray bracket a .pdf column left behind — names
+        # no hotel, and the day is better read as not saying than as staying there.
+        return None, "unknown"
     if any(word in clean for word in _FLIGHT_STAY):
         return None, "flight"
     if any(word in clean for word in _SHIP_STAY):
@@ -850,19 +1009,24 @@ def _split(lines: list[str]) -> tuple[list[str], list[str], list[str]]:
     for i in range(first + 1, len(lines)):
         if not _is_heading(lines[i]) or _header(lines[i], chinese):
             continue
-        if i < last and re.sub(r"\s+", "", lines[i]).startswith(_SOFT_HEADS):
+        if i < last and _heading_text(lines[i]).startswith(_SOFT_HEADS):
             continue
         end = i
         break
     return lines[:first], lines[first:end], lines[end:]
 
 
+def _heading_text(line: str) -> str:
+    """A line as a heading would be written: the spacing the attachments put between its
+    characters (欧 洲 旅 行 须 知) taken out, and the number they file it under (四 旅游注意事项,
+    3、购物安排) with it."""
+    return _HEADING_NUMBER.sub("", re.sub(r"\s+", "", line))
+
+
 def _is_heading(line: str) -> bool:
     """A terms heading: one of the section words, standing alone on a short line. A
-    programme line that happens to open with 购物 or 自费 is long, and is not one. The
-    attachments space a heading out one character at a time (欧 洲 旅 行 须 知), so the
-    spacing is taken out before the line is matched."""
-    compact = re.sub(r"\s+", "", line)
+    programme line that happens to open with 购物 or 自费 is long, and is not one."""
+    compact = _heading_text(line)
     return bool(_SECTION_HEAD.match(compact)) and len(compact) <= 12
 
 
@@ -875,29 +1039,32 @@ _SPACED_HEADING = re.compile(r"(?:[一-鿿]\s+){2,}[一-鿿]")
 def _cover(lines: list[str]) -> Cover:
     """The front matter as the labelled rows and the highlights. A label the attachment
     invents (美食篇 for 用餐, 交通篇 for 航空公司) is read as the field it names, and the line
-    under a bare 产品特色 heading is a highlight even though it carries no label of its own."""
+    under a bare 产品特色 heading is a highlight even though it carries no label of its own.
+    A 特别赠送 line with nothing after it is that label: the gift is on the line below and the
+    two are read as one highlight."""
     cover = Cover()
-    under_head = False
+    under_head = ""
     for line in lines:
         if _OVERVIEW_ROW.match(line) or _SPACED_HEADING.fullmatch(line.strip()):
             continue
         cells = [c.strip() for c in line.split(CELL_SEPARATOR) if c.strip()]
         if cells and cells[0].upper().startswith("DATE"):
             continue
-        if len(cells) == 1 and re.sub(r"[\s：:]", "", cells[0]) in _HIGHLIGHT_LABELS:
-            under_head = True
+        if len(cells) == 1 and (label := re.sub(r"[\s：:]", "", cells[0])) in _HIGHLIGHT_LABELS:
+            under_head = label
             continue
         if len(cells) < 2:
             inline = _INLINE_LABEL.match(line)
             if inline is not None:
                 cells = [inline[1], inline[2]]
             elif line.strip().startswith(("★", "#")) or under_head:
-                cover.highlights.extend(_items(line))
-                under_head = False
+                lead = f"{under_head}：" if under_head in _MERGED_LABELS else ""
+                cover.highlights.extend(f"{lead}{item}" for item in _items(line))
+                under_head = ""
                 continue
             else:
                 continue
-        under_head = False
+        under_head = ""
         label, value = cells[0], " ".join(cells[1:]).strip(" /")
         cover.fields[label] = value
         for field, labels in _COVER_LABELS.items():
@@ -925,12 +1092,16 @@ def _overview(lines: list[str]) -> dict[int, tuple[Meals, str]]:
 
 
 def _items(text: str) -> list[str]:
-    """A block as its items: one per paragraph, the numbering and the ★/# markers stripped."""
+    """A block as its items: one per paragraph, the numbering and the ★/❀/❤/◆ markers
+    stripped. A paragraph that runs two clauses together — the bullet between them lost when
+    the attachment was written — is split where the first closes: a price (…7000元) or a
+    room-night charge (…/间;) with 因/如/若 opening the next."""
     items = []
-    for part in re.split(re.escape(PARAGRAPH_SEPARATOR) + r"|\n", text):
-        part = _NUMBERED.sub("", part).strip(" ★#·•;；/>-—")
-        if part:
-            items.append(part)
+    for block in re.split(re.escape(PARAGRAPH_SEPARATOR) + r"|\n", text):
+        for part in _LOST_BULLET.split(block):
+            part = _NUMBERED.sub("", part).strip(" ★#·•;；/>-—❀❤◆◇✦✿※◎").lstrip(". ")
+            if part:
+                items.append(part)
     return items
 
 
@@ -1005,19 +1176,23 @@ def _terms(
 ) -> tuple[list[str], list[str], list[ShoppingStop], list[OptionalItem], list[str]]:
     """The terms as the four lists the schema keeps and the notices left over, each section
     read from its heading to the next. A 报价包含 ｜ 报价不含 table is read by column first,
-    because its two columns are printed side by side and read as one line."""
+    because its two columns are printed side by side and read as one line. A 自费 section ends
+    at the next heading and holds only what the attachment prices: a row with a price, or a row
+    of the 另行付费 table the 项目名称/价格 header opened. The tables the notices carry — the
+    使领馆 addresses, the 退税 steps — are priced by nothing and stay notices."""
     lines, inclusions, exclusions = _two_column_terms(lines)
     shopping: list[ShoppingStop] = []
     optional: list[OptionalItem] = []
     notices: list[str] = []
     current = "notices"
     unit = ""
+    in_table = False
     for line in lines:
         if not line.strip():
             continue
-        head = _SECTION_HEAD.match(line) if _is_heading(line) else None
+        head = _SECTION_HEAD.match(_heading_text(line)) if _is_heading(line) else None
         if head is not None:
-            label = re.sub(r"\s+", "", head[1])
+            label = head[1]
             if label in _INCLUDE_HEADS:
                 current = "inclusions"
             elif label in _EXCLUDE_HEADS:
@@ -1029,6 +1204,7 @@ def _terms(
             else:
                 current = "notices"
                 notices.append(line.strip())
+            in_table = False
             continue
         for item in _items(line):
             if current == "inclusions":
@@ -1048,8 +1224,13 @@ def _terms(
                 if price is None and not bare and any(w in item for w in ("名称", "价格", "备注")):
                     found = re.search(r"价格\s*[（(]\s*([^）)]+)[）)]", item)
                     unit = found[1].replace(" ", "") if found else unit
+                    in_table = True
                     continue
                 if _REFUND.search(item) and len(cells) == 1:
+                    notices.append(item)
+                    continue
+                if price is None and not bare and not in_table:
+                    # A row the section prices by nothing is not an item it sells.
                     notices.append(item)
                     continue
                 # A row of the table is an item whatever its name's length: a name with a
@@ -1165,7 +1346,11 @@ def _cancel_bands(notices: list[str]) -> str:
 
 
 def _day(
-    record: ItineraryDay, raw_lines: list[str], fallback: tuple[Meals, str] | None, last: bool
+    record: ItineraryDay,
+    raw_lines: list[str],
+    fallback: tuple[Meals, str] | None,
+    last: bool,
+    airline: str = "",
 ) -> Day:
     places, kms, drives = _places(record.title)
     hotel, overnight = _hotel(record.hotel)
@@ -1179,7 +1364,7 @@ def _day(
     meals = _meals(record.meals)
     if meals.breakfast.included is None and fallback is not None:
         meals = fallback[0]
-    flights = _flights(record.title + PARAGRAPH_SEPARATOR + text, record.day_no)
+    flights = _flights(record.title + PARAGRAPH_SEPARATOR + text, record.day_no, airline)
     if overnight == "unknown":
         if any(word in text for word in ("夜宿飞机", "宿飞机", "机上过夜")):
             overnight = "flight"
@@ -1262,18 +1447,35 @@ def _optional_in_text(text: str, day: int) -> list[OptionalItem]:
     return items
 
 
+# The words a 首道门票 list and a day write differently about the same place: the 大/主 of a
+# cathedral, and the note about what the price covers.
+_LOOSE_SIGHT = re.compile(
+    r"[（(][^（）()]*[）)]|\s+|[*·・]|(?:大|主)(?=教堂)|不?含[^，。\s]{0,3}(?:门票|票|官导|讲解|导游)"
+)
+
+
+def _loose(name: str) -> str:
+    """A sight's name as it is matched against another spelling of it."""
+    return _LOOSE_SIGHT.sub("", name).strip()
+
+
 def _apply_ticket_list(days: list[Day], inclusions: list[str]) -> None:
     """``所含景点首道门票（其余景点均为外观）：马德里皇宫、塞哥维亚古城…``: the 包含 list names
     which sights the price's 首道门票 covers. A sight it names has its ticket; a 景点 it does
     not name has none. Its kind stays 景点 even where the line says 其余景点均为外观: the
     second review round found 211 squares, bridges and 市区观光 entries turned into 外观 by
-    that tail, and a 景点 with ``ticket_included`` False is what the reviewers write."""
+    that tail, and a 景点 with ``ticket_included`` False is what the reviewers write.
+
+    A name is matched loosely, because the two halves of the attachment do not spell a sight
+    the same way: the parentheses and the 含门票/含官导 tails come off both sides and a 大教堂
+    reads as a 教堂, so the list's 塞维利亚主教堂 answers the day's 塞维利亚大教堂. A sight whose
+    own text says 入内 or 含门票 keeps its ticket whether or not the list names it."""
     for item in inclusions:
         listed_in = _TICKET_LIST.match(item)
         if listed_in is None:
             continue
         listed = [
-            clean
+            _loose(clean)
             for name in re.split(r"[、，,/；;]", listed_in[1])
             if len(clean := _NAME_TAIL.sub("", _PAREN.sub("", name).strip()).strip()) >= 2
         ]
@@ -1283,7 +1485,8 @@ def _apply_ticket_list(days: list[Day], inclusions: list[str]) -> None:
             for sight in day.sights:
                 if sight.kind not in ("景点", "外观") or sight.ticket_included is not None:
                     continue
-                if any(name in sight.name or sight.name in name for name in listed):
+                loose = _loose(sight.name)
+                if any(name in loose or loose in name for name in listed):
                     sight.ticket_included = True
                 elif sight.kind == "景点":
                     # The kind stays 景点: a 广场, a bridge or a 市区观光 entry the list leaves
@@ -1294,28 +1497,77 @@ def _apply_ticket_list(days: list[Day], inclusions: list[str]) -> None:
 
 def _countries(name: str, days: list[Day], cover: Cover, tagged: list[str]) -> list[str]:
     """The countries the itinerary goes to, read off what states where it goes: the 线路 name,
-    the day titles, the places those titles name and the cover's own rows. A country named in
-    a day's prose alone is part of a sight's name (英国花园的大花钟) and is not one of them.
-    Where none of those names a country the line's tags answer instead, without the region
-    words (东欧, 北欧, 巴尔干) they carry, which are not countries."""
+    the day titles, the places those titles name and the cover's 航空公司 row, which is the one
+    row that names where the line flies. The other rows name dishes (土耳其烤肉卷) and scenery
+    (极像北欧的峡湾风貌), and a country named in a day's prose is part of a sight's name
+    (英国花园的大花钟); neither is a country of the itinerary. Where nothing states one the
+    line's tags answer instead, without the region words (东欧, 北欧, 巴尔干) they carry."""
     found: list[tuple[int, int, str]] = []
-    # The cover's meal row names dishes (土耳其烤肉卷), not countries; the rest of it counts.
     texts = [
         name,
         *(part for day in days for part in (day.title, " ".join(day.places))),
-        *(
-            value
-            for label, value in cover.fields.items()
-            if not any(word in label for word in ("餐", "吃", "美食"))
-        ),
+        *(value for label, value in cover.fields.items() if label in _COVER_LABELS["airline"]),
     ]
     for index, text in enumerate(texts):
         for country, words in _COUNTRY_WORDS:
-            at = min((text.find(word) for word in words if word in text), default=-1)
+            # The country's own name counts wherever it is written — a 线路 name runs its words
+            # together (极北之境冰岛一地) — and a city or a landmark only at a boundary.
+            at = min(
+                (
+                    found_at
+                    for word in words
+                    if (found_at := _names(text, word, anywhere=word == country)) >= 0
+                ),
+                default=-1,
+            )
             if at >= 0:
                 found.append((index, at, country))
     ordered = list(dict.fromkeys(country for _, _, country in sorted(found)))
     return ordered or [tag for tag in tagged if tag not in _REGION_WORDS]
+
+
+def _names(text: str, word: str, *, anywhere: bool = False) -> int:
+    """Where ``text`` names the place ``word``, or -1. A city or a landmark counts at a
+    boundary — the start of the text, a space, a separator, a figure — so the 柏林 of 都柏林 is
+    not 德国's; ``anywhere`` is the country's own name, which counts wherever it stands. Neither
+    counts inside a longer place name (新德里 is not 德里)."""
+    at = text.find(word)
+    while at >= 0:
+        before = text[at - 1] if at else ""
+        longer = any(
+            longer_name in text[max(0, at - len(longer_name)) : at + len(longer_name)]
+            for longer_name in _LONGER_NAMES
+            if word in longer_name and word != longer_name
+        )
+        if not longer and (anywhere or not _CJK_CHAR.match(before)):
+            return at
+        at = text.find(word, at + 1)
+    return -1
+
+
+def _region(named: str, countries: list[str]) -> str:
+    """The 线路系 the line is filed under: what the 线路 name says, where the countries the
+    document read do not contradict it, and what those countries themselves say otherwise.
+    The ERP's auto tags are not asked — they carry another line's 线路系 often enough that a
+    西葡 landed on a 英国+爱尔兰 walk — so a name saying nothing and countries the table does
+    not know leave the field empty, which is what the card shows as 未标注."""
+    known = dict(_REGION_COUNTRIES)
+    if named and (not countries or named not in known or set(known[named]).intersection(countries)):
+        return named
+    walked = set(countries)
+    exact = [region for region, words in _REGION_COUNTRIES if set(words) == walked]
+    covered = [
+        (len(words), region)
+        for region, words in _REGION_COUNTRIES
+        if set(words) <= walked and (len(words) > 1 or len(walked) == 1)
+    ]
+    if exact:
+        return exact[0]
+    if covered:
+        # The 线路系 covering the most of the walk: a 德法意瑞 line that adds 比利时 is filed
+        # under 德法意瑞 all the same, and the extra country is in ``countries``.
+        return max(covered)[1]
+    return countries[0] if len(countries) == 1 else ""
 
 
 def _doubts(days: list[Day], cover: Cover) -> list[str]:
@@ -1419,12 +1671,18 @@ def _build(
     raw_by_day = _day_raw_lines(day_lines)
     overview = _overview(cover_lines)
     records = split_days(day_lines)
+    cover = _cover(cover_lines)
     days = [
-        _day(d, raw_by_day.get(d.day_no, []), overview.get(d.day_no), i == len(records) - 1)
+        _day(
+            d,
+            raw_by_day.get(d.day_no, []),
+            overview.get(d.day_no),
+            i == len(records) - 1,
+            cover.airline,
+        )
         for i, d in enumerate(records)
     ]
     inclusions, exclusions, shopping, optional, notices = _terms(term_lines)
-    cover = _cover(cover_lines)
     _apply_ticket_list(days, inclusions)
     for day in days:
         for sight in day.sights:
@@ -1449,6 +1707,10 @@ def _build(
     facets = normalize(
         (*record.tags, *record.itinerary_tags), record.price_tags, name=record.route_name
     )
+    countries = _countries(record.route_name, days, cover, list(facets.destinations))
+    # The 线路系 the ERP's auto tags carry is another line's as often as this one's; the name's
+    # own reading, held against the countries the document names, is what the field keeps.
+    named_region = normalize((), name=record.route_name).region
     nights = sum(1 for d in days if d.overnight in ("hotel", "ship")) or None
     doc = RouteDoc(
         route_id=record.route_id,
@@ -1461,8 +1723,8 @@ def _build(
             nights=nights,
             depart_city=record.depart_city
             or (facets.departure_cities[0] if facets.departure_cities else ""),
-            countries=_countries(record.route_name, days, cover, list(facets.destinations)),
-            region=facets.region,
+            countries=countries,
+            region=_region(named_region, countries),
         ),
         cover=cover,
         transport=[f for d in days for f in d.flights],

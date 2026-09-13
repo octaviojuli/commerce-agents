@@ -95,15 +95,19 @@ VAGUE_CITIES = frozenset({"中国", "国内", "全国", "不限", "待定", "多
 # What a destination the advisor wrote as several places is split on: a chip sends the
 # countries joined (法国·意大利·瑞士) and the line must carry every one of them.
 _SEPARATORS = "·、,，/ 　+&"
-# The European 线路系, named as ``data/tag-rules.json``'s own region vocabulary: what a
-# customer saying 欧洲 means, beside the departments that sell it.
+# The European 线路系, named as ``data/tag-rules.json``'s own region vocabulary, with the two
+# more a document's own countries yield (``route_parser._region``): what a customer saying
+# 欧洲 means, beside the departments that sell it.
 EUROPE_REGIONS = frozenset(
     {
         "西欧多国",
         "德法意瑞",
         "法意瑞",
+        "法意",
         "德奥捷",
         "英爱",
+        "英国",
+        "土希",
         "西葡",
         "北欧",
         "东欧巴尔干",
@@ -121,19 +125,23 @@ EUROPE_REGIONS = frozenset(
 @dataclass(frozen=True)
 class Scope:
     """One of the wide words a customer's request arrives as — 欧洲, 东南亚, 美洲 — as the
-    lines it covers: the departments that sell it, the 线路系 it holds, and the countries.
-    A line inside any one of the three is inside the scope."""
+    lines it covers: the 线路系 it holds, the countries, and the departments that sell it.
+
+    Where a document says where it goes, that is the answer: a 南美六国 and a 美东 line are
+    sold by 欧洲部-上海, and reading the department first put both of them on a 欧洲
+    shortlist. The department answers only for a document that names neither a 线路系 nor a
+    country, which is a parse too thin to say anything else."""
 
     departments: tuple[str, ...] = ()
     regions: frozenset[str] = frozenset()
     countries: frozenset[str] = frozenset()
 
     def holds(self, facts: RouteFacts) -> bool:
-        return (
-            any(facts.department.startswith(prefix) for prefix in self.departments)
-            or facts.region in self.regions
-            or bool(self.countries.intersection(facts.countries))
-        )
+        if facts.region or facts.countries:
+            return facts.region in self.regions or bool(
+                self.countries.intersection(facts.countries)
+            )
+        return any(facts.department.startswith(prefix) for prefix in self.departments)
 
 
 # The scopes themselves. A scope is not a substring: no document writes 欧洲 into a field, so

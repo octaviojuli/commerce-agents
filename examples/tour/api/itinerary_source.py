@@ -163,8 +163,11 @@ def _title_and_flight(rest: str) -> tuple[str, str]:
 
 def _field(line: str, pattern: re.Pattern[str]) -> str:
     """A 住宿 or 用餐 line without its label — which the first layout writes as a cell of its
-    own and the second as a prefix — and without the 交通 written beside it in the same row."""
-    parts = [part.strip() for part in line.split(CELL_SEPARATOR)]
+    own and the second as a prefix — and without the 交通 written beside it in the same row.
+    A row whose field cell is empty (``住宿 ||  || 交通：旅游用车``) reads as empty: the cell
+    boundary left beside it is not a hotel, and the day takes its night from the overview row
+    or from nothing at all rather than from the day before."""
+    parts = [part.strip(" |") for part in line.split(CELL_SEPARATOR)]
     parts[0] = pattern.sub("", parts[0]).strip()
     return " ".join(part for part in parts if part and not _TRANSPORT.match(part))
 
