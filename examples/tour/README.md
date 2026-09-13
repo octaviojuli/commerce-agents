@@ -256,6 +256,12 @@ Single prompts worth trying after those turns:
   qualifies is a standing habit of their own work — and `advisor_write_filter` refuses a
   customer's trip (a party size, a date on a journey, a key the customer prompt would use) on
   every path to the store: the extraction pass, the model's memory tool, the memory editor.
+  It refuses two more: what the advisor did to one search (只看目的地：德法意瑞 is a chip they
+  tapped for this customer, and 固定在 / 只按 turns that tap into a condition every later
+  customer would be held to), and a leaning worded as a demand (该顾问要求纯玩产品). A habit
+  is the advisor's and the request is their customer's: the prompt spends a habit on ordering
+  the shortlist and on `present_focus`'s `preselect`, which offers its chip already held, and
+  never on a filter — a customer silent about 购物 has not asked for 纯玩.
 - `api/advisors.py`: `AdvisorRegistry`, the logins this process holds — `AdvisorLogin` per ERP
   employee, carrying the `with_token` client their calls go out on, their name, their mobile,
   the department the login landed in and the moment the token dies. `login` forwards the mobile
@@ -405,7 +411,9 @@ Single prompts worth trying after those turns:
   it, never off a line's prose. A tap holds a chip rather than sending it —
   several in a group and across groups — and the bar under the rows sends the whole pick as one
   `只看 <维度>：<值>、<值>；<维度>：<值>` in the advisor's own words, or 不限条件 for the lines as
-  they stand. Up to three results may stand on the card as a
+  they stand. A chip the model named in `preselect` arrives already held: that is where a habit
+  on file about the advisor acts, as a tap they confirm or drop rather than a filter nobody
+  asked for. Up to three results may stand on the card as a
   foothold while the match is twelve or fewer. The card is refused when the last search fits a
   shortlist. Up to twelve matches the cards and the chips go together and nothing is held;
   above twelve `TourToolExecutor` holds `present_products` (`FOCUS_FIRST_GATE`) the way it

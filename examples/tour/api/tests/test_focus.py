@@ -74,8 +74,18 @@ async def test_the_card_carries_the_catalogs_groups_as_chips(executor, backend, 
     assert card["total"] == 7 and card["shown"] == 2
     places = next(g for g in card["groups"] if g["label"] == "目的地")
     assert places["filter"] == "region/destination"
-    assert places["values"][0] == {"value": "伊犁", "count": 4, "ask": "只看目的地：伊犁"}
-    assert {"value": "南疆", "count": 1, "ask": "只看目的地：南疆"} in places["values"]
+    assert places["values"][0] == {
+        "value": "伊犁",
+        "count": 4,
+        "ask": "只看目的地：伊犁",
+        "selected": False,
+    }
+    assert {
+        "value": "南疆",
+        "count": 1,
+        "ask": "只看目的地：南疆",
+        "selected": False,
+    } in places["values"]
     # One question is at most two rows: the dimension asked and the next one down.
     assert [g["label"] for g in card["groups"]][0] == "目的地" and len(card["groups"]) <= 2
     assert card["stated"][0] == "新疆" and "2 人" in card["stated"]
@@ -151,3 +161,20 @@ async def test_a_shortlist_over_a_set_too_wide_to_read_is_held(executor, backend
     )
     assert held.blocked == FOCUS_FIRST_GATE and "present_focus" in held.result_text
     assert not [event for event in held.events if event.type == "ui"]
+
+
+async def test_a_habit_on_file_is_a_chip_already_held_and_never_a_filter(executor):
+    """The advisor's own leaning reaches a search as a tap they can undo: the card offers the
+    chip held, with the same ask behind it, and nothing was filtered out to get there."""
+    await executor.execute("search_products", BROAD)
+    result = await executor.execute(
+        "present_focus",
+        {"question": "客人想走哪一片？", "dimension": "目的地", "preselect": ["伊犁"]},
+    )
+    card = _ui(result)["payload"]
+    places = next(g for g in card["groups"] if g["label"] == "目的地")
+    held = [value for value in places["values"] if value["selected"]]
+    assert [value["value"] for value in held] == ["伊犁"]
+    assert held[0]["ask"] == "只看目的地：伊犁" and held[0]["count"] == 4
+    # The habit narrowed nothing: every line the search matched is still counted.
+    assert card["total"] == 7

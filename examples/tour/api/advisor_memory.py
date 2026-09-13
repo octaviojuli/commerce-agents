@@ -29,10 +29,13 @@ ADVISOR_MEMORY_EXTRACTION_PROMPT = MEMORY_EXTRACTION_TEMPLATE.format(
     occasions="conversations",
     speaker="the advisor",
     qualifies=(
-        "a standing habit or rule of the advisor's own work, stated by themselves in so many "
-        "words: the city their customers usually depart from, a hotel standard or a 纯玩 rule "
-        "they always ask for, how they want a quote laid out (per person or 合计, with or "
-        "without 单房差). Write the value in Chinese, the advisor's own language."
+        "a standing habit of the advisor's own work, stated by themselves in so many words: "
+        "how they want a quote laid out (per person or 合计, with or without 单房差), how they "
+        "read an itinerary, which department's lines they sell. A leaning about what their "
+        "customers usually want — the city they usually depart from, a hotel standard, 纯玩 — "
+        "qualifies only as the advisor's own leaning and is written as one (该顾问的客人多从上海"
+        "出发), never as a rule the next customer must meet. Write the value in Chinese, the "
+        "advisor's own language."
     ),
     standalone_example=(
         '"成都出发" tells a future reader nothing, while "the advisor\'s customers usually '
@@ -45,7 +48,10 @@ ADVISOR_MEMORY_EXTRACTION_PROMPT = MEMORY_EXTRACTION_TEMPLATE.format(
     ),
     excluded=(
         "any customer's trip or request (destination, dates, party, budget, the 线路 or 团期 "
-        "discussed, the 定制方案 built for them); the advisor's own name, department and "
+        "discussed, the 定制方案 built for them); what the advisor did to one search — a "
+        "narrowing they tapped (只看目的地：德法意瑞), a dimension they grouped by, a filter "
+        "they set in one conversation — which is that conversation's work and not a habit; "
+        "the advisor's own name, department and "
         "account, which their login already states; anything that came from listings, "
         "results, or the ERP's own records; the "
         "mechanics of this conversation (what was searched or held); anything inferred rather "
@@ -72,6 +78,15 @@ _DATE = re.compile(r"\d{1,2}\s*月\s*\d{1,2}|\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}")
 # and the ERP's own 线路 and 团期 (``agent_config.product_id_patterns``). A fact naming one is
 # that conversation's work, whatever it says about it.
 _RECORD_ID = re.compile(r"PL-[A-Za-z0-9]{8}|RT-\d+|DP-\d+")
+# What the advisor did to one search: the words the 聚焦卡's chips send back (只看<维度>：<值>),
+# and the way a model writes a single narrowing down as though it were a rule. Tapping 德法意瑞
+# once is this customer's direction, not the advisor's standing habit, and a fact that says
+# 固定在 or 只按 turns one tap into a condition every later customer would be held to.
+_ONE_SEARCH = re.compile(r"只看|只按|只筛|固定在|固定为|本次|这次|这单|该客人|本单")
+# A leaning written as a rule the picks must meet. The workbench applies a habit by ordering
+# the shortlist and pre-selecting a chip, never by filtering, so a fact worded as a demand
+# would be read as one by the model that receives it.
+_AS_A_RULE = re.compile(r"要求|必须|一定要|只接受|不接受|只要")
 
 
 def is_customer_trip(key: str, value: str) -> bool:
@@ -86,9 +101,19 @@ def is_customer_trip(key: str, value: str) -> bool:
     return bool(_PARTY.search(value)) or bool(_WHEN.search(value) and _GOING.search(value))
 
 
+def is_one_search(key: str, value: str) -> bool:
+    """Whether a candidate fact is what the advisor did to one search rather than how they
+    work. A 聚焦卡 chip sends 只看目的地：德法意瑞 as the advisor's own words, and a model
+    reading the turn back writes 该顾问筛选时目的地固定在德法意瑞 — which every later customer
+    would then be narrowed to. A leaning worded as a demand (该顾问要求纯玩产品) is refused for
+    the same reason: the workbench applies a habit by ordering and pre-selecting, and a fact
+    that reads as a condition is applied as one."""
+    return bool(_ONE_SEARCH.search(value)) or bool(_AS_A_RULE.search(value))
+
+
 def advisor_write_filter() -> MemoryWriteFilter:
-    """The core's blocked patterns, plus the check above."""
-    return MemoryWriteFilter.build(checks=(is_customer_trip,))
+    """The core's blocked patterns, plus the two checks above."""
+    return MemoryWriteFilter.build(checks=(is_customer_trip, is_one_search))
 
 
 def advisor_memory(runtime: MemoryRuntime) -> MemoryRuntime:

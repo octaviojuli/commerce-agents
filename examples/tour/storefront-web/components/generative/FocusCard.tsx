@@ -53,8 +53,17 @@ export default function FocusCard({ payload }: { payload: FocusPayload }) {
   const busy = chat?.busy ?? false;
 
   // The picks live on the card until the advisor confirms them; sending clears them, so the
-  // card that stays in the transcript is not still holding a question already answered.
-  const [selection, setSelection] = useState<Record<string, string[]>>({});
+  // card that stays in the transcript is not still holding a question already answered. A card
+  // may arrive with chips already held — a habit on file about the advisor, which narrows
+  // nothing until they confirm it.
+  const [selection, setSelection] = useState<Record<string, string[]>>(() => {
+    const held: Record<string, string[]> = {};
+    for (const group of payload.groups ?? []) {
+      const values = group.values.filter((item) => item.selected && item.ask).map((item) => item.value);
+      if (values.length) held[group.label] = values;
+    }
+    return held;
+  });
   const isOn = (label: string, value: string) => (selection[label] ?? []).includes(value);
   const toggle = (label: string, value: string) =>
     setSelection((current) => {

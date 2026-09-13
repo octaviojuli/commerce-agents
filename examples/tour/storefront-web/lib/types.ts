@@ -145,7 +145,12 @@ export interface FocusPayload {
   /** What the customer already said, locked above the question: `欧洲 · 国庆 10/01–10/07 · 4 人`. */
   stated?: string[];
   dimension: string;
-  groups: { label: string; filter: string; values: { value: string; count: number; ask?: string }[] }[];
+  groups: {
+    label: string;
+    filter: string;
+    /** `selected` is a chip the card offers already held: the advisor's own habit, theirs to drop. */
+    values: { value: string; count: number; ask?: string; selected?: boolean }[];
+  }[];
   anchors: Product[];
 }
 
