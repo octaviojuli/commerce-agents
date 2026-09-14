@@ -626,7 +626,11 @@ def _facts_attributes(facts: RouteFacts) -> dict[str, str]:
         "route_code": facts.route_code,
         "days": str(facts.days),
         "nights": str(facts.nights) if facts.nights else "",
+        # The 口岸 the international flight boards at, not where the customer lives: a
+        # customer in 厦门 is flown to it, and 联运 says whether the line will do that.
+        "gateway": facts.depart_city,
         "depart_city": facts.depart_city,
+        **({"connecting": facts.connecting} if facts.connecting else {}),
         "countries": "|".join(facts.countries),
         "region": facts.region,
         "airline": short_text(facts.airline, MAX_COVER_CHARS),

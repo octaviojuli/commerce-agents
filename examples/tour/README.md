@@ -685,6 +685,23 @@ the fixtures). So the isolation is the login's: one advisor's conversations and 
 facts are theirs, another advisor of the same deployment sees neither, and no route reads an
 identity from a request — the session id in the header is the only thing that names anybody.
 
+## 口岸 and 联运
+
+A 线路's 出发城市 is the 口岸 its international flight boards at, and the customer lives
+wherever they live. A line sells out of one or two gateways — 上海 for 112 of the agency's
+177, then 成都, 重庆, 昆明 — and the airline feeds them from anywhere it flies: a customer in
+厦门 flies 厦门-上海 and then 上海-欧洲. So naming where the customer lives rules out no line
+at all, and `Catalog._fits_gateway` says so: a city the catalog boards at is a condition, a
+city it never does narrows nothing. `catalog.gateways()` is what the catalog sells out of,
+read and not guessed.
+
+The gateway is the document's, not the ERP's: `_gateway` reads the first 参考航班 the
+document writes, then the cover's 默认X出发, then the ERP's own field, because the ERP often
+carries a 联运 city being marketed instead (RT-36 says 北京 over a cover that reads
+默认上海出发). `_city_of` turns 上海浦东国际机场T1 and PVG alike into 上海. What the cover says
+about 联运 rides on the card as a tag (可全国联运) and on the 线路 as `connecting`; an
+attachment silent on it is the 门店's question and not a no.
+
 ## The next step
 
 Every turn ends with chips, and a chip the conversation cannot act on is a tap the advisor
