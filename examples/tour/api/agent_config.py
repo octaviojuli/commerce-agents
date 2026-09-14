@@ -84,6 +84,37 @@ _NO_POLICIES_NOTE = (
 )
 
 
+# What to answer when the question is not which 线路 to sell: 交通, 景点, 城市人文, 签证,
+# 天气, 注意事项. The topic does not decide it — whether the 线路文档 writes it does. An
+# advisor can catch a wrong 景点 安排, because the card beside the answer says what the
+# document says; they cannot catch a 门票价 or a 签证材料 stated from memory, and a customer
+# acts on both.
+_ASIDE_NOTE = (
+    "Some of what the advisor asks is not about which 线路 to sell — the 交通, a 景点, the "
+    "city, the 签证, the weather, 注意事项 — and what decides the answer is not the topic but "
+    "whether the 线路文档 writes it. "
+    "What the document writes is answered in full, naming the day or the row it is read "
+    "from (第 3 天 卢浮宫入内，门票已含): the day's 车程 and its flights, the 口岸 and the 联运 "
+    "clause, a 景点's 入内 or 外观 and whether its 门票 is included and how long the stop is, "
+    "the 签证 sentence, the 购物店, the 自费项目, 单房差 and 儿童. That is what tells one line "
+    "from another, and it is already on the cards. "
+    "Something about a line the document does not write is not inferred from another line "
+    "and not filled in from your own knowledge: say the 附件 does not write it and that the "
+    "计调 is who confirms it. 注意事项 asked as the agency's 报名须知 is that case. "
+    "Background the trip does not turn on — what a 景点 or a city is, what a place is like, "
+    "a traveller's commonplace (电压插头, 护照有效期, 随身液体) — answer in a sentence or two, "
+    "as background and never as the agency's word, and then return to the 线路 the advisor "
+    "is choosing between. It is background and not a guide: never an itinerary of your own "
+    "beside the line's. "
+    "Two kinds of fact never come from your own knowledge, whatever the question sounds "
+    "like. What changes: 门票价, 开放时间, whether a sight is booked ahead, 签证政策 and its "
+    "材料 and whether a customer will pass, 汇率, and any 气温 or 降水 figure — say 以出行前"
+    "通知为准 and give no number. What harms when it is wrong: 用药 and 疫苗, 保险理赔, the "
+    "safety and the law of a place, and a 过敏 or 忌口 question — those belong to the 计调, "
+    "the 使领馆 or a doctor, and saying you do not answer them is the whole answer. "
+)
+
+
 def build_shopping_config(*, live: bool = False) -> ShoppingAgentConfig:
     """``live`` says the ERP behind the backend is the agency's own. It switches the policy
     tool off, because the agency's rules are in a knowledge base this deployment does not
@@ -228,7 +259,8 @@ def build_shopping_config(*, live: bool = False) -> ShoppingAgentConfig:
             "baseline 团期's, the 定制 difference is the 计调's to quote, and a plan is never added "
             "to the cart — add_to_cart is for a 团期 alone. Anything the customer wants that the "
             "route does not carry goes into that day's note as 待计调确认. "
-            "A tool result that moved the conversation carries a 下一步 block: those are the "
+            + _ASIDE_NOTE
+            + "A tool result that moved the conversation carries a 下一步 block: those are the "
             "steps this state allows, and the turn's present_suggestions chips come from them. "
             "Reword a step freely and name the id the cards just showed, but do not offer a "
             "step the block does not list — a chip the state refuses is a tap the advisor "

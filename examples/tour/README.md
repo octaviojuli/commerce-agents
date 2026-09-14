@@ -722,6 +722,27 @@ a month on its own, and a condition on its own. Each names a 线路系 the agenc
 length it sells at and a budget it can meet, so none of them is a search that answers
 nothing, and none presupposes a 线路 or a 团期 that a new conversation does not have.
 
+## A question beside the sale
+
+Advisors ask about the 交通, a 景点, the city, the 签证, the weather and 注意事项, and none of
+those is a search. What decides the answer is not the topic but whether the 线路文档 writes
+it, so `_ASIDE_NOTE` in `api/agent_config.py` sets three rungs. What the document writes is
+answered in full, naming the day it is read from — the day's 车程 and flights, the 口岸 and
+the 联运 clause, a 景点's 入内 or 外观 with its 门票 and the length of the stop, the 签证
+sentence, the 购物店 and the 自费项目 — because that is what tells one line from another and
+it is already on the cards the answer sits beside. Something about a line the document does
+not write is the 计调's to confirm, and is never inferred from another line; 注意事项 asked
+as the agency's 报名须知 is that case. Background the trip does not turn on — what a 景点 or
+a city is, a traveller's commonplace — is a sentence said as background and not as the
+agency's word, after which the reply returns to the 线路 being chosen.
+
+Two kinds of fact are never answered from the model at all. What changes: 门票价, 开放时间,
+whether a sight is booked ahead, 签证政策 and its 材料, 汇率, a 气温 figure. What harms when
+it is wrong: 用药, 疫苗, 保险理赔, the safety and the law of a place, 过敏 and 忌口. An
+advisor can catch a misread 景点 安排, because the card beside it says what the document
+says; a 门票价 or a 签证材料 stated from memory looks exactly like one that was read, and the
+customer acts on both.
+
 ## Deploying
 
 `deploy/` puts the example on one server as three containers: the API under uvicorn, the

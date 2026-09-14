@@ -475,6 +475,24 @@ def test_the_plan_tool_is_registered_beside_the_shortlist(main):
     assert {"present_shortlist", "present_itinerary"} <= names
 
 
+def test_a_question_beside_the_sale_is_answered_off_the_document():
+    """交通, 景点, 城市, 签证 and 注意事项 are answered by whether the 线路文档 writes them, and
+    the facts that change or that harm when they are wrong come from the 计调, never from the
+    model. The rule holds on both deployments, because neither reads a knowledge base."""
+    for config in (build_shopping_config(), build_shopping_config(live=True)):
+        notes = config.domain_search_notes
+        # The document's own word is answered in full, with the day it is read from.
+        assert "What the document writes is answered in full" in notes
+        # What it does not write is the 计调's, not another line's and not the model's.
+        assert "not inferred from another line" in notes
+        assert "the 附件 does not write it" in notes
+        # A 景点 or a city may be said as background, in a sentence, then back to the 线路.
+        assert "as background and never as the agency's word" in notes
+        # The two lists that are never answered from memory at all.
+        assert "门票价, 开放时间" in notes
+        assert "用药 and 疫苗" in notes
+
+
 def test_the_notes_state_the_two_rules_a_beta_catalog_needs():
     notes = build_shopping_config().domain_search_notes
     # A 团期's own dates disagree with its 线路's day count, so the record's days is the answer.
