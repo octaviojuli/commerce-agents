@@ -1,0 +1,26 @@
+# Copyright 2026 Anthropic PBC
+# SPDX-License-Identifier: Apache-2.0
+
+# The advisor workbench. Built from the repository root:
+#     docker build -f examples/tour/deploy/Dockerfile.web \
+#       --build-arg NEXT_PUBLIC_API_URL=https://tour.example.com -t acme-tour-web .
+FROM node:22-slim
+
+# Next.js inlines a NEXT_PUBLIC_ value at build time, so where the API answers is decided
+# here and not at boot. Give it the public origin: the browser then calls the same origin it
+# loaded the page from and no request is cross-origin, and the server-rendered 分享 page
+# reaches the same address through the proxy.
+ARG NEXT_PUBLIC_API_URL=http://localhost:8004
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
+
+WORKDIR /app/examples
+# The workbench is one workspace of examples/ and web-shared is another, so the workspace
+# installs whole: its lock file describes every member, and npm ci holds to it.
+COPY examples ./
+RUN npm ci
+
+RUN npm run build --workspace acme-tour-storefront-web
+
+WORKDIR /app/examples/tour/storefront-web
+EXPOSE 3004
+CMD ["npm", "run", "start"]

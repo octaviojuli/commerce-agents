@@ -1,0 +1,65 @@
+# Copyright 2026 Anthropic PBC
+# SPDX-License-Identifier: Apache-2.0
+
+# One ECS instance runs the three: the API, the workbench, and the proxy that holds the
+# certificate and puts both on one origin. Run it from the repository root:
+#     docker compose -f examples/tour/deploy/compose.yaml --env-file examples/tour/deploy/.env up -d --build
+
+name: acme-tour
+
+services:
+  api:
+    build:
+      context: ../../..
+      dockerfile: examples/tour/deploy/Dockerfile.api
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      # TrustedHostMiddleware answers loopback and these; a Host header naming anything else
+      # is refused, which is what stops DNS rebinding.
+      DEMO_ALLOWED_HOSTS: ${TOUR_PUBLIC_HOST}
+      TOUR_STATE_DIR: /state
+    volumes:
+      - state:/state
+    expose: ["8004"]
+    logging: &logs
+      driver: json-file
+      options: {max-size: "20m", max-file: "5"}
+
+  web:
+    build:
+      context: ../../..
+      dockerfile: examples/tour/deploy/Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_URL: https://${TOUR_PUBLIC_HOST}
+    restart: unless-stopped
+    expose: ["3004"]
+    depends_on: [api]
+    logging: *logs
+
+  proxy:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./nginx.conf:/etc/nginx/templates/default.conf.template:ro
+      - ${TOUR_TLS_DIR}:/etc/nginx/tls:ro
+    environment:
+      TOUR_PUBLIC_HOST: ${TOUR_PUBLIC_HOST}
+    depends_on: [api, web]
+    networks:
+      default:
+        # The server-rendered 分享 page fetches the API at the public origin. Inside the
+        # network that name resolves here, so the request meets the same certificate and the
+        # same routes as a browser's and never leaves the host.
+        aliases: [ "${TOUR_PUBLIC_HOST}" ]
+    logging: *logs
+
+volumes:
+  state:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      # The advisor's conversations, their memory and the 线路文档. Back this path up.
+      device: ${TOUR_STATE_PATH}

@@ -681,6 +681,17 @@ the fixtures). So the isolation is the login's: one advisor's conversations and 
 facts are theirs, another advisor of the same deployment sees neither, and no route reads an
 identity from a request — the session id in the header is the only thing that names anybody.
 
+## Deploying
+
+`deploy/` puts the example on one server as three containers: the API under uvicorn, the
+workbench under `next start`, and an nginx that holds the certificate and serves both from
+one origin, so the browser makes no cross-origin request and the advisor's ERP password and
+session id never travel in the clear. `deploy/compose.yaml` builds and runs them,
+`deploy/env.example` is the deployment's own account and model key, and `deploy/README.md`
+says what each piece needs, how the state directory is backed up and why this runs as a
+single instance. The workbench is the agency's internal tool: it answers one host name and
+belongs behind the company's own network.
+
 ## Diagrams
 
 [`docs/architecture.html`](docs/architecture.html) is a single page with the system
