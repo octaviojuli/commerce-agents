@@ -132,6 +132,12 @@ def build_shopping_config(*, live: bool = False) -> ShoppingAgentConfig:
             "name, the department that sells it, the places its days pass through and the sights "
             "it names — so a distinctive word (观鲸, 一价全含, 国泰) narrows one family of a trip, "
             "and several places joined with · must all be on the line. "
+            "A request arrives as one of four openings, and each is a search on what it "
+            "carries: a whole sentence (人数, 出行时间, 目的地, 天数, 预算 or 购物团/纯玩), a "
+            "direction alone (北欧线路, 斯+马), a month alone (11月还能报名的西欧团期), or a "
+            "condition alone (15000 左右去欧洲的). A direction alone is a search and not a "
+            "question. What the customer has not said — 目的地, 出行时间, 人数, 天数 — is asked "
+            "beside the results, one at a time, and is never a condition of searching. "
             "The conversation runs in four stages, the way a 旅游顾问 works. (1) The request is "
             "wider than a shortlist and the result carries a 目录概览 block. Up to twelve matches "
             "that is cards and chips together: present the results with present_products, say the "
@@ -214,7 +220,12 @@ def build_shopping_config(*, live: bool = False) -> ShoppingAgentConfig:
             "改了第 5、6 天'). A plan carries no price of its own: the reference price is the "
             "baseline 团期's, the 定制 difference is the 计调's to quote, and a plan is never added "
             "to the cart — add_to_cart is for a 团期 alone. Anything the customer wants that the "
-            "route does not carry goes into that day's note as 待计调确认."
+            "route does not carry goes into that day's note as 待计调确认. "
+            "A tool result that moved the conversation carries a 下一步 block: those are the "
+            "steps this state allows, and the turn's present_suggestions chips come from them. "
+            "Reword a step freely and name the id the cards just showed, but do not offer a "
+            "step the block does not list — a chip the state refuses is a tap the advisor "
+            "wastes, and it is dropped before they see it."
         ),
         # Nothing ships: the customer joins the group at its 集合地点, which the route's
         # specs carry, so the fulfillment tool is not registered at all.

@@ -103,6 +103,10 @@ smoke script and the suite start their sessions with it. The fixtures hold no pa
 `FixtureAdvisorRegistry` signs in any advisor `data/users.json` names, whatever password the
 workbench sent, so the sign-in flow is the same on both.
 
+In live mode, employee API routes, including the listing catalog, require a session with a
+current ERP login. Anonymous, unknown and logged-out sessions receive 401. Login status,
+health checks and token-based customer share routes keep their existing access rules.
+
 ## Live mode
 
 `live = isinstance(erp, HttpErpClient)` in `api/main.py` is one line and everything the
@@ -680,6 +684,26 @@ ERP employee behind the advisor's own login (`erp-{userId}`, or their `data/user
 the fixtures). So the isolation is the login's: one advisor's conversations and remembered
 facts are theirs, another advisor of the same deployment sees neither, and no route reads an
 identity from a request — the session id in the header is the only thing that names anybody.
+
+## The next step
+
+Every turn ends with chips, and a chip the conversation cannot act on is a tap the advisor
+wastes: 把这两个团期发给客人 before a 团期 has been opened is refused by the tool that would
+send it. `api/next_steps.py` reads the conversation as one of five stages off what the
+session holds — the 预留 it wrote, the 团期 and 线路 whose cards it showed, whether a search
+is standing over more lines than a shortlist — and each stage names the steps it allows. A
+tool result that moved the conversation carries that list as a 下一步 block, the way a broad
+search carries 目录概览, and `TourToolExecutor` holds `present_suggestions` to it: a chip
+naming a step the stage does not reach, or an id no card has shown, is dropped before it is
+rendered and the model is told which. The model writes the words and picks among the steps;
+it invents none.
+
+The workbench's own four starters are the same idea before a conversation exists. They are
+built from the catalog (`components/views/HomeView.tsx`), one per opening an advisor's first
+sentence takes: a whole request (人数, 出行时间, 目的地, 天数, 预算), a direction on its own,
+a month on its own, and a condition on its own. Each names a 线路系 the agency sells, a
+length it sells at and a budget it can meet, so none of them is a search that answers
+nothing, and none presupposes a 线路 or a 团期 that a new conversation does not have.
 
 ## Deploying
 
