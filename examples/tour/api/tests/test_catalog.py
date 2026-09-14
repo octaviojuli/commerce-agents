@@ -343,7 +343,7 @@ def test_the_chips_are_the_groups_that_split_the_matches(catalog):
     # One value per line: the 线路系 the document files it under, else the countries joined.
     assert groups["目的地"] == [("斯里兰卡一地", 4), ("北欧", 1), ("德法意瑞", 1)]
     assert groups["天数"] == [("7 天", 4), ("11 天", 1), ("12 天", 1)]
-    assert groups["出发城市"] == [("上海", 4), ("北京", 1), ("广州", 1)]
+    assert groups["出发口岸"] == [("上海", 4), ("北京", 1), ("广州", 1)]
     assert groups["酒店标准"] == [("四钻", 5), ("五钻", 1)]
     assert groups["纯玩"] == [("纯玩", 4), ("含购物店", 2)]
     assert groups["起价"] == [("1万以内", 2), ("1–1.5万", 2), ("1.5–2万", 1), ("2.5万以上", 1)]
@@ -375,7 +375,7 @@ def test_the_dimensions_that_tell_a_family_apart_come_first(catalog):
 def test_a_handful_of_versions_of_one_trip_is_ambiguous(catalog):
     matches = catalog.match(ask(text="斯里兰卡", days_min=7, days_max=7))
     assert catalog.ambiguous(matches)
-    assert catalog.differences(matches) == ["出发城市", "酒店标准", "纯玩", "特色"]
+    assert catalog.differences(matches) == ["出发口岸", "酒店标准", "纯玩", "特色"]
     # 特色 is the words that tell the versions apart, and no word another group carries.
     assert catalog.chips(matches)["特色"] == [
         ("一价全含", 1),
@@ -477,3 +477,24 @@ def test_a_department_answers_a_scope_only_when_the_document_says_nothing(catalo
     assert not europe.holds(south)
     thin = replace(line, region="", countries=(), department="欧洲部-上海")
     assert europe.holds(thin)
+
+
+def test_the_口岸_is_the_document_s_and_a_home_city_narrows_nothing(catalog):
+    """A 线路's 出发城市 is the 口岸 its international flight boards at, and a customer lives
+    wherever they live: 厦门 is flown to 上海 on a 联运 leg, so naming it rules out no line.
+    A 口岸 the catalog does sell out of is a condition like any other."""
+    from tour.api.catalog import _city_of
+
+    assert _city_of("上海浦东国际机场T1") == "上海"
+    assert _city_of("PVG") == "上海"
+    assert _city_of("喀什") == "喀什"
+    assert _city_of("中国") == ""
+    gateways = catalog.gateways()
+    assert gateways and "郑州" not in gateways
+    everything = ids(catalog.match(ask()))
+    # A city no line boards at is where the customer lives, not a filter.
+    assert ids(catalog.match(ask(departure_cities=("郑州",)))) == everything
+    # One the catalog does board at still narrows.
+    one = next(iter(gateways))
+    narrowed = catalog.match(ask(departure_cities=(one,)))
+    assert narrowed and all(one in facts.depart_city for facts in narrowed)

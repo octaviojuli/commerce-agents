@@ -30,7 +30,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from commerce_common.presentation import PresentationRefused
+from commerce_common.presentation import CHIPS_TOOL, PresentationRefused
 from commerce_common.streaming import ToolOutcome
 from demo_common.storefront_fixtures import (
     example_data_dir,
@@ -91,6 +91,7 @@ from .erp_client import (
     WindowReader,
 )
 from .itinerary_source import cache_read, cache_write, fetch_attachment, parse_docx
+from .next_steps import Stage, keep, stage_of
 from .plans import (
     DayDiff,
     Plan,
@@ -625,7 +626,11 @@ def _facts_attributes(facts: RouteFacts) -> dict[str, str]:
         "route_code": facts.route_code,
         "days": str(facts.days),
         "nights": str(facts.nights) if facts.nights else "",
+        # The 口岸 the international flight boards at, not where the customer lives: a
+        # customer in 厦门 is flown to it, and 联运 says whether the line will do that.
+        "gateway": facts.depart_city,
         "depart_city": facts.depart_city,
+        **({"connecting": facts.connecting} if facts.connecting else {}),
         "countries": "|".join(facts.countries),
         "region": facts.region,
         "airline": short_text(facts.airline, MAX_COVER_CHARS),
@@ -947,6 +952,13 @@ class ShareRecord:
     created_at: datetime
 
 
+# The tools whose result moves the conversation on, and so carries what it may do next.
+_STAGE_AFTER = frozenset(
+    {"search_products", "get_product_details", "present_route_days", "present_departures"}
+)
+_CHIPS_DROPPED = "以下 chip 与当前会话状态不符，已去掉："
+
+
 def _picked_ids(tool_input: dict[str, Any]) -> list[str]:
     """The 线路 and 团期 ids among a ``present_products`` call's ``picks``: cards of both kinds
     are what the advisor picks off, so both are recorded. The payload is the model's and is
@@ -999,11 +1011,17 @@ class TourToolExecutor(ShoppingToolExecutor):
         """The base dispatch, with the route-first gate around the two tools it spans: a
         route's details are held until the model has presented it, and a rendered
         ``present_products`` is what lifts the hold for the ids it showed. The 团期 ids it
-        showed are recorded the same way, because ``present_shortlist`` reads that record."""
+        showed are recorded the same way, because ``present_shortlist`` reads that record.
+
+        A result that moved the conversation carries what it may do next (``next_steps.py``),
+        and the chips the turn ends with are held to it: a chip naming a step this state does
+        not allow, or an id no card has shown, is dropped before the advisor can tap it."""
         if name == "get_product_details" and (held := self._route_first(tool_input)):
             return held
         if name == "present_products" and (held := self._focus_first(tool_input)):
             return held
+        if name == CHIPS_TOOL:
+            tool_input, dropped = self._legal_chips(tool_input)
         outcome = await super().dispatch(name, tool_input)
         if name == "present_products" and not outcome.refused:
             self._backend.note_presented(self._session.session_id, _picked_ids(tool_input))
@@ -1013,7 +1031,42 @@ class TourToolExecutor(ShoppingToolExecutor):
                 outcome = replace(
                     outcome, result_text=f"{outcome.result_text}\n\n{overview.text()}"
                 )
+        if name == CHIPS_TOOL and dropped and not outcome.is_error:
+            outcome = replace(
+                outcome,
+                result_text=f"{outcome.result_text}\n\n{_CHIPS_DROPPED}{'、'.join(dropped)}。",
+            )
+        elif name in _STAGE_AFTER and not outcome.is_error:
+            outcome = replace(
+                outcome, result_text=f"{outcome.result_text}\n\n{self._stage().block()}"
+            )
         return outcome
+
+    def _stage(self) -> Stage:
+        """What this conversation has reached: the 预留 it wrote, the 团期 and 线路 whose cards
+        it showed, and whether a search is standing over more lines than a shortlist."""
+        session_id = self._session.session_id
+        shown = self._backend.presented(session_id)
+        return stage_of(
+            holds=len(self._backend.live_holds(session_id)),
+            departures_seen=any(pid.startswith(DEPARTURE_PREFIX) for pid in shown),
+            routes_presented=any(pid.startswith(ROUTE_PREFIX) for pid in shown),
+            overview=self._backend.overview(session_id) is not None,
+        )
+
+    def _legal_chips(self, tool_input: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+        """The chips this state allows, and the ones it does not. All four refused leaves the
+        stage's own first step in their place, because the tool takes at least one and a turn
+        that ends with nothing to tap is worse than a general one."""
+        chips = [str(chip) for chip in tool_input.get("suggestions", []) if str(chip).strip()]
+        if not chips:
+            return tool_input, []
+        stage = self._stage()
+        shown = self._backend.presented(self._session.session_id) | set(self._state.seen_products)
+        kept, dropped = keep(chips, stage, shown)
+        if not dropped:
+            return tool_input, []
+        return {**tool_input, "suggestions": kept or [stage.steps[0]]}, dropped
 
     def _focus_first(self, tool_input: dict[str, Any]) -> ToolOutcome | None:
         """The held outcome when the model shortlists a search wider than the advisor can
@@ -2089,7 +2142,7 @@ class TourBackend(StorefrontBackend):
 
     # -- cart: the 预留 orders this conversation wrote -------------------------------------
 
-    def _live_holds(self, session_id: str) -> list[Hold]:
+    def live_holds(self, session_id: str) -> list[Hold]:
         """The session's orders, minus the 预留 whose half hour has run out. Nothing is asked
         of the ERP: the hold the advisor was told about is ours, and the ERP's own 预留 runs
         on ``reserve_hours`` whatever we do here."""
@@ -2187,7 +2240,7 @@ class TourBackend(StorefrontBackend):
         """The conversation's own 预留 orders as they stand in the ERP. A conversation that
         wrote none costs no call and needs no login: the advisor whose token has run out is
         told so by the read that needs one, not by an empty cart."""
-        holds = self._live_holds(session.session_id)
+        holds = self.live_holds(session.session_id)
         if not holds:
             return Cart(items=[], currency=CURRENCY)
         erp = self._erp_for(session)
@@ -2310,7 +2363,7 @@ class TourBackend(StorefrontBackend):
             "department": department or self.store_name,
             "departments": departments,
             "customer": self.customer_label,
-            "active_holds": len(self._live_holds(session.session_id)),
+            "active_holds": len(self.live_holds(session.session_id)),
         }
 
     def _order(self, record: OrderRecord) -> Order:
@@ -2634,6 +2687,6 @@ class TourBackend(StorefrontBackend):
         候补 order is not a hold and does not count down."""
         return [
             (hold.order_no, departure_id_of(hold.period_id), hold.expires_at)
-            for hold in self._live_holds(session_id)
+            for hold in self.live_holds(session_id)
             if not hold.is_waitlist
         ]

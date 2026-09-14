@@ -174,6 +174,9 @@ export function routeTags(product: Product, limit = 5): string[] {
   if (count(attrs.optional_count)) tags.push(`自费 ${count(attrs.optional_count)} 项`);
   if (count(attrs.ticket_count)) tags.push(`含门票 ${count(attrs.ticket_count)} 处`);
   if (count(attrs.gift_count)) tags.push(`赠送 ${count(attrs.gift_count)} 项`);
+  // A customer outside the 口岸 is flown to it; the cover says whether, and on whose ticket.
+  if (attrs.connecting?.includes("全国联运")) tags.push("可全国联运");
+  else if (attrs.connecting) tags.push("可联运");
   if (attrs.doc === "reviewed") tags.push("已复核");
   else if (attrs.doc === "draft") tags.push("解析稿");
   return tags.slice(0, limit);
@@ -188,7 +191,9 @@ export function routeHeadline(product: Product): string {
   const parts: string[] = [];
   const nights = attrs.nights ? ` ${attrs.nights} 晚` : "";
   if (attrs.days) parts.push(`${attrs.days} 天${nights}`);
-  if (attrs.depart_city) parts.push(`${attrs.depart_city}出发`);
+  // The 口岸 the international flight boards at, which is not where the customer lives: a
+  // customer elsewhere is flown to it, and 联运 on the tag row says whether the line will.
+  if (attrs.gateway || attrs.depart_city) parts.push(`${attrs.gateway || attrs.depart_city}口岸`);
   const countries = attrList(attrs.countries).join("·");
   if (countries) parts.push(countries);
   else if (attrs.region) parts.push(attrs.region);
@@ -286,7 +291,10 @@ export function routeSpecs(product: Product): Spec[] {
   const attrs = product.attributes ?? {};
   const specs: Spec[] = [];
   if (attrs.days) specs.push({ label: "天数", value: `${attrs.days} 天` });
-  if (attrs.depart_city) specs.push({ label: "出发城市", value: attrs.depart_city });
+  if (attrs.gateway || attrs.depart_city) {
+    specs.push({ label: "出发口岸", value: attrs.gateway || attrs.depart_city });
+  }
+  if (attrs.connecting) specs.push({ label: "联运", value: attrs.connecting });
   return specs;
 }
 

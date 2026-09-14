@@ -18,6 +18,7 @@ matches are the same trip sold four ways and the advisor has to say which."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -59,7 +60,7 @@ FILTERS = {
     "目的地": "region/destination",
     "出发月份": "depart_from/depart_to",
     "天数": "days_min/days_max",
-    "出发城市": "departure_city",
+    "出发口岸": "departure_city",
     "酒店标准": "hotel_level",
     "纯玩": "no_shopping",
     "特色": "feature",
@@ -91,7 +92,61 @@ DAY_BANDS = (
 BAND_DAYS_ABOVE = 6
 # A city the ERP wrote where it had none: 中国 is not a place a group leaves from, so the
 # line's own 参考航班 is asked instead and a line with neither says 未标注.
-VAGUE_CITIES = frozenset({"中国", "国内", "全国", "不限", "待定", "多地"})
+VAGUE_CITIES = frozenset({"中国", "国内", "全国", "不限", "待定", "多地", "国内城市"})
+# The airport a 口岸 is written as, which is not the 口岸: 上海浦东国际机场T1 is 上海.
+_AIRPORT_TAIL = re.compile(
+    r"(?:浦东|虹桥|首都|大兴|天府|双流|江北|萧山|宝安|白云|咸阳|长水|高崎|禄口|新郑|流亭|滨海|"
+    r"桃仙|太平|遥墙|新桥|昌北|栎社|龙洞堡|吴圩|美兰|凤凰|地窝堡|白塔|武宿|正定|中川|河东|曹家堡)?"
+    r"(?:国际)?(?:机场)?\s*(?:T\d|第[一二三]航站楼)?$"
+)
+# The same cities as the ERP sometimes writes them, by their airport code.
+_IATA_CN = {
+    "PVG": "上海",
+    "SHA": "上海",
+    "PEK": "北京",
+    "PKX": "北京",
+    "CAN": "广州",
+    "SZX": "深圳",
+    "CTU": "成都",
+    "TFU": "成都",
+    "CKG": "重庆",
+    "HGH": "杭州",
+    "NKG": "南京",
+    "XMN": "厦门",
+    "FOC": "福州",
+    "KMG": "昆明",
+    "XIY": "西安",
+    "WUH": "武汉",
+    "CSX": "长沙",
+    "CGO": "郑州",
+    "TAO": "青岛",
+    "TSN": "天津",
+    "DLC": "大连",
+    "SHE": "沈阳",
+    "HRB": "哈尔滨",
+    "TNA": "济南",
+    "HFE": "合肥",
+    "KHN": "南昌",
+    "NGB": "宁波",
+    "WNZ": "温州",
+    "KWE": "贵阳",
+    "NNG": "南宁",
+    "HAK": "海口",
+    "SYX": "三亚",
+    "URC": "乌鲁木齐",
+    "HET": "呼和浩特",
+    "TYN": "太原",
+    "SJW": "石家庄",
+    "LHW": "兰州",
+    "INC": "银川",
+    "XNN": "西宁",
+    "CGQ": "长春",
+    "HKG": "香港",
+}
+# ``默认上海出发``: the cover's own word for the gateway, which outranks the ERP's field.
+_DEFAULT_GATEWAY = re.compile(r"默认([\u4e00-\u9fff]{2,4})出发")
+# The clause of the cover that is about 联运, bounded by the punctuation around it.
+_CLAUSE = re.compile(r"[^|，,。；;（()）]+")
 # What a destination the advisor wrote as several places is split on: a chip sends the
 # countries joined (法国·意大利·瑞士) and the line must carry every one of them.
 _SEPARATORS = "·、,，/ 　+&"
@@ -223,6 +278,7 @@ class RouteFacts:
     region: str
     days: int
     nights: int | None
+    # The 口岸 the international flight leaves from, which is not where the customer lives.
     depart_city: str
     airline: str
     hotel_standard: str
@@ -242,6 +298,10 @@ class RouteFacts:
     from_price: float
     image_url: str | None
     doc: RouteDoc
+    # What the cover says about flying a customer from their own city to the 口岸, where it
+    # says anything: 可免费申请全国联运, 可配全国联运. An attachment silent on it is the 门店's
+    # question, not a no.
+    connecting: str = ""
 
     @property
     def destination(self) -> str:
@@ -304,19 +364,50 @@ def _feature_words(doc: RouteDoc) -> tuple[str, ...]:
     return tuple(word for word in FEATURE_WORDS if word in text)
 
 
-def _depart_city(doc: RouteDoc) -> str:
-    """The city the group leaves from, as a city and not as a country: an ERP row that wrote
-    中国 into the field said nothing, so the first day's 参考航班 is read instead, and a line
-    with neither leaves it empty rather than filtering and grouping on 中国."""
-    stated = doc.summary.depart_city.strip()
-    if stated and stated not in VAGUE_CITIES:
-        return stated
-    for day in doc.days[:1]:
-        for flight in day.flights:
-            city = flight.from_place.strip()
-            if city and city not in VAGUE_CITIES:
-                return city
+def _city_of(place: str) -> str:
+    """One written place as the 口岸 city it names, or empty. ``上海浦东国际机场T1``, ``上海浦东``
+    and ``PVG`` are all 上海."""
+    text = place.strip()
+    if not text or text in VAGUE_CITIES:
+        return ""
+    code = _IATA_CN.get(text.upper())
+    if code is not None:
+        return code
+    city = _AIRPORT_TAIL.sub("", text).strip(" 市")
+    return city if city and city not in VAGUE_CITIES else ""
+
+
+def _gateway(doc: RouteDoc) -> str:
+    """The 口岸: the city the international flight leaves from, which is not where the
+    customer lives.
+
+    A line sells out of one or two gateways and feeds them from anywhere the airline flies:
+    a customer in 厦门 flies 厦门-上海 and then 上海-欧洲, and 上海 is the gateway. The ERP's
+    own 出发城市 is often a 联运 city being marketed instead — RT-36 says 北京 over a cover
+    that reads 默认上海出发 — so the document answers first: the first 参考航班 it writes, then
+    the cover's 默认X出发, and the ERP's field last."""
+    # The first 参考航班 the document writes is the outbound, and it boards at the 口岸; a
+    # later one flies between two places abroad and says nothing about where the group met.
+    if doc.transport and (city := _city_of(doc.transport[0].from_place)):
+        return city
+    named = _DEFAULT_GATEWAY.search(_cover_text(doc))
+    if named is not None and (city := _city_of(named[1])):
+        return city
+    return _city_of(doc.summary.depart_city)
+
+
+def _connecting(doc: RouteDoc) -> str:
+    """What the cover says about 联运: the clause that tells an advisor whether a customer
+    outside the 口岸 can be flown to it. Empty where the attachment says nothing, which is not
+    the same as no 联运 — it is the 门店's question then."""
+    for clause in _CLAUSE.findall(_cover_text(doc)):
+        if "联运" in clause:
+            return short_text(clause.strip(), 40)
     return ""
+
+
+def _cover_text(doc: RouteDoc) -> str:
+    return " | ".join([doc.cover.airline, *doc.cover.fields.values()])
 
 
 def _places(doc: RouteDoc) -> tuple[str, ...]:
@@ -343,7 +434,8 @@ def facts_of(doc: RouteDoc, record: RouteRecord | None = None) -> RouteFacts:
         region=doc.summary.region,
         days=doc.summary.days,
         nights=doc.summary.nights,
-        depart_city=_depart_city(doc),
+        depart_city=_gateway(doc),
+        connecting=_connecting(doc),
         airline=doc.cover.airline,
         hotel_standard=doc.cover.hotel_standard,
         meal_standard=doc.cover.meal_standard,
@@ -460,7 +552,7 @@ def stated_of(request: Request, dates: str = "") -> Stated:
     if request.days or request.days_min is not None or request.days_max is not None:
         fix("天数", _days_label(request))
     if request.departure_cities:
-        fix("出发城市", "、".join(request.departure_cities) + "出发")
+        fix("出发口岸", "、".join(request.departure_cities) + "口岸")
     if request.hotel_levels:
         fix("酒店标准", "、".join(wanted_grade(level) or level for level in request.hotel_levels))
     if request.no_shopping:
@@ -553,9 +645,7 @@ class Catalog:
         high = facts.days if request.days_max is None else request.days_max
         if not low <= facts.days <= high:
             return False
-        if request.departure_cities and not any(
-            city.strip() in facts.depart_city for city in request.departure_cities
-        ):
+        if not self._fits_gateway(facts, request):
             return False
         if request.no_shopping and not facts.no_shopping:
             return False
@@ -570,6 +660,25 @@ class Catalog:
         if request.price_max and facts.from_price > request.price_max:
             return False
         return not (request.price_min and facts.from_price < request.price_min)
+
+    def _fits_gateway(self, facts: RouteFacts, request: Request) -> bool:
+        """Whether the 口岸 is one the request named. A city the catalog uses as a gateway is
+        a condition; a city it never does is where the customer lives, not where a line
+        leaves from, and it narrows nothing — 厦门 is flown to 上海 and the line is still the
+        line. ``gateways`` is what the catalog sells out of, so the difference is read and
+        not guessed."""
+        wanted = [city.strip() for city in request.departure_cities if city.strip()]
+        if not wanted:
+            return True
+        gateways = self.gateways()
+        if not any(city in gateways for city in wanted):
+            return True
+        return any(city in facts.depart_city for city in wanted if city in gateways)
+
+    def gateways(self) -> set[str]:
+        """Every 口岸 the catalog sells out of. A city outside it is a customer's own, and is
+        flown to one of these."""
+        return {facts.depart_city for facts in self._facts.values() if facts.depart_city}
 
     def _rank(self, facts: RouteFacts, request: Request) -> tuple:
         asked = set(request.days) | (
@@ -602,7 +711,7 @@ class Catalog:
         groups = {
             "目的地": self._destinations(matches),
             "天数": _counts(f"{facts.days} 天" for facts in matches),
-            "出发城市": _counts(facts.depart_city or UNSTATED for facts in matches),
+            "出发口岸": _counts(facts.depart_city or UNSTATED for facts in matches),
             "出发月份": self._months(matches, months, year),
             "酒店标准": _counts(facts.hotel_grade or UNSTATED for facts in matches),
             "纯玩": _counts(
@@ -662,7 +771,7 @@ class Catalog:
         """The dimensions that tell these lines apart, in the order the advisor asks about
         them; empty when nothing here splits them."""
         dimensions = (
-            ("出发城市", lambda facts: facts.depart_city),
+            ("出发口岸", lambda facts: facts.depart_city),
             ("酒店标准", lambda facts: facts.hotel_grade),
             ("纯玩", lambda facts: facts.no_shopping),
             ("特色", lambda facts: facts.feature_words),

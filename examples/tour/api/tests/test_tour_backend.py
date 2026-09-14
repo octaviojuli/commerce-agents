@@ -1277,3 +1277,42 @@ def test_a_free_text_query_names_only_its_places():
     assert _query_places("国庆 线路 推荐") == ()
     # A 线路系 the model adds beside the customer's wide word is a guess, not a fact.
     assert _query_places("欧洲 德法意瑞 国庆") == ("欧洲",)
+
+
+def test_the_next_step_block_reads_what_the_conversation_reached():
+    """The steps a turn may end with are the state's, not the model's: nothing opened yet is
+    a question about where to go, a 线路 shown opens its 行程 and its 团期, and a 团期 opened
+    is where a quote, a 占位 and a 清单 become legal."""
+    from tour.api.next_steps import keep, stage_of
+
+    opening = stage_of(holds=0, departures_seen=False, routes_presented=False, overview=False)
+    assert opening.name == "open" and "换一个方向再找（目录里有的线路系）" in opening.steps
+    wide = stage_of(holds=0, departures_seen=False, routes_presented=False, overview=True)
+    assert wide.name == "narrow"
+    route = stage_of(holds=0, departures_seen=False, routes_presented=True, overview=False)
+    assert route.name == "route" and "下一步" in route.block()
+    departure = stage_of(holds=0, departures_seen=True, routes_presented=True, overview=False)
+    assert departure.name == "departure"
+    held = stage_of(holds=1, departures_seen=True, routes_presented=True, overview=False)
+    assert held.name == "held"
+    # A 清单 is a step of the 团期 stage; at the 线路 stage the chip offering it is dropped.
+    chips = ["看 RT-61 的逐日行程", "把这两个团期做成清单发给客人", "查 RT-99 的团期"]
+    kept, dropped = keep(chips, route, {"RT-61"})
+    assert kept == ["看 RT-61 的逐日行程"]
+    assert dropped == ["把这两个团期做成清单发给客人", "查 RT-99 的团期"]
+    assert keep(chips, departure, {"RT-61", "RT-99", "DP-1"})[1] == []
+
+
+def test_a_chip_the_state_refuses_is_dropped_before_it_is_rendered():
+    """The same reading filters what a turn ends with: a chip naming a step the conversation
+    has not reached, or an id no card has shown, never reaches the advisor."""
+    from tour.api.next_steps import keep, stage_of
+
+    stage = stage_of(holds=0, departures_seen=False, routes_presented=False, overview=True)
+    kept, dropped = keep(
+        ["把这两个团期做成清单发给客人", "换个方向再找", "看 RT-999999 的逐日行程"],
+        stage,
+        set(),
+    )
+    assert kept == ["换个方向再找"]
+    assert dropped == ["把这两个团期做成清单发给客人", "看 RT-999999 的逐日行程"]
