@@ -468,7 +468,8 @@ def public(engine, token, signal=None, route=0):
     }
 
 
-BUDGET_LINE = re.compile(r"每人约 ¥[\d,]+(?:，超 ¥[\d,]+)?")
+# The over-budget note the program wrote on plans saved before notes were tagged "报价".
+OVER_BUDGET = re.compile(r"每人约 ¥[\d,]+，超 ¥[\d,]+")
 
 
 def public_route(r):
@@ -479,10 +480,11 @@ def public_route(r):
     shown = price if price and not expired else None
 
     # Everything drawn from the price goes with it; supplier terms stay, amounts and all.
-    # Plans saved before over-budget notes were tagged "报价" carry the budget line in the
-    # program's own wording, which no supplier text uses.
+    # Plans saved before over-budget notes were tagged "报价" filed that note under "行程" in
+    # the program's own wording; supplier text keeps its own section and never matches both.
     def priced(x):
-        return x["source"] == "报价" or BUDGET_LINE.fullmatch(x["text"]) is not None
+        legacy = x["source"] == "行程" and OVER_BUDGET.fullmatch(x["text"]) is not None
+        return x["source"] == "报价" or legacy
 
     reasons = [x for x in r["reasons"] if shown or not priced(x)]
     tell = [x for x in r["tell"] if shown or not priced(x)]

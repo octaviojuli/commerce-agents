@@ -742,3 +742,41 @@ def test_historical_over_budget_note_is_withdrawn_without_rewriting_the_plan():
     assert public["why"] == "安排自由活动" and public["tell"] == ""
     assert public["total"] is None and "过期" in public["price_note"]
     assert old["tell"][0]["text"] == "每人约 ¥14,800，超 ¥4,800"
+
+
+def test_supplier_notice_matching_budget_words_keeps_its_source(env):
+    client, engine, owner = env
+    deal = UUID(ready(client))
+    notice = "每人约 ¥300"
+
+    def source(request):
+        response = warehouse(request)
+        if request.url.path.endswith("/document"):
+            payload = response.json()
+            payload["body"]["notices"] = [
+                {"title": "ACME 签证服务费（出发前另付）", "items": [notice]}
+            ]
+            return httpx.Response(200, json=payload)
+        return response
+
+    async def build():
+        wh = Warehouse(
+            "http://warehouse.test",
+            "t",
+            str(owner.org_id),
+            transport=httpx.MockTransport(source),
+        )
+        try:
+            return await selling.build_plan(engine, owner, wh, deal, [SLOW])
+        finally:
+            await wh.aclose()
+
+    plan = asyncio.run(build())
+    private = plan["body"]["routes"][0]
+    assert private["price"] is None
+    assert private["tell"] == [{"concern": "说清", "text": notice, "source": "注意事项"}]
+    token = selling.share(engine, owner, deal, UUID(plan["id"]))
+    response = client.get(f"/api/public/plans/{token}")
+    response.raise_for_status()
+    public = response.json()["routes"][0]
+    assert public["tell"] == notice, {"saved_notice": private["tell"], "public_route": public}
