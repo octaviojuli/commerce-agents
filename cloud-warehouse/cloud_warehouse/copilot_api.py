@@ -5,19 +5,27 @@ from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
+from pydantic import Field
 from starlette.concurrency import run_in_threadpool
 
 from . import copilot_assets as assets
 from . import copilot_engine as engine
+from . import (
+    copilot_explore,
+    copilot_facts,
+    copilot_memory,
+    copilot_ocr,
+    copilot_plans,
+    copilot_privacy,
+)
 from . import copilot_inquiries as inquiries
-from . import copilot_ocr
 from . import copilot_records as records
 from . import copilot_sales as sales
 from .assets import MAX_BYTES
 from .persistence import Principal
 
 
-def install(app, runtime, principal, store):
+def install(app, runtime, principal, store, authentication):
     router = APIRouter(prefix="/v1/copilot", tags=["advisor-copilot"])
     Actor = Annotated[Principal, Depends(principal)]
 
@@ -37,6 +45,10 @@ def install(app, runtime, principal, store):
     @router.post("/customers/{identifier}")
     def customer_update(identifier: UUID, body: records.CustomerWrite, actor: Actor):
         return records.write_customer(runtime, actor, body, identifier)
+
+    @router.post("/customers/{identifier}/travelers/{index}/reveal")
+    def reveal_document(identifier: UUID, index: int, actor: Actor):
+        return copilot_privacy.reveal(runtime, actor, identifier, index)
 
     @router.get("/deals")
     def deals(
@@ -64,6 +76,14 @@ def install(app, runtime, principal, store):
     ):
         return records.history(runtime, actor, identifier, before=before, limit=limit)
 
+    @router.get("/directions")
+    def directions(actor: Actor):
+        return copilot_explore.directions(runtime, actor)
+
+    @router.post("/deals/{identifier}/directions/{direction_id}")
+    def choose_direction(identifier: UUID, direction_id: str, body: records.Command, actor: Actor):
+        return copilot_explore.choose(runtime, actor, identifier, direction_id, body)
+
     @router.post("/deals/{identifier}/customer")
     def associate(identifier: UUID, body: records.Associate, actor: Actor):
         return records.associate(runtime, actor, identifier, body)
@@ -71,6 +91,35 @@ def install(app, runtime, principal, store):
     @router.post("/deals/{identifier}/notes")
     def note(identifier: UUID, body: records.Note, actor: Actor):
         return records.note(runtime, actor, identifier, body)
+
+    @router.get("/deals/{identifier}/nodes")
+    def nodes(identifier: UUID, actor: Actor):
+        brief = records.trip_brief.get(runtime, actor, identifier)["body"]
+        return (
+            copilot_facts.read(runtime, actor, brief["route_id"], brief["departure_id"])
+            if brief["route_id"]
+            else {"facts": []}
+        )
+
+    @router.post("/deals/{identifier}/sent")
+    def sent(identifier: UUID, body: copilot_memory.Sent, actor: Actor):
+        return copilot_memory.mark_sent(runtime, actor, identifier, body)
+
+    @router.post("/deals/{identifier}/explain")
+    def explain(identifier: UUID, body: copilot_memory.Explain, actor: Actor):
+        return copilot_memory.explain(runtime, actor, identifier, body)
+
+    @router.post("/deals/{identifier}/compare")
+    def compare(identifier: UUID, body: copilot_plans.Build, actor: Actor):
+        return copilot_plans.compare(runtime, actor, identifier, body.product_ids)
+
+    @router.post("/deals/{identifier}/plans")
+    def plan(identifier: UUID, body: copilot_plans.Build, actor: Actor):
+        return copilot_plans.build(runtime, actor, identifier, body)
+
+    @router.post("/deals/{identifier}/plans/{record_id}/share")
+    def share_plan(identifier: UUID, record_id: UUID, body: records.Command, actor: Actor):
+        return copilot_plans.share(runtime, actor, identifier, record_id, body)
 
     @router.post("/deals/{identifier}/tasks/{task_id}/complete")
     def task_done(identifier: UUID, task_id: UUID, body: records.Command, actor: Actor):
@@ -162,3 +211,25 @@ def install(app, runtime, principal, store):
         return copilot_ocr.recognize(runtime, actor, store, identifier, asset_id, body)
 
     app.include_router(router)
+
+    class PlanRead(records.Model):
+        token: str = Field(max_length=256)
+        signal: str | None = None
+        route: int = 0
+
+    @app.post("/v1/public/plan")
+    def public_plan(body: PlanRead):
+        from fastapi.responses import JSONResponse
+
+        result = copilot_plans.public_read(
+            runtime, authentication, body.token, signal=body.signal, route=body.route
+        )
+        return JSONResponse(
+            result or {"message": "方案已更新，请联系顾问"},
+            status_code=200 if result else 404,
+            headers={
+                "Cache-Control": "no-store",
+                "X-Robots-Tag": "noindex, nofollow",
+                "Referrer-Policy": "no-referrer",
+            },
+        )

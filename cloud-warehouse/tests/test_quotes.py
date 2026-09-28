@@ -32,6 +32,10 @@ def schedule(adult="100.00", *, complete=True):
         child_age_min=2,
         child_age_max=12,
         room_types=["双人标准间"],
+        child_bed_prices={
+            "occupied": {"market": "60.00", "settlement": "50.00"},
+            "unoccupied": {"market": "60.00", "settlement": "50.00"},
+        },
     )
 
 

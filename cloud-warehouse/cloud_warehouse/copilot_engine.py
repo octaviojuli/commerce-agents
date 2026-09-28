@@ -1,9 +1,11 @@
 """Deterministic proposal adoption, downstream invalidation and version-bound confirmations."""
 
-from pydantic import Field
+from zoneinfo import ZoneInfo
+
+from pydantic import Field, ValidationError
 from sqlalchemy import text
 
-from . import copilot_dependencies, trip_brief
+from . import copilot_dependencies, travel_requirements, trip_brief
 from . import copilot_records as records
 from .changes import Conflict
 from .integrations import fingerprint
@@ -13,6 +15,7 @@ from .trip_brief import FIELDS, QUOTE_FIELDS, ROUTE_FIELDS, Requirements, Source
 
 class Adoption(records.Command):
     accept: bool
+    fields: list[str] | None = Field(default=None, min_length=1, max_length=20)
 
 
 class Confirmation(records.Command):
@@ -44,7 +47,10 @@ def original_evidence(message, evidence):
 
 def material(brief):
     body = brief.model_dump(mode="json")
-    return {k: body[k] for k in (*FIELDS, "route_id", "departure_id", "offer_id")}
+    return {
+        k: body[k]["value"] if k in QUOTE_FIELDS else body[k]
+        for k in (*sorted(QUOTE_FIELDS), "route_id", "departure_id", "offer_id")
+    }
 
 
 def invalidate(conn, identifier, previous, updated):
@@ -91,30 +97,53 @@ def propose(engine, actor, identifier, fields, message, turn_id):
         records.ensure(conn, actor, identifier)
         brief, version = trip_brief.load(conn, identifier)
         effective = {}
+        rejected = {}
         for name, data in fields.items():
-            if name not in FIELDS:
-                raise ValueError("未知需求字段")
-            value = getattr(Requirements.model_validate({name: data}), name)
+            try:
+                if name not in FIELDS:
+                    raise ValueError("未知需求字段")
+                value = getattr(Requirements.model_validate({name: data}), name)
+            except (ValueError, ValidationError):
+                rejected[name] = "字段格式未通过校验"
+                continue
             if getattr(brief, name).value == value.value:
                 continue
             if value.source == Source.said:
                 value.evidence = original_evidence(message, value.evidence)
                 if not value.evidence or len(value.evidence) > 120 or value.evidence not in message:
-                    raise ValueError("需求依据必须是本轮原话的短片段")
+                    rejected[name] = "缺少本轮原话依据"
+                    continue
             elif value.source == Source.inferred:
                 if not value.hint.strip():
-                    raise ValueError("推断需要说明依据")
+                    rejected[name] = "推断缺少说明"
+                    continue
             else:
-                raise ValueError("模型不能声明顾问已经确认")
+                rejected[name] = "模型不能声明顾问已确认"
+                continue
             if getattr(brief, name).value != value.value:
                 effective[name] = value.model_dump(mode="json")
+        started = conn.scalar(
+            text("SELECT started_at FROM agent_turn WHERE id=:id"), {"id": turn_id}
+        )
+        effective = travel_requirements.normalize(
+            effective, message, brief, started.astimezone(ZoneInfo("Asia/Shanghai")).date()
+        )
+        effective = {
+            k: v
+            for k, v in effective.items()
+            if getattr(brief, k).value != getattr(Requirements.model_validate({k: v}), k).value
+        }
         if not effective:
-            return {"status": "unchanged", "brief": trip_brief.envelope(brief, version)}
+            return {
+                "status": "unchanged",
+                "rejected": rejected,
+                "brief": trip_brief.envelope(brief, version),
+            }
         # Only direct initial facts can be adopted automatically, before any route selection.
         automatic = not brief.route_id and all(
             getattr(brief, k).value is None
             and getattr(brief, k).source != Source.advisor
-            and v["source"] == "said"
+            and v["source"] in ("said", "inferred")
             for k, v in effective.items()
         )
         proposal = records.append(
@@ -122,7 +151,11 @@ def propose(engine, actor, identifier, fields, message, turn_id):
             actor,
             identifier,
             "proposal",
-            {"fields": effective},
+            {
+                "fields": effective,
+                "previous": {k: getattr(brief, k).model_dump(mode="json") for k in effective},
+                "impact": impacts(brief, effective, conn=conn, identifier=identifier),
+            },
             version,
             f"proposal:{turn_id}",
         )
@@ -142,12 +175,14 @@ def propose(engine, actor, identifier, fields, message, turn_id):
                 version + 1,
                 f"adopt:{turn_id}",
             )
-            return {"status": "adopted", "brief": saved}
+            return {"status": "adopted", "rejected": rejected, "brief": saved}
         return {
             "status": "pending",
             "proposal_id": str(proposal["id"]),
             "fields": effective,
-            "impact": "采纳后重新核对候选、确认单和报价；历史记录保留。",
+            "previous": {k: getattr(brief, k).model_dump(mode="json") for k in effective},
+            "impact": impacts(brief, effective, conn=conn, identifier=identifier),
+            "rejected": rejected,
             "brief": trip_brief.envelope(brief, version),
         }
 
@@ -155,6 +190,9 @@ def propose(engine, actor, identifier, fields, message, turn_id):
 def adopt(engine, actor, identifier, proposal_id, request):
     with transaction(engine, actor) as conn:
         # Identical retries return the committed receipt, even after the version moved.
+        receipt_body = {"proposal_id": str(proposal_id), "accepted": request.accept}
+        if request.fields is not None:
+            receipt_body["fields"] = sorted(set(request.fields))
         previous = (
             conn.execute(
                 text("SELECT * FROM advisor_record WHERE request_key=:key"),
@@ -167,23 +205,36 @@ def adopt(engine, actor, identifier, proposal_id, request):
             if (
                 previous["deal_id"] != identifier
                 or previous["kind"] != "adoption"
-                or previous["body"] != {"proposal_id": str(proposal_id), "accepted": request.accept}
+                or previous["body"] != receipt_body
             ):
                 raise Conflict("重复操作内容不一致")
             return dict(previous)
         brief, version = records.checked(conn, identifier, request.expected_version)
         proposal = records.record(conn, proposal_id, kind="proposal", deal_id=identifier)
-        if proposal["brief_version"] != version:
-            raise Conflict("变更单基于旧需求，请重新理解本次变化")
-        if conn.scalar(
-            text(
-                "SELECT EXISTS(SELECT 1 FROM advisor_record WHERE deal_id=:deal AND kind='adoption' AND body->>'proposal_id'=:proposal)"
-            ),
-            {"deal": identifier, "proposal": str(proposal_id)},
+        receipts = (
+            conn.execute(
+                text(
+                    "SELECT body FROM advisor_record WHERE deal_id=:deal AND kind='adoption' AND body->>'proposal_id'=:proposal"
+                ),
+                {"deal": identifier, "proposal": str(proposal_id)},
+            )
+            .scalars()
+            .all()
+        )
+        processed = {k for r in receipts for k in r.get("fields", proposal["body"]["fields"])}
+        selected = set(request.fields or proposal["body"]["fields"])
+        if not selected <= proposal["body"]["fields"].keys() or selected & processed:
+            raise Conflict("变更项不存在或已经处理")
+        remaining = {k: v for k, v in proposal["body"]["fields"].items() if k in selected}
+        old = proposal["body"].get("previous", {})
+        if proposal["brief_version"] != version and any(
+            k not in old
+            or getattr(brief, k).value != getattr(Requirements.model_validate({k: old[k]}), k).value
+            for k in remaining
         ):
-            raise Conflict("变更单已经处理")
+            raise Conflict("这些需求项已有更新，请重新核对")
         if request.accept:
-            updated = merged(brief, proposal["body"]["fields"], version)
+            updated = merged(brief, remaining, version)
             trip_brief.save(conn, actor, identifier, updated, version + 1)
             version += 1
         return records.append(
@@ -191,10 +242,158 @@ def adopt(engine, actor, identifier, proposal_id, request):
             actor,
             identifier,
             "adoption",
-            {"proposal_id": str(proposal_id), "accepted": request.accept},
+            receipt_body,
             version,
             str(request.request_id),
         )
+
+
+def impacts(brief, fields, *, conn=None, identifier=None):
+    items = []
+    for key in fields:
+        if key in ROUTE_FIELDS:
+            items.append(
+                {
+                    "field": key,
+                    "text": "重新核对候选范围；已选线路与团期需重选"
+                    if brief.route_id
+                    else "按新条件重新检索候选",
+                }
+            )
+        elif key in QUOTE_FIELDS:
+            items.append({"field": key, "text": "重新核对人数、年龄与房型计价；保留所选线路"})
+        else:
+            items.append({"field": key, "text": "只调整排序与推荐理由，保留所选线路和团期"})
+    if fields.keys() & QUOTE_FIELDS and brief.quote_id:
+        items.append(
+            {
+                "field": "quote",
+                "text": "当前报价与分享链接将失效，需要重新询价",
+                "quote_id": str(brief.quote_id),
+            }
+        )
+    if conn is not None:
+        from uuid import UUID
+
+        from . import advisor_actions, advisor_matching
+
+        events = conn.execute(
+            text(
+                "SELECT events FROM agent_turn WHERE conversation_id=:id AND status='complete' ORDER BY started_at DESC LIMIT 30"
+            ),
+            {"id": identifier},
+        ).scalars()
+        candidates = {}
+        for turn in events:
+            for event in turn:
+                data = event.get("data", {})
+                if data.get("component") == "warehouse_routes":
+                    for p in data.get("payload", {}).get("items", []):
+                        candidates[p["product_id"]] = p["title"]
+        if brief.route_id:
+            candidates[brief.route_id] = brief.route_title
+        candidates = dict(list(candidates.items())[:30])
+        for field in fields.keys() & ROUTE_FIELDS:
+            changed = merged(brief, {field: fields[field]}, 0)
+            query, filters = advisor_actions.search_parameters(changed)
+            statement, params = advisor_matching.query_sql(
+                query, filters.attributes, None, count=True
+            )
+            sql = str(statement).replace(
+                "SELECT count(*) FROM scored", "SELECT id FROM scored WHERE id=ANY(:ids)"
+            )
+            params["ids"] = [UUID(p.removeprefix("WP-")) for p in candidates]
+            matching = set(conn.execute(text(sql), params).scalars()) if candidates else set()
+            for product, title in candidates.items():
+                if UUID(product.removeprefix("WP-")) not in matching:
+                    items.append(
+                        {
+                            "field": field,
+                            "product_id": product,
+                            "text": f"{title}：不再满足调整后的范围或在售日期，需要重新找线",
+                        }
+                    )
+        if "depart_city" in fields:
+            city = fields["depart_city"].get("value")
+            for product, title in candidates.items():
+                gateway = conn.scalar(
+                    text("SELECT gateway FROM product_listing WHERE id=:id"),
+                    {"id": UUID(product.removeprefix("WP-"))},
+                )
+                if city and gateway and city != gateway:
+                    items.append(
+                        {
+                            "field": "depart_city",
+                            "product_id": product,
+                            "text": f"{title}：{gateway}出发，与新的{city}出发要求冲突",
+                        }
+                    )
+        if fields.keys() & QUOTE_FIELDS:
+            links = (
+                conn.execute(
+                    text(
+                        "SELECT id FROM quote_share WHERE revoked_at IS NULL AND advisor_record_id IN (SELECT id FROM advisor_record WHERE deal_id=:id AND kind='retail_quote')"
+                    ),
+                    {"id": identifier},
+                )
+                .scalars()
+                .all()
+            )
+            if links:
+                items.append(
+                    {
+                        "field": "share",
+                        "text": f"本单 {len(links)} 个现有报价分享链接将失效",
+                        "share_ids": [str(x) for x in links],
+                    }
+                )
+        if fields.keys() & {"children", "child_ages", "adults", "seniors", "rooms"}:
+            items.append(
+                {
+                    "field": "party",
+                    "text": "需重新确认每位儿童年龄、是否占床，以及房间总数与各房型数量；已有房型不会按人数自动改写",
+                }
+            )
+    return items
+
+
+def pending_fields(conn, identifier):
+    brief, _ = trip_brief.load(conn, identifier)
+    proposals = conn.execute(
+        text(
+            "SELECT id,body FROM advisor_record WHERE deal_id=:id AND kind='proposal' ORDER BY created_at DESC"
+        ),
+        {"id": identifier},
+    ).mappings()
+    receipts = (
+        conn.execute(
+            text("SELECT body FROM advisor_record WHERE deal_id=:id AND kind='adoption'"),
+            {"id": identifier},
+        )
+        .scalars()
+        .all()
+    )
+    result = {}
+    for p in proposals:
+        processed = {
+            k
+            for r in receipts
+            if r.get("proposal_id") == str(p["id"])
+            for k in r.get("fields", p["body"]["fields"])
+        }
+        remaining = [
+            k
+            for k in p["body"]["fields"]
+            if k not in processed
+            and (
+                k not in p["body"].get("previous", {})
+                or getattr(brief, k).model_dump(mode="json")["value"]
+                == p["body"]["previous"][k]["value"]
+            )
+        ]
+        if remaining:
+            result[str(p["id"])] = remaining
+    return result
 
 
 def revert(engine, actor, identifier, state_id, request):
@@ -272,4 +471,15 @@ def clarity(brief):
         ("budget", 10),
         ("preferences", 5),
     )
-    return sum(weight for key, weight in checks if getattr(brief, key).value is not None)
+    return sum(
+        weight
+        for key, weight in checks
+        if (
+            any(
+                getattr(brief, k).value
+                for k in ("destinations", "destination_regions", "destination_examples", "themes")
+            )
+            if key == "destinations"
+            else getattr(brief, key).value is not None
+        )
+    )

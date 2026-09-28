@@ -805,7 +805,7 @@ def create_app(
         headers = {"X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer"}
         if result is None:
             return JSONResponse(
-                {"message": "分享不存在或已失效，请联系顾问"}, status_code=404, headers=headers
+                {"message": "报价已更新，请联系顾问"}, status_code=404, headers=headers
             )
         return JSONResponse(result, headers=headers)
 
@@ -1235,6 +1235,8 @@ def create_app(
             try:
                 await run_in_threadpool(check_access, work["turn_id"])
                 agent = agent_factory(work["role"], actor, work["buyer_context"])
+                if hasattr(agent, "set_metrics"):
+                    agent.set_metrics(metrics)
                 if work["role"] == "advisor":
                     state = ShoppingSessionState.model_validate(work["state"])
                     context = ShoppingSessionContext(
@@ -1512,7 +1514,7 @@ def create_app(
         metrics.routes = frozenset(route.path for route in app.routes if hasattr(route, "path"))
     from .copilot_api import install as install_copilot
 
-    install_copilot(app, runtime, principal, object_store)
+    install_copilot(app, runtime, principal, object_store, authentication)
     return app
 
 

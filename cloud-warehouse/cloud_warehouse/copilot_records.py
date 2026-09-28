@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 from pydantic import Field
 from sqlalchemy import text
 
-from . import conversations, trip_brief
+from . import conversations, copilot_privacy, trip_brief
 from .changes import Conflict
 from .integrations import canonical, fingerprint
 from .persistence import Forbidden, require_role, transaction
@@ -57,13 +57,17 @@ class Note(Command):
     text: str = Field(min_length=1, max_length=4000)
     publication_id: UUID | None = None
     node_id: str | None = Field(default=None, max_length=100)
+    category: Literal["fee", "special", "advisor", "question"] = "advisor"
+    product_id: str | None = Field(default=None, max_length=60)
+    amount: Money | None = None
+    currency: str = Field(default="CNY", pattern=r"^[A-Z]{3}$")
 
 
 class Associate(Command):
     customer_id: UUID
 
 
-def ensure(conn, actor, identifier, *, customer=None, title=""):
+def ensure(conn, actor, identifier, *, customer=None, title="历史跟单"):
     conversation = conversations._load(conn, identifier, check_authorization=False)
     if conversation["role"] != "advisor":
         raise Forbidden("仅顾问会话可以建立跟单")
@@ -193,7 +197,7 @@ def customers(engine, actor, *, query="", before=None, limit=30):
             .all()
         )
         return {
-            "items": [dict(r) for r in rows[:limit]],
+            "items": [copilot_privacy.view(r) for r in rows[:limit]],
             "next_cursor": str(rows[limit - 1]["id"]) if len(rows) > limit else None,
         }
 
@@ -212,10 +216,12 @@ def write_customer(engine, actor, request, identifier=None):
                 .one_or_none()
             )
             if existing:
-                if existing["body"] != request.customer.model_dump(mode="json"):
+                if copilot_privacy.decode(
+                    existing["body"], identifier
+                ) != request.customer.model_dump(mode="json"):
                     raise Conflict("客户创建编号已用于其他内容")
-                return dict(existing)
-            return dict(
+                return copilot_privacy.view(existing)
+            return copilot_privacy.view(
                 conn.execute(
                     text("""INSERT INTO advisor_customer(id,organization_id,user_id,body,request_id)
               VALUES(:id,:org,:user,CAST(:body AS jsonb),:id) RETURNING *"""),
@@ -223,12 +229,21 @@ def write_customer(engine, actor, request, identifier=None):
                         "id": identifier,
                         "org": actor.organization_id,
                         "user": actor.user_id,
-                        "body": request.customer.model_dump_json(),
+                        "body": canonical(
+                            copilot_privacy.seal(
+                                request.customer.model_dump(mode="json"), identifier
+                            )
+                        ),
                     },
                 )
                 .mappings()
                 .one()
             )
+        old = conn.execute(
+            text("SELECT body FROM advisor_customer WHERE id=:id FOR UPDATE"), {"id": identifier}
+        ).scalar_one_or_none()
+        if old is None:
+            raise Forbidden("客户不存在或不属于当前顾问")
         row = (
             conn.execute(
                 text("""UPDATE advisor_customer SET body=CAST(:body AS jsonb),
@@ -236,7 +251,11 @@ def write_customer(engine, actor, request, identifier=None):
                 {
                     "id": identifier,
                     "version": request.expected_version,
-                    "body": request.customer.model_dump_json(),
+                    "body": canonical(
+                        copilot_privacy.seal(
+                            request.customer.model_dump(mode="json"), identifier, old
+                        )
+                    ),
                 },
             )
             .mappings()
@@ -244,7 +263,7 @@ def write_customer(engine, actor, request, identifier=None):
         )
         if row is None:
             raise Conflict("客户不存在或已更新，请刷新")
-        return dict(row)
+        return copilot_privacy.view(row)
 
 
 def create_deal(engine, actor, request):
@@ -284,14 +303,19 @@ def list_deals(engine, actor, *, before=None, query="", limit=30):
         require_role(conn, "advisor", "buyer_admin")
         rows = (
             conn.execute(
-                text("""SELECT d.*,c.body->>'name' AS customer_name,
+                text("""SELECT a.id,COALESCE(NULLIF(d.title,''),'历史跟单') AS title,d.customer_id,c.body->>'name' AS customer_name,d.id IS NULL AS historical,
           CASE WHEN a.authorization_hash=:authorization THEN b.body ELSE NULL END AS brief,
-          COALESCE(b.version,0) AS brief_version,a.updated_at
-          FROM advisor_deal d JOIN agent_conversation a ON a.id=d.id
-          LEFT JOIN advisor_customer c ON c.id=d.customer_id LEFT JOIN conversation_brief b ON b.conversation_id=d.id
-          WHERE (CAST(:before AS uuid) IS NULL OR d.id<:before)
+          COALESCE(b.version,0) AS brief_version,a.updated_at,dep.depart_date AS departure_date,
+          (SELECT count(*) FROM advisor_record r WHERE r.deal_id=d.id AND r.kind='task' AND NOT EXISTS(SELECT 1 FROM advisor_record done WHERE done.deal_id=d.id AND done.kind='task_done' AND done.body->>'task_id'=r.id::text)) AS pending_tasks,
+          (SELECT min((r.body->>'expires_at')::timestamptz) FROM advisor_record r WHERE r.deal_id=d.id AND r.kind='retail_quote' AND r.brief_version=b.version AND (r.body->>'expires_at')::timestamptz>now()) AS deadline,
+          (SELECT count(*) FROM supplier_inquiry i WHERE i.deal_id=d.id AND EXISTS(SELECT 1 FROM supplier_inquiry_reply reply WHERE reply.inquiry_id=i.id AND NOT EXISTS(SELECT 1 FROM supplier_inquiry_ack ack WHERE ack.reply_id=reply.id AND ack.inquiry_id=i.id))) AS waiting_reply,
+          EXISTS(SELECT 1 FROM advisor_record r WHERE r.deal_id=d.id AND r.kind='sale') AS sold,
+          (SELECT e->'data'->'payload'->>'to_customer' FROM agent_turn t,LATERAL jsonb_array_elements(t.events) e WHERE t.conversation_id=d.id AND t.status='complete' AND e->'data'->>'component'='copilot_reply' AND a.authorization_hash=:authorization AND (e->'data'->'payload'->>'brief_version')::int=b.version ORDER BY t.completed_at DESC LIMIT 1) AS draft
+          FROM agent_conversation a LEFT JOIN advisor_deal d ON a.id=d.id
+          LEFT JOIN advisor_customer c ON c.id=d.customer_id LEFT JOIN conversation_brief b ON b.conversation_id=a.id LEFT JOIN departure dep ON b.body->>'departure_id'='WD-'||dep.id::text
+          WHERE a.role='advisor' AND (CAST(:before AS uuid) IS NULL OR a.id<:before)
           AND position(lower(:query) in lower(concat_ws(' ',d.title,c.body->>'name',b.body->'destinations'->>'value')))>0
-          ORDER BY d.id DESC LIMIT :limit"""),
+          ORDER BY a.id DESC LIMIT :limit"""),
                 {
                     "before": before,
                     "query": query,
@@ -309,11 +333,14 @@ def list_deals(engine, actor, *, before=None, query="", limit=30):
 
 
 def detail(engine, actor, identifier):
-    from . import copilot_engine, copilot_inquiries, copilot_sales, quotes
+    from . import copilot_engine, copilot_inquiries, copilot_memory, copilot_sales, quotes
 
     with transaction(engine, actor) as conn:
         ensure(conn, actor, identifier)
         item = dict(deal(conn, identifier))
+        item["updated_at"] = conn.scalar(
+            text("SELECT updated_at FROM agent_conversation WHERE id=:id"), {"id": identifier}
+        )
         available = True
         try:
             brief, version = trip_brief.load(conn, identifier)
@@ -416,7 +443,11 @@ def detail(engine, actor, identifier):
                         continue
                     try:
                         current = copilot_inquiries.scope(
-                            conn, UUID(scope["product_id"].removeprefix("WP-"))
+                            conn,
+                            UUID(scope["product_id"].removeprefix("WP-")),
+                            UUID(scope["departure_id"].removeprefix("WD-"))
+                            if scope.get("departure_id")
+                            else None,
                         )
                         r["stale"] |= any(current[k] != scope.get(k) for k in current)
                         if r["stale"] and not r["stale_reason"]:
@@ -467,7 +498,9 @@ def detail(engine, actor, identifier):
         )
         return {
             **item,
-            "customer": dict(customer) if customer else None,
+            "customer": copilot_privacy.view(customer) if customer else None,
+            "pending_fields": copilot_engine.pending_fields(conn, identifier) if available else {},
+            "memory": copilot_memory.summary(conn, identifier) if available else {},
             "brief": trip_brief.envelope(brief, version),
             "records": records,
             "assets": assets,
@@ -519,11 +552,46 @@ def history(engine, actor, identifier, *, before=None, limit=40):
 
 
 def note(engine, actor, identifier, request):
+    from . import copilot_inquiries, documents
+
     with transaction(engine, actor) as conn:
-        _, version = checked(conn, identifier, request.expected_version, private_only=True)
+        brief, version = checked(
+            conn,
+            identifier,
+            request.expected_version,
+            private_only=request.publication_id is None
+            and request.category not in {"special", "question"},
+        )
+        if request.category == "special" and (
+            not (request.product_id or brief.route_id) or len(request.text) > 2000
+        ):
+            raise ValueError("特殊需求须选择线路，内容不超过2000字")
         if bool(request.node_id) != bool(request.publication_id):
             raise ValueError("行程备注必须同时指定发布版本和节点")
-        return append(
+        if request.publication_id:
+            product = request.product_id or brief.route_id
+            if not product:
+                raise ValueError("请先选择备注对应的线路")
+            published = documents.current_in_transaction(
+                conn,
+                UUID(product.removeprefix("WP-")),
+                departure_id=UUID(brief.departure_id.removeprefix("WD-"))
+                if brief.departure_id and product == brief.route_id
+                else None,
+            )
+            if not published or str(published["id"]) != str(request.publication_id):
+                raise Conflict("行程发布版本已变化，请重新选择节点")
+
+            def nodes(value):
+                if isinstance(value, dict):
+                    return [
+                        str(v) for k, v in value.items() if k in {"node_id", "day_id", "block_id"}
+                    ] + [n for v in value.values() for n in nodes(v)]
+                return [n for v in value for n in nodes(v)] if isinstance(value, list) else []
+
+            if request.node_id not in nodes(published["body"]):
+                raise ValueError("所选节点不属于当前行程")
+        result = append(
             conn,
             actor,
             identifier,
@@ -532,6 +600,53 @@ def note(engine, actor, identifier, request):
             version,
             str(request.request_id),
         )
+        if request.category == "advisor" and request.node_id:
+            append(
+                conn,
+                actor,
+                identifier,
+                "task",
+                {
+                    "text": request.text,
+                    "category": "itinerary",
+                    "note_id": str(result["id"]),
+                    "node_id": request.node_id,
+                },
+                version,
+                f"note-task:{request.request_id}",
+            )
+        if request.category == "question":
+            append(
+                conn,
+                actor,
+                identifier,
+                "qa",
+                {
+                    "questions": [request.text],
+                    "answer": "待核实",
+                    "status": "pending",
+                    "product_id": request.product_id or brief.route_id,
+                    "note_id": str(result["id"]),
+                },
+                version,
+                f"note-qa:{request.request_id}",
+            )
+    if request.category == "special":
+        if not request.product_id and not brief.route_id:
+            raise ValueError("请先选择线路后向商户提交特殊需求")
+        inquiry = copilot_inquiries.submit(
+            engine,
+            actor,
+            identifier,
+            copilot_inquiries.Submit(
+                request_id=request.request_id,
+                expected_version=request.expected_version,
+                product_id=request.product_id or brief.route_id,
+                question=request.text,
+            ),
+        )
+        result["inquiry_id"] = str(inquiry["id"])
+    return result
 
 
 def task_done(engine, actor, identifier, task_id, request):

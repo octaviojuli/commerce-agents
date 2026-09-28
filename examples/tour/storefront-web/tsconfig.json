@@ -37,7 +37,9 @@
     ".next-warehouse/types/**/*.ts",
     ".next-warehouse/dev/types/**/*.ts",
     ".next-copilot-eval/types/**/*.ts",
-    ".next-copilot-eval/dev/types/**/*.ts"
+    ".next-copilot-eval/dev/types/**/*.ts",
+    ".next-v3/types/**/*.ts",
+    ".next-v3/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

@@ -515,6 +515,7 @@ async def test_recheck_failure_keeps_origin_and_renews_retry_budget(database, te
 
 async def test_recheck_fenced_lease_does_not_append_stale_observation(database, tenant, tmp_path):
     admin, runtime = database
+    original_bytes = docx()
     await synchronize(runtime, tenant.worker, tenant.connection_id, Connector(source_data()))
     product = list_products(runtime, tenant.supplier)[0]
     store = LocalObjectStore(tmp_path / "objects")
@@ -524,7 +525,7 @@ async def test_recheck_fenced_lease_does_not_append_stale_observation(database, 
         tenant.connection_id,
         store,
         {"files.acme.example"},
-        lambda *a: Download(docx()),
+        lambda *a: Download(original_bytes),
     )
     job = document_fetches.listing(runtime, tenant.supplier, product["id"])[0]
     due(admin, job["id"])
@@ -537,10 +538,12 @@ async def test_recheck_fenced_lease_does_not_append_stale_observation(database, 
         )
     renewed = document_fetches.claim(runtime, tenant.worker, tenant.connection_id)
     with pytest.raises(Conflict):
-        document_fetches.finish(runtime, tenant.worker, store, work, "ACME.docx", Download(docx()))
+        document_fetches.finish(
+            runtime, tenant.worker, store, work, "ACME.docx", Download(original_bytes)
+        )
     assert (
         document_fetches.finish(
-            runtime, tenant.worker, store, renewed, "ACME.docx", Download(docx())
+            runtime, tenant.worker, store, renewed, "ACME.docx", Download(original_bytes)
         )
         == "unchanged"
     )

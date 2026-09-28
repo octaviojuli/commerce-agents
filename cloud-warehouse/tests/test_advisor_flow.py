@@ -155,7 +155,7 @@ async def test_initial_search_cannot_select_or_advance_even_with_all_quote_field
         {"preferences": [{"key": "no_shopping", "label": "不进购物店"}]},
     ],
 )
-def test_changed_search_cannot_keep_a_fresh_quote_or_old_selection(database, tenant, fields):
+def test_soft_ranking_changes_preserve_quote_and_selection(database, tenant, fields):
     _, runtime = database
     cid = UUID(conversations.create(runtime, tenant.buyer, "advisor")["id"])
     with transaction(runtime, tenant.buyer) as conn:
@@ -178,9 +178,12 @@ def test_changed_search_cannot_keep_a_fresh_quote_or_old_selection(database, ten
     after = trip_brief.patch(
         runtime, tenant.buyer, cid, trip_brief.BriefPatch(expected_version=1, fields=fields)
     )
-    assert after["quote_stale"] and after["stage"] == "select"
-    assert "share_quote" not in after["allowed_actions"]
-    assert all(after["body"][key] is None for key in ("route_id", "departure_id", "share_token"))
+    assert not after["quote_stale"]
+    assert "share_quote" in after["allowed_actions"]
+    assert all(
+        after["body"][key] == before["body"][key]
+        for key in ("route_id", "departure_id", "share_token")
+    )
 
 
 def test_ordinals_follow_appended_pages_and_new_search_resets_them():

@@ -4,6 +4,7 @@ import calendar
 import re
 from datetime import date
 
+from . import advisor_holidays
 from . import destinations as geo
 
 GEO_FIELDS = {
@@ -15,7 +16,12 @@ GEO_FIELDS = {
 
 
 def _field(values, message):
-    return {"value": list(dict.fromkeys(values)), "source": "said", "evidence": message, "hint": ""}
+    return {
+        "value": list(dict.fromkeys(values)),
+        "source": "said",
+        "evidence": message[:120],
+        "hint": "",
+    }
 
 
 def location_intent(message):
@@ -136,8 +142,38 @@ def normalize(fields, message, brief, today: date):
                     "start": f"{year}-{month:02d}-01",
                     "end": f"{year}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}",
                 }
-                value["evidence"] = message
+                value["evidence"] = message[:120]
                 if not years:
                     value["hint"] = f"原话只说{month}月，按业务日期推断为{year}年{month}月；待确认"
         result["window"] = value
+    if "window" in result:
+        holiday = advisor_holidays.window(message, today)
+        if holiday:
+            result["window"] = holiday
+        elif "春节" in message:
+            result["window"] = {
+                "value": None,
+                "source": "inferred",
+                "evidence": "春节",
+                "hint": "运营表尚未配置这个年份的春节出发窗口，请确认具体日期",
+            }
+    if "days" in result and re.search(r"一周|一个星期|1周|1个星期|七天左右|7天左右", message):
+        result["days"] = {
+            "value": {"min": 6, "max": 8},
+            "source": "inferred",
+            "evidence": message[:120],
+            "hint": "约一周按 6–8 天匹配，待确认",
+        }
+    if (
+        "adults" in result
+        and brief.children.value is None
+        and "children" not in result
+        and not re.search(r"孩子|儿童|小孩|宝宝|娃", message)
+    ):
+        result["children"] = {
+            "value": 0,
+            "source": "inferred",
+            "evidence": result["adults"].get("evidence", ""),
+            "hint": "本轮仅提到成人，暂按无儿童；可随时修改",
+        }
     return result

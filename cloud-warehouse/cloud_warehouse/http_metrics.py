@@ -74,6 +74,46 @@ class HttpMetrics:
             ["method", "route"],
             registry=self.registry,
         )
+        self.model_calls = Counter(
+            "warehouse_advisor_model_calls_total",
+            "Typed advisor model attempts.",
+            ["call", "outcome"],
+            registry=self.registry,
+        )
+        self.model_duration = Histogram(
+            "warehouse_advisor_model_duration_seconds",
+            "Typed advisor model attempt latency.",
+            ["call"],
+            buckets=(0.1, 0.3, 1, 3, 5, 8, 12, 20),
+            registry=self.registry,
+        )
+        self.model_degraded = Counter(
+            "warehouse_advisor_model_degraded_total",
+            "Calls exhausted after bounded retry.",
+            ["call"],
+            registry=self.registry,
+        )
+        self.reply_violations = Counter(
+            "warehouse_advisor_reply_violation_total",
+            "Removed unsafe draft sentences.",
+            ["reason"],
+            registry=self.registry,
+        )
+
+    def observe_model(self, name, outcome, elapsed, degraded=False):
+        if name not in {"extract", "decide", "draft"}:
+            name = "other"
+        if outcome not in {"complete", "timeout", "invalid_output", "provider_error", "error"}:
+            outcome = "error"
+        self.model_calls.labels(name, outcome).inc()
+        self.model_duration.labels(name).observe(elapsed)
+        if degraded:
+            self.model_degraded.labels(name).inc()
+
+    def observe_reply(self, reason):
+        if reason not in {"private", "unproven", "promise", "conflict", "length", "invalid_action"}:
+            reason = "unproven"
+        self.reply_violations.labels(reason).inc()
 
     def authorized(self, authorization: str) -> bool:
         return hmac.compare_digest(authorization.encode("utf-8"), self._authorization)

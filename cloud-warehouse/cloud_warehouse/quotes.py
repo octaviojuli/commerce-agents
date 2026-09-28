@@ -1,6 +1,7 @@
 """Read-only quote snapshots. Buyer scope and supplier customer IDs are server-resolved."""
 
 import asyncio
+import os
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, date, datetime, timedelta
@@ -26,6 +27,7 @@ SOURCE_PRICE_BUDGET_SECONDS = 8.0
 
 class RoomAllocation(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    total: int | None = Field(default=None, ge=0, le=100, strict=True)
     doubles: int = Field(default=0, ge=0, le=100, strict=True)
     twins: int = Field(default=0, ge=0, le=100, strict=True)
     singles: int = Field(default=0, ge=0, le=100, strict=True)
@@ -79,9 +81,18 @@ def calculate(schedule: PriceSchedule, party: Party) -> dict:
             ("senior", party.seniors),
             ("single_room", party.single_rooms),
         ):
+            # A typed single-room supplement replaces the legacy surcharge.
+            # Charging both would count the same accommodation adjustment twice.
+            if field == "single_room" and party.rooms and "singles" in schedule.room_supplements:
+                continue
             if not quantity:
                 continue
             value = getattr(prices, field)
+            if field == "child" and party.rooms and party.rooms.child_bed is not None:
+                bed = schedule.child_bed_prices.get(
+                    "occupied" if party.rooms.child_bed else "unoccupied"
+                )
+                value = getattr(bed, side) if bed else None
             if value is None:
                 missing.append(side + "." + field)
                 lines.append(
@@ -97,6 +108,35 @@ def calculate(schedule: PriceSchedule, party: Party) -> dict:
                         "quantity": quantity,
                         "unit_amount": _money(value),
                         "total": _money(total),
+                    }
+                )
+        if party.rooms:
+            allocated = {
+                k: getattr(party.rooms, k)
+                for k in ("doubles", "twins", "singles")
+                if getattr(party.rooms, k)
+            }
+            for kind, quantity in allocated.items():
+                rate = schedule.room_supplements.get(kind)
+                if rate is None and len(allocated) < 2:
+                    continue
+                value = getattr(rate, side) if rate else None
+                if value is None:
+                    missing.append(side + ".room." + kind)
+                else:
+                    totals[side] += value * quantity
+                    known_counts[side] += 1
+                lines.append(
+                    {
+                        "code": "room." + kind,
+                        "label": {
+                            "doubles": "双人房调整",
+                            "twins": "双床房调整",
+                            "singles": "单人房调整",
+                        }[kind],
+                        "quantity": quantity,
+                        "unit_amount": _money(value) if value is not None else None,
+                        "total": _money(value * quantity) if value is not None else None,
                     }
                 )
         for charge in schedule.charges:
@@ -131,7 +171,14 @@ def calculate(schedule: PriceSchedule, party: Party) -> dict:
             not schedule.child_age_min <= age <= schedule.child_age_max for age in party.child_ages
         ):
             missing.append("child_age_outside_price_rule")
-    if party.room_type and party.room_type not in schedule.room_types:
+    allocated = [
+        k for k in ("doubles", "twins", "singles") if party.rooms and getattr(party.rooms, k)
+    ]
+    if (
+        party.room_type
+        and party.room_type not in schedule.room_types
+        and not (len(allocated) > 1 and all(k in schedule.room_supplements for k in allocated))
+    ):
         missing.append("room_type_not_confirmed")
     complete = not missing
     return {
@@ -302,10 +349,11 @@ def _display(conn, actor, row):
     except Conflict:
         source_changed = True
     stale = price_stale or source_changed
-    import os
-
-    hours = min(168, max(1, int(os.environ.get("WAREHOUSE_ADVISOR_QUOTE_HOURS", "24"))))
-    valid_until = row["created_at"] + timedelta(hours=hours)
+    valid_until = (
+        datetime.fromisoformat(body["quote_valid_until"])
+        if body.get("quote_valid_until")
+        else row["created_at"] + timedelta(hours=24)
+    )
     result = {
         **body,
         "snapshot_stale": stale,
@@ -379,6 +427,8 @@ def _save_quote(
             if body["available_seats"] is None or body["required_seats"] is None
             else body["available_seats"] >= body["required_seats"]
         )
+        hours = min(168, max(1, int(os.environ.get("WAREHOUSE_ADVISOR_QUOTE_HOURS", "24"))))
+        body["quote_valid_until"] = (datetime.now(UTC) + timedelta(hours=hours)).isoformat()
         conn.execute(
             text(
                 "INSERT INTO quote_snapshot(id,buyer_org_id,actor_id,offer_id,grant_id,sales_policy_version,idempotency_key,request_hash,body,fresh_until) VALUES(:id,:buyer,:actor,:offer,:grant,:sales_version,:key,:hash,CAST(:body AS jsonb),:fresh) ON CONFLICT(buyer_org_id,actor_id,idempotency_key) DO NOTHING"

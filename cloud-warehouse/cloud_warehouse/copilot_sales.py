@@ -106,6 +106,16 @@ def retail(engine, actor, identifier, request):
             "sales_total": quotes._money(sales),
             "settlement_total": quotes._money(settlement),
             "profit": quotes._money(profit),
+            "margin": str((profit / sales * 100).quantize(Decimal("0.1"))) if sales else None,
+            "additional_items": [
+                r
+                for r in conn.execute(
+                    text(
+                        "SELECT jsonb_build_object('text',body->>'text','amount',body->>'amount','currency',body->>'currency') FROM advisor_record WHERE deal_id=:id AND kind='note' AND body->>'category'='fee' ORDER BY created_at"
+                    ),
+                    {"id": identifier},
+                ).scalars()
+            ],
             "currency": quote["currency"],
             "loss_confirmed": request.loss_confirmed,
             "expires_at": quote["quote_valid_until"],
@@ -128,6 +138,7 @@ def customer_projection(conn, actor, record_id, quote):
     result = quotes.customer_view(quote)
     result.update(
         {
+            "additional_items": body.get("additional_items", []),
             "market_total": body["sales_total"],
             "known_market_subtotal": body["sales_total"],
             "market_lines": [

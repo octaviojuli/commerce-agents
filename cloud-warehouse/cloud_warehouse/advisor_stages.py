@@ -33,7 +33,9 @@ def derive(brief):
         stage = "select"
     actions = ["update_trip_brief"]
     if ready["search"]["ready"]:
-        actions += ["search_routes", "departures"]
+        actions += ["search_routes"]
+    # perform() verifies that the named route was read by this conversation.
+    actions += ["departures"]
     if brief.route_id:
         actions += ["offers"]
     if brief.route_id and ready["quote"]["ready"]:

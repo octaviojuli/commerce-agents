@@ -162,11 +162,12 @@ export function stamp(value: string | null) {
 
 export type BriefField = {
   value: any;
-  source: "said" | "inferred" | "advisor" | null;
+  source: "said" | "inferred" | "advisor" | "explore" | null;
   evidence: string;
   hint: string;
 };
 export type Rooms = {
+  total?: number | null;
   doubles: number;
   twins: number;
   singles: number;

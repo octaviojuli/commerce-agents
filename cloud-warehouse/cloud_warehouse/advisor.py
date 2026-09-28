@@ -189,6 +189,7 @@ class WarehouseAdvisorBackend(StorefrontBackend):
                     return {"items": [], "next_cursor": None}
                 rows = conn.execute(statement, parameters).mappings().all()
                 facts = search.destination_facts(conn, [row["id"] for row in rows[:limit]])
+                stats = advisor_matching.card_facts(conn, [row["id"] for row in rows[:limit]])
                 items, matches = [], {}
                 for row in rows[:limit]:
                     product = self._product(
@@ -209,10 +210,17 @@ class WarehouseAdvisorBackend(StorefrontBackend):
                     product.attributes["match_reasons"] = json.dumps(
                         matches[product.product_id], ensure_ascii=False
                     )
+                    product.attributes["next_departure"] = (
+                        str(row["next_date"]) if row["next_date"] else ""
+                    )
+                    product.attributes.update(stats.get(row["id"], {}))
                     items.append(product)
                 return {
                     "items": items,
                     "match_reasons": matches,
+                    "funnel": advisor_matching.funnel(conn, query, attrs)
+                    if after is None
+                    else None,
                     "next_cursor": advisor_matching.cursor(rows[limit - 1], query, attrs)
                     if len(rows) > limit
                     else None,
@@ -399,6 +407,12 @@ class WarehouseAdvisorBackend(StorefrontBackend):
         paging=None,
     ):
         predicates = ["d.status='published'", "p.status='published'"]
+        if departure is None:
+            predicates += [
+                "NOT d.sales_paused",
+                "(d.local_booking_deadline IS NULL OR d.local_booking_deadline>now())",
+                "d.depart_date >= (now() AT TIME ZONE COALESCE(c.capabilities->>'business_timezone','Asia/Shanghai'))::date",
+            ]
         for value, predicate in (
             (parent, "d.product_id=:parent"),
             (departure, "d.id=:departure"),

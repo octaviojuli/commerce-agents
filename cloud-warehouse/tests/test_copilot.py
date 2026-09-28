@@ -150,15 +150,15 @@ def test_changes_require_acceptance_and_keep_versions(database, tenant):
     assert trip_brief.get(runtime, tenant.buyer, identifier)["body"]["destinations"]["value"] == [
         "ACME"
     ]
-    with pytest.raises(ValueError, match="原话"):
-        engine.propose(
-            runtime,
-            tenant.buyer,
-            identifier,
-            {"children": {"value": 0, "source": "said", "evidence": "没有儿童"}},
-            "改去 ACME 海湾",
-            work["turn_id"],
-        )
+    rejected = engine.propose(
+        runtime,
+        tenant.buyer,
+        identifier,
+        {"children": {"value": 0, "source": "said", "evidence": "没有儿童"}},
+        "改去 ACME 海湾",
+        work["turn_id"],
+    )
+    assert rejected["rejected"] == {"children": "缺少本轮原话依据"}
     conversations.finish(runtime, tenant.buyer, work, {}, work["messages"], [])
     command = engine.Adoption(request_id=uuid4(), expected_version=1, accept=True)
     result = engine.adopt(runtime, tenant.buyer, identifier, UUID(proposal["proposal_id"]), command)
@@ -374,9 +374,24 @@ async def test_typed_copilot_multiturn_retains_all_countries_and_does_not_advanc
             [
                 tool_use_message("extract", {"changes": changes}),
                 tool_use_message(
-                    "decide", {"intent": intent, "target_ids": ids or [], "confidence": 0.99}
+                    "decide",
+                    {
+                        "intent": intent,
+                        "target_ids": ids or [],
+                        "confidence": 0.99,
+                        "next_action": "search_routes"
+                        if any(c["field"] == "window" for c in changes)
+                        else "ask_clarify",
+                    },
                 ),
-                tool_use_message("draft", {"fact_ids": []}),
+                tool_use_message(
+                    "draft",
+                    {
+                        "to_advisor": "先核对本轮沟通。",
+                        "to_customer": "您更希望海边放松，还是自然风光？",
+                        "claims": [],
+                    },
+                ),
             ]
         )
 
@@ -466,8 +481,17 @@ async def test_explicit_change_cannot_disappear_as_an_empty_extraction(database,
     _, runtime = database
     identifier, _ = new_deal(runtime, tenant.buyer)
     empty = tool_use_message("extract", {"changes": []})
-    change = tool_use_message("decide", {"intent": "change", "confidence": 0.99})
-    draft = tool_use_message("draft", {"fact_ids": []})
+    change = tool_use_message(
+        "decide", {"intent": "change", "confidence": 0.99, "next_action": "ask_clarify"}
+    )
+    draft = tool_use_message(
+        "draft",
+        {
+            "to_advisor": "先核对本轮沟通。",
+            "to_customer": "您更希望海边放松，还是自然风光？",
+            "claims": [],
+        },
+    )
     await run_turn(
         runtime,
         tenant.buyer,

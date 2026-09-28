@@ -134,7 +134,7 @@ async def test_public_share_dies_with_live_permission(
     assert quote_shares.read(runtime, authentication, share["token"]) is None
 
 
-async def test_old_price_stays_historical_and_new_share_requires_fresh_quote(
+async def test_price_age_is_disclosed_without_expiring_the_quote_document(
     database, authentication, tenant, managed_offer, monkeypatch
 ):
     _, runtime = database
@@ -153,6 +153,10 @@ async def test_old_price_stays_historical_and_new_share_requires_fresh_quote(
     public = quote_shares.read(runtime, authentication, share["token"])
     assert public["snapshot_stale"] and public["market_total"] == quote["market_total"]
     assert "available_seats" not in public
+    assert quote_shares.create(
+        runtime, tenant.buyer, UUID(quote["quote_id"]), quote_shares.Create(request_id=uuid4())
+    )["token"]
+    at = datetime.now(UTC) + timedelta(hours=25)
     with pytest.raises(Conflict, match="重新询价"):
         quote_shares.create(
             runtime, tenant.buyer, UUID(quote["quote_id"]), quote_shares.Create(request_id=uuid4())

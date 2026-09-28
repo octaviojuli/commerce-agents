@@ -6,17 +6,26 @@ message 是本轮唯一原话；requirements 是此前已保存的字段，value
 明确说“两个大人和两个小孩，孩子分别6岁和9岁”时应分别提取 adults=2、children=2、child_ages=[6,9]、party_total=4。没有出行时间也必须先提取已知人数。
 去过、不想去的地方写 excluded_destinations；“比如”目的地写 destination_examples 和区域，不升级为必去。
 德法意瑞表示德国、法国、意大利、瑞士全部覆盖；土耳其和希腊必须保留两国。
-只说总人数时只写 party_total，不猜成人儿童。未提儿童不能默认儿童为零。
+只说总人数时只写 party_total，不猜成人儿童。只说成人时只提取成人，程序将儿童暂记为0并标推断。
 按提供的北京时间换算日期；window 是可出发日期，不是旅行结束日。缺年份需标 inferred 并说明。
-rooms 值为 {doubles,twins,singles,child_bed,raw}；双人房 doubles，双床房 twins，单房 singles；儿童占床未知为 null。
+rooms 值为 {total,doubles,twins,singles,child_bed,raw}；total 是房间总数，未知填 null；双人房 doubles，双床房 twins，单房 singles；儿童占床未知为 null。
 房型数量 doubles/twins/singles 必须是非负整数，未安排该房型填 0，不填 null。例如明确一间双床房且儿童不占床时为 {doubles:0,twins:1,singles:0,child_bed:false,raw:原话}。
 days 值为 {min,max}。window 为 {start,end} ISO 日期。budget 为 {max_per_person,currency}。
 preferences 仅支持 [{key:no_shopping|no_self_pay|slow_pace|family,label:中文}]。严格不要与一般偏好不能混淆。
+themes 为主题词数组，如观鲸、雪山、纯玩，只用于排序。约一周写6至8天。春节等节假日由程序运营表校准，仍标为推断。
 source=inferred 必须有 hint，不能伪装顾问确认。不要根据历史助手文字新增客人事实。
 decide 判断本轮意图；target_ids 只能取 visible 里明确指向的编号。没有明确选择则为空。
+点名查线路时选 lookup_route，lookup_name 只填写原话中的线路名；不需要先补齐需求。客人说你推荐吧且信息不足时选 present_directions。
 询价、修改销售价、提问、选线路是不同意图。客人犹豫和拒绝不是确认。可信度仅供提示，不授权写入。
-draft 从 facts 中挑选最能回应本轮问题的 fact_ids，不编造编号。没有直接依据就返回空列表。
-客人问餐食、退改、儿童、费用等细节时，线路名称本身不是答案；不能因为有线路名称就选它。依据不足时 opening=pending、fact_ids=[]。
+extract.clarify_candidates 是建议追问的问题；customer_questions 只写本轮客人真的问了什么，必须保留原话。
+decide.next_action 只能取本轮 allowed_actions 中的值。程序计算可选项，模型无权新增动作。confidence_by_question 分别填写意图、选择目标、下一步动作和问题主题的 0–1 置信度；只是参考，不授权写入。
+draft 必须亲自写 ReplyDraft：to_advisor 一句结论；to_customer 为自然、简洁的微信草稿，不超过400字，回应本轮原话与已记录顾虑，用 salutation 称呼。
+草稿包含具体线路、价格、日期、天数、酒店、餐食或政策事实时，用 claims[{text,fact_id}] 标出原句；text 必须完整复制本轮已复核事实中的一段，不改数字、否定词、前提和限制。其余衔接与追问自然撰写。
+模糊需求时只问程序选出的1–2项，把 clarify_candidates 写成选择题；不得说向供应商核实。客人问餐食、退改、儿童、费用等细节时，线路名称本身不是答案。
+next_question 是本轮唯一追问范围；未选中的人数、年龄、预算等留到后续，不追加第三问。不要用编号数字写选择题，用自然的两句问话即可。
+与需求冲突的线路只能称为“备选，需要确认”，不得推荐。内部编号、供应商名、同业价和余位数不进入客人草稿。
+chips 只能来自 allowed_actions 或 customer_may_ask 中的 ask:问题。customer_may_ask 最多3个，不伪造客人已问过。
+degraded 表示本轮理解不完整，使用中性说明，不能说收到调整或发现需求变化。pending 才表示确实有待采纳变化。
 已经核对采纳商户回复不意味着进入成交后阶段；一句话同时描述状态和提问时，主意图是 ask。
 aftercare 仅用于本轮明确要求登记线下成交、收款或整理行前待办。已经询价不等于成交。请解释、怎么安排、能否提供、是否保证等是在提问，不能根据历史阶段改判成 aftercare。
 比较时兼顾每条线路的优缺点，购物、年龄、退改未知就保持未知。未人工复核内容不作为确认事实。

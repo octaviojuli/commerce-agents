@@ -1,0 +1,15 @@
+{
+  "description": "运营维护的建议出发窗口，并非法定放假日历或学校校历。所有自动换算都标为推断。",
+  "recurring": {
+    "元旦": {"start": "01-01", "end": "01-03", "around_before": 6},
+    "五一": {"start": "05-01", "end": "05-05", "around_before": 3},
+    "国庆": {"start": "10-01", "end": "10-07", "around_before": 3},
+    "寒假": {"start": "01-15", "end": "02-20", "around_before": 0},
+    "暑假": {"start": "07-01", "end": "08-31", "around_before": 0}
+  },
+  "dated": {
+    "春节": [
+      {"start": "2027-02-06", "end": "2027-02-12", "around_before": 6, "source": "https://data.weather.gov.hk/weatherAPI/hko_data/calendar/nongli_calendar_2027.csv"}
+    ]
+  }
+}

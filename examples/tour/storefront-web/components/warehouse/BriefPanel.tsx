@@ -4,6 +4,7 @@ import { Sheet } from "./mobile";
 import type { BriefEnvelope, BriefField } from "@/lib/warehouse";
 
 export const fieldNames: Record<string, string> = {
+  themes: "旅行主题",
   destinations: "必需目的地",
   destination_examples: "举例目的地",
   destination_regions: "目的地区域",
@@ -35,15 +36,18 @@ export function fieldText(key: string, value: any): string {
   if (key === "days") return `${value.min}–${value.max} 天`;
   if (key === "rooms")
     return [
-      `双人房 ${value.doubles} 间`,
-      `双床房 ${value.twins} 间`,
-      `单人房 ${value.singles} 间`,
+      value.total != null ? `共 ${value.total} 间` : "",
+      value.doubles ? `双人房 ${value.doubles} 间` : "",
+      value.twins ? `双床房 ${value.twins} 间` : "",
+      value.singles ? `单人房 ${value.singles} 间` : "",
       value.child_bed == null
         ? "儿童占床未定"
         : value.child_bed
           ? "儿童占床"
           : "儿童不占床",
-    ].join(" · ");
+    ]
+      .filter(Boolean)
+      .join(" · ");
   if (key === "budget") return `${value.currency} ${value.max_per_person} / 人`;
   if (key === "preferences")
     return value.map((p: { label: string }) => p.label).join("、") || "未提";
@@ -84,47 +88,76 @@ export default function BriefPanel({
           );
         })}
       </div>
-      {Object.keys(fieldNames)
-        .filter((key) => !["rooms.child_bed", "party_total_mismatch", "rooms_exceed_party"].includes(key))
-        .map((key) => {
-          const field = b?.[key] as BriefField | undefined;
-          const source =
-            field?.value == null
-              ? "未提"
-              : field.source === "said"
-                ? "客人说"
-                : field.source === "inferred"
-                  ? "推断·待确认"
-                  : "顾问改";
-          return (
-            <div className="aw-field" key={key}>
-              <label>{fieldNames[key]}</label>
-              <div>
-                <strong>{fieldText(key, field?.value)}</strong>
-                {field?.hint && <p className="aw-warn">{field.hint}</p>}
-                {field?.evidence && (
-                  <p className="aw-evidence" title={field.evidence}>
-                    “{field.evidence}”
-                  </p>
-                )}
+      <div className="cp-brief-known">
+        {Object.keys(fieldNames)
+          .filter(
+            (key) =>
+              ![
+                "rooms.child_bed",
+                "party_total_mismatch",
+                "rooms_exceed_party",
+              ].includes(key),
+          )
+          .filter((key) => b?.[key]?.value != null)
+          .map((key) => {
+            const field = b?.[key] as BriefField | undefined;
+            const source =
+              field?.value == null
+                ? "未提"
+                : field.source === "said"
+                  ? "客人说"
+                  : field.source === "inferred"
+                    ? "推断·待确认"
+                    : field.source === "explore"
+                      ? "探索"
+                      : "顾问改";
+            return (
+              <div className="aw-field" key={key}>
+                <label>{fieldNames[key]}</label>
+                <div>
+                  <strong>{fieldText(key, field?.value)}</strong>
+                  {field?.hint && <p className="aw-warn">{field.hint}</p>}
+                  {field?.evidence && (
+                    <p className="aw-evidence" title={field.evidence}>
+                      “{field.evidence}”
+                    </p>
+                  )}
+                </div>
+                <div className="aw-field-actions">
+                  <span
+                    className={`aw-source ${field?.source === "inferred" ? "aw-inferred" : ""}`}
+                  >
+                    {source}
+                  </span>
+                  <button
+                    disabled={busy}
+                    onClick={() => setEdit(key)}
+                    aria-label={`修改${fieldNames[key]}`}
+                  >
+                    修改
+                  </button>
+                </div>
               </div>
-              <div className="aw-field-actions">
-                <span
-                  className={`aw-source ${field?.source === "inferred" ? "aw-inferred" : ""}`}
-                >
-                  {source}
-                </span>
-                <button
-                  disabled={busy}
-                  onClick={() => setEdit(key)}
-                  aria-label={`修改${fieldNames[key]}`}
-                >
-                  修改
-                </button>
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+      </div>
+      <div className="cp-missing-fields">
+        <span>还没提：</span>
+        {Object.keys(fieldNames)
+          .filter(
+            (key) =>
+              ![
+                "rooms.child_bed",
+                "party_total_mismatch",
+                "rooms_exceed_party",
+              ].includes(key) && b?.[key]?.value == null,
+          )
+          .map((key) => (
+            <button key={key} disabled={busy} onClick={() => setEdit(key)}>
+              {fieldNames[key]}
+            </button>
+          ))}
+      </div>
       {edit && (
         <FieldEditor
           key={edit}
@@ -166,6 +199,7 @@ function FieldEditor({
     else if (name === "days") next = { min: number("min"), max: number("max") };
     else if (name === "rooms")
       next = {
+        total: number("total"),
         doubles: number("doubles") ?? 0,
         twins: number("twins") ?? 0,
         singles: number("singles") ?? 0,
@@ -180,7 +214,15 @@ function FieldEditor({
       next = data
         .getAll("preference")
         .map((key) => ({ key, label: prefs[key as keyof typeof prefs] }));
-    else if (["destinations", "destination_examples", "destination_regions", "excluded_destinations"].includes(name))
+    else if (
+      [
+        "themes",
+        "destinations",
+        "destination_examples",
+        "destination_regions",
+        "excluded_destinations",
+      ].includes(name)
+    )
       next = get("value") ? get("value").split(/[、,，\s]+/) : null;
     else if (name === "child_ages") next = data.getAll("age").map(Number);
     else if (["party_total", "adults", "children", "seniors"].includes(name))
@@ -236,6 +278,7 @@ function FieldEditor({
             </>
           ) : name === "rooms" ? (
             <>
+              {input("total", "房间总数")}
               {input("doubles", "双人房间数")}
               {input("twins", "双床房间数")}
               {input("singles", "单人房间数")}

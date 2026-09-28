@@ -153,3 +153,7 @@ jobs:
         run: node --experimental-strip-types --test web-shared/warehouse-proxy.test.mjs
       - name: Build every app
         run: npm run build
+      - name: Install mobile acceptance browser
+        run: npx playwright install --with-deps chromium
+      - name: Advisor mobile layout gates
+        run: npm run test:mobile --workspace acme-tour-storefront-web

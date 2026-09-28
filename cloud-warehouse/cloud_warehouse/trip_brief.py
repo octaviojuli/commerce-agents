@@ -28,6 +28,7 @@ class Source(StrEnum):
     said = "said"
     inferred = "inferred"
     advisor = "advisor"
+    explore = "explore"
 
 
 class Field_(Model, Generic[T]):
@@ -60,11 +61,19 @@ class Days(Model):
 
 
 class Rooms(Model):
+    total: Count | None = None
     doubles: Count = 0
     twins: Count = 0
     singles: Count = 0
     child_bed: bool | None = None
     raw: str = Field(default="", max_length=300)
+
+    @model_validator(mode="after")
+    def consistent_total(self):
+        known = self.doubles + self.twins + self.singles
+        if self.total is not None and known > self.total:
+            raise ValueError("已分配房型数不能超过房间总数")
+        return self
 
 
 class Preference(Model):
@@ -78,6 +87,9 @@ class Budget(Model):
 
 
 class Requirements(Model):
+    themes: Field_[
+        Annotated[list[Annotated[str, Field(min_length=1, max_length=40)]], Field(max_length=10)]
+    ] = Field(default_factory=Field_)
     destinations: Field_[
         Annotated[list[Annotated[str, Field(min_length=1, max_length=80)]], Field(max_length=20)]
     ] = Field(default_factory=Field_)
@@ -112,13 +124,11 @@ class Requirements(Model):
 FIELDS = tuple(Requirements.model_fields)
 ROUTE_FIELDS = {
     "destinations",
-    "destination_examples",
     "destination_regions",
     "excluded_destinations",
     "window",
     "days",
     "depart_city",
-    "preferences",
 }
 QUOTE_FIELDS = ROUTE_FIELDS | {
     "party_total",
@@ -168,7 +178,11 @@ class BriefIncomplete(ValueError):
 
 
 def readiness(brief: TripBrief) -> dict:
-    search = [name for name in ("destinations", "window") if not getattr(brief, name).value]
+    direction = any(
+        getattr(brief, k).value
+        for k in ("destinations", "destination_regions", "destination_examples", "themes")
+    )
+    search = ([] if direction else ["destinations"]) + ([] if brief.window.value else ["window"])
     missing = list(search)
     for name in ("adults", "children"):
         if getattr(brief, name).value is None:
@@ -177,7 +191,12 @@ def readiness(brief: TripBrief) -> dict:
     if children is not None and len(brief.child_ages.value or []) != children:
         missing.append("child_ages")
     rooms = brief.rooms.value
-    if not rooms or not rooms.doubles + rooms.twins + rooms.singles:
+    if (
+        not rooms
+        or not rooms.doubles + rooms.twins + rooms.singles
+        or rooms.total is not None
+        and rooms.total != rooms.doubles + rooms.twins + rooms.singles
+    ):
         missing.append("rooms")
     if children and (not rooms or rooms.child_bed is None):
         missing.append("rooms.child_bed")

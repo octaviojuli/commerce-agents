@@ -38,7 +38,7 @@ class Action(trip_brief.Model):
 
 def search_parameters(brief, query=None, overrides=None):
     attrs = {"ranked": "true"}
-    if brief.window.value:
+    if brief.window.value and brief.window.source != trip_brief.Source.explore:
         attrs.update(
             depart_from=str(brief.window.value.start), depart_to=str(brief.window.value.end)
         )
@@ -48,29 +48,34 @@ def search_parameters(brief, query=None, overrides=None):
         attrs["depart_city"] = brief.depart_city.value
     if any(p.key == "no_shopping" for p in brief.preferences.value or []):
         attrs["no_shopping"] = "true"
-    if brief.destination_examples.value:
+    examples = list(brief.destination_examples.value or []) + list(brief.themes.value or [])
+    for key in ("destinations", "destination_regions"):
+        if getattr(brief, key).source == trip_brief.Source.explore:
+            examples += getattr(brief, key).value or []
+    if examples:
         attrs["destination_examples"] = json.dumps(
-            brief.destination_examples.value, ensure_ascii=False
+            list(dict.fromkeys(examples)), ensure_ascii=False
         )
     if brief.excluded_destinations.value:
         attrs["excluded_destinations"] = json.dumps(
             brief.excluded_destinations.value, ensure_ascii=False
         )
     attrs.update(overrides or {})
-    return query if query is not None else " ".join(brief.destinations.value or []), SearchFilters(
-        attributes=attrs
-    )
+    hard = brief.destinations if brief.destinations.value else brief.destination_regions
+    return query if query is not None else " ".join(
+        hard.value or []
+    ) if hard.source != trip_brief.Source.explore else "", SearchFilters(attributes=attrs)
 
 
 def route_summary(page, brief):
     """Use only saved requirements and observed page facts for the search summary."""
     if not page["items"]:
-        return "当前条件下暂未找到候选线路。是否调整出发时间或目的地范围后再查？"
+        return "没有同时满足目的地方向、天数和出发窗口的在售线路。可先查看条件漏斗，再选择放宽时间或天数。"
     count = len(page["items"])
     more = "，还有更多可查看" if page.get("next_cursor") else ""
     date_note = "年份为推断，待确认；" if brief.window.source == trip_brief.Source.inferred else ""
     exclusion = "排除要求也需按行程核实。" if brief.excluded_destinations.value else ""
-    return f"本页列出 {count} 条候选线路{more}。{date_note}具体行程覆盖与能否报名仍需核实。{exclusion}请先选一条查看团期。"
+    return f"找到 {count} 条候选{more}。{date_note}{exclusion}可比较行程，或选一条看团期。"
 
 
 def snapshot(backend, session):
@@ -133,8 +138,8 @@ async def perform(backend, session, state, command: Action):
             backend.departures_page,
             session,
             command.product_id,
-            start=window.start,
-            end=window.end,
+            start=window.start if window else None,
+            end=window.end if window else None,
             party_total=brief.party_total.value,
             include_out_of_window=True,
             after=command.after,
@@ -148,7 +153,7 @@ async def perform(backend, session, state, command: Action):
             "page_scope": fingerprint(
                 {
                     "route": command.product_id,
-                    "window": window.model_dump(mode="json"),
+                    "window": window.model_dump(mode="json") if window else None,
                     "party_total": brief.party_total.value,
                 }
             ),

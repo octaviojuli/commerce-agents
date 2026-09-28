@@ -103,7 +103,17 @@ async def test_examples_rank_without_becoming_required_countries(database, tenan
                     },
                     {"routeId": 2, "routeCode": "ACME-TWO", "routeName": "ACME 意大利", "days": 12},
                 ],
-                [],
+                [
+                    {
+                        "periodId": i,
+                        "routeId": i,
+                        "departDate": "2035-10-01",
+                        "returnDate": "2035-10-12",
+                        "periodCode": f"ACME-D{i}",
+                        "availableSeats": 20,
+                    }
+                    for i in (1, 2)
+                ],
             )
         ),
     )

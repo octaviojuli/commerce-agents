@@ -7,7 +7,7 @@ import asyncio
 import inspect
 import re
 from collections.abc import Iterable
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -485,7 +485,7 @@ async def test_snapshot_periods_end_before_boot_and_compare_to_the_prior_block(
     latest = await merchant.get_business_snapshot(operator_session)
     assert latest.sales > 0 and latest.orders > 0
     period_end = date.fromisoformat(latest.period.split("/")[-1])
-    assert 0 < (date.today() - period_end).days <= 7
+    assert 0 < (datetime.now(UTC).date() - period_end).days <= 7
     monthly = await merchant.get_business_snapshot(operator_session, "last_30_days")
     start, end = (date.fromisoformat(day) for day in monthly.period.split("/"))
     prior_start, prior_end = (date.fromisoformat(day) for day in monthly.compare_to.split("/"))

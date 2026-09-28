@@ -10,7 +10,7 @@ from sqlalchemy import text
 
 from shopping_agent import NotOffered
 
-from . import destination_catalog, destinations, search, travel_search
+from . import destination_catalog, destinations, route_search_facts, search, travel_search
 from .integrations import fingerprint
 
 # Published documents only. Scoped versions require a chosen departure and remain unknown.
@@ -25,7 +25,33 @@ SHOPPING = """CASE WHEN doc.body IS NULL THEN 'unknown'
  ELSE 'ok' END"""
 
 
-def query_sql(query, attrs, after):
+def card_facts(conn, identifiers):
+    result = {}
+    rows = conn.execute(
+        text(f"""SELECT p.id,doc.body FROM product_listing p
+      CROSS JOIN LATERAL ({destination_catalog.PUBLICATION}) doc
+      WHERE p.id=ANY(CAST(:ids AS uuid[]))"""),
+        {"ids": identifiers},
+    ).mappings()
+    for row in rows:
+        body = row["body"]
+        facts = route_search_facts.derive(body)
+        hotels = {
+            str((day.get("hotel") or day.get("stay") or {}).get("name") or "").strip()
+            for day in body.get("days", [])
+        }
+        result[row["id"]] = {
+            "hotel_count": str(len(hotels - {""})) if hotels - {""} else "",
+            "meal_count": str(facts["meals_included"])
+            if any(day.get("meals") for day in body.get("days", []))
+            else "",
+            "meal_partial": str(bool(facts.get("meals_unknown"))).lower(),
+            "shopping_count": "0" if facts["shopping"] == "ok" else "",
+        }
+    return result
+
+
+def query_sql(query, attrs, after, *, count=False):
     try:
         start = date.fromisoformat(attrs["depart_from"]) if attrs.get("depart_from") else None
         end = date.fromisoformat(attrs["depart_to"]) if attrs.get("depart_to") else None
@@ -35,7 +61,13 @@ def query_sql(query, attrs, after):
         raise NotOffered("日期或天数范围无效") from error
     if not 1 <= low <= high <= 365 or (start and end and start > end):
         raise NotOffered("日期或天数范围无效")
-    dates = ["d.product_id=p.id", "d.status='published'"]
+    dates = [
+        "d.product_id=p.id",
+        "d.status='published'",
+        "NOT d.sales_paused",
+        "(d.local_booking_deadline IS NULL OR d.local_booking_deadline>now())",
+        "d.depart_date >= (now() AT TIME ZONE COALESCE((SELECT sc.capabilities->>'business_timezone' FROM supplier_connection sc WHERE sc.id=d.connection_id),'Asia/Shanghai'))::date",
+    ]
     if start:
         dates.append("d.depart_date>=:start")
     if end:
@@ -74,8 +106,7 @@ def query_sql(query, attrs, after):
     )
     if params["excluded_patterns"]:
         predicates.append(travel_search.EXCLUDE)
-    if start or end:
-        predicates.append("next_departure.next_date IS NOT NULL")
+    predicates.append("next_departure.next_date IS NOT NULL")
     if params["query"]:
         predicates.append(travel_search.MATCH)
     city = (
@@ -131,7 +162,43 @@ def query_sql(query, attrs, after):
       {cursor_clause}
       ORDER BY s.imperfect,s.conflicts,s.example_rank,s.date_rank,s.id LIMIT :limit
     ) candidate ORDER BY candidate.imperfect,candidate.conflicts,candidate.example_rank,candidate.date_rank,candidate.id LIMIT :limit"""
+    if count:
+        sql = sql.split("SELECT candidate.*", 1)[0] + "SELECT count(*) FROM scored"
     return text(sql), params
+
+
+def funnel(conn, query, attrs):
+    def count(q, a):
+        sql, values = query_sql(q, a, None, count=True)
+        return conn.scalar(sql, values)
+
+    scope = {
+        k: v
+        for k, v in attrs.items()
+        if k not in ("depart_from", "depart_to", "days", "days_min", "days_max")
+    }
+    dated = {**scope, **{k: v for k, v in attrs.items() if k in ("depart_from", "depart_to")}}
+    stages = [
+        {"label": "当前在售", "count": count("", {})},
+        {"label": "目的地与排除项", "count": count(query, scope)},
+        {"label": "出发窗口", "count": count(query, dated)},
+        {"label": "天数范围", "count": count(query, attrs)},
+    ]
+    total = stages[-1]["count"]
+    relaxed = []
+    for key, label, keys in (
+        ("days", "天数", ("days", "days_min", "days_max")),
+        ("window", "时间", ("depart_from", "depart_to")),
+    ):
+        if any(k in attrs for k in keys):
+            extra = count(query, {k: v for k, v in attrs.items() if k not in keys}) - total
+            relaxed.append({"field": key, "label": label, "additional": max(0, extra)})
+    return {
+        "stages": stages,
+        "relaxations": relaxed,
+        "hard": ["目的地方向", "出发窗口", "天数范围", "排除项"],
+        "soft": ["出发城市", "举例目的地", "主题", "偏好", "预算（询价后核对）"],
+    }
 
 
 def reasons(row, attrs, query="", facts=None):
@@ -145,8 +212,7 @@ def reasons(row, attrs, query="", facts=None):
             {
                 "criterion": "destinations",
                 "verdict": "ok" if certain else "unknown",
-                "text": f"{names}："
-                + ("已复核行程或商户确认覆盖" if certain else "目录信息匹配，具体行程覆盖待核对"),
+                "text": f"{names}：" + ("行程覆盖已复核" if certain else "覆盖待核对"),
             }
         )
     if attrs.get("depart_from") or attrs.get("depart_to"):

@@ -46,3 +46,7 @@ merchant-agent/managed-agents/merchant-mcp-server/.merchant_memory.json
 output/playwright/
 .claude/
 pyrightconfig.json
+
+# Local browser acceptance outputs
+**/test-results/
+**/playwright-report/

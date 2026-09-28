@@ -113,6 +113,8 @@ def grant_runtime(engine: Engine, role: str) -> None:
         conn.execute(text("REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC"))
         conn.execute(text(f"GRANT SELECT({PUBLIC_COLUMNS}) ON distribution_invitation TO {quoted}"))
         conn.execute(text(f"GRANT SELECT,INSERT ON quote_share TO {quoted}"))
+        conn.execute(text(f"GRANT SELECT,INSERT ON advisor_plan_share TO {quoted}"))
+        conn.execute(text(f"GRANT UPDATE(revoked_at) ON advisor_plan_share TO {quoted}"))
         conn.execute(
             text(
                 f"GRANT EXECUTE ON FUNCTION warehouse_applicable_prices(uuid,uuid), warehouse_effective_price(uuid,uuid,timestamptz) TO {quoted}"
@@ -205,6 +207,9 @@ def grant_auth(engine: Engine, role: str) -> None:
     with engine.begin() as conn:
         quoted = conn.dialect.identifier_preparer.quote(role)
         conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {quoted}"))
+        conn.execute(
+            text(f"GRANT EXECUTE ON FUNCTION warehouse_plan_share_lookup(text) TO {quoted}")
+        )
         conn.execute(
             text(f"GRANT EXECUTE ON FUNCTION warehouse_quote_share_lookup(text) TO {quoted}")
         )

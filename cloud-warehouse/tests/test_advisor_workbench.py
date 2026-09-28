@@ -81,7 +81,7 @@ async def test_scripted_brief_to_quote_and_offline_invariants(database, tenant, 
     backend = WarehouseAdvisorBackend(runtime, tenant.buyer)
     session = ShoppingSessionContext(session_id=str(identifier), user_id=str(tenant.buyer.user_id))
     state = ShoppingSessionState()
-    first = "一家4口，春节前后，西葡，12天左右，上海出发，不进购物店"
+    first = f"一家4口，{FUTURE.isoformat()}出发，西葡，12天左右，上海出发，不进购物店"
     fields = {
         "party_total": said(4, "一家4口"),
         "destinations": said(["西班牙", "葡萄牙"], "西葡"),

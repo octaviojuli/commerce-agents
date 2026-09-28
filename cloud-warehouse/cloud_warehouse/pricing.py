@@ -32,6 +32,12 @@ class Charge(BaseModel):
     settlement: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
 
 
+class PricePair(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    market: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    settlement: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+
+
 class PriceSchedule(BaseModel):
     model_config = ConfigDict(extra="forbid")
     currency: str = Field(pattern=r"^[A-Z]{3}$")
@@ -44,6 +50,12 @@ class PriceSchedule(BaseModel):
     child_age_min: int | None = Field(default=None, ge=0, le=17)
     child_age_max: int | None = Field(default=None, ge=0, le=17)
     room_types: list[str] = Field(default_factory=list, max_length=20)
+    room_supplements: dict[Literal["doubles", "twins", "singles"], PricePair] = Field(
+        default_factory=dict
+    )
+    child_bed_prices: dict[Literal["occupied", "unoccupied"], PricePair] = Field(
+        default_factory=dict
+    )
 
     @model_validator(mode="after")
     def validate_conditions(self):

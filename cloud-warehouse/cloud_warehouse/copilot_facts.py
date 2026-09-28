@@ -4,9 +4,9 @@ from uuid import UUID
 
 from sqlalchemy import text
 
-from . import copilot_inquiries, copilot_records, documents, route_content
+from . import copilot_inquiries, copilot_records, copilot_reply, documents, route_content
 from .advisor import parse_id
-from .integrations import canonical, fingerprint
+from .integrations import fingerprint
 from .persistence import transaction
 
 
@@ -26,10 +26,14 @@ def read(engine, actor, product_id, departure_id=None, *, day=None):
     departure = parse_id(departure_id, "WD-") if departure_id else None
     with transaction(engine, actor) as conn:
         source = copilot_inquiries.source(conn, product)
-        scope = {"product_id": product_id, **copilot_inquiries.scope(conn, product, departure)}
+        scope = {
+            "product_id": product_id,
+            "departure_id": departure_id,
+            **copilot_inquiries.scope(conn, product, departure),
+        }
         facts = [
             fact(
-                f"线路：{source['name']}；{source['days']}天；{source['gateway'] or '出发地待确认'}",
+                f"{copilot_reply.display_name(source['name'])}，{source['days']}天，{source['gateway'] or '出发地待确认'}",
                 "catalog",
                 scope,
             )
@@ -63,7 +67,7 @@ def read(engine, actor, product_id, departure_id=None, *, day=None):
             if value:
                 values = value if isinstance(value, list) else [value]
                 for item in values[:12]:
-                    rendered = item if isinstance(item, str) else canonical(item)
+                    rendered = copilot_reply.plain(item)
                     if len(rendered) <= 1800:
                         facts.append(
                             fact(f"{label}：{rendered}", "itinerary", scope, reviewed=human)
@@ -100,7 +104,7 @@ def read(engine, actor, product_id, departure_id=None, *, day=None):
                     }
                     and v
                 }
-                rendered = canonical(details)
+                rendered = copilot_reply.plain(details)
                 if details and len(rendered) <= 1800:
                     facts.append(
                         fact(
@@ -170,6 +174,14 @@ def save_output(engine, actor, identifier, turn_id, kind, body, version):
 
             raise Conflict("本轮租约已失效")
         copilot_records.ensure(conn, actor, identifier)
+        if kind == "plan":
+            body = {
+                **body,
+                "plan_version": conn.scalar(
+                    text("SELECT count(*)+1 FROM advisor_record WHERE deal_id=:id AND kind='plan'"),
+                    {"id": identifier},
+                ),
+            }
         return copilot_records.append(
             conn, actor, identifier, kind, body, version, f"{kind}:{turn_id}"
         )

@@ -12,10 +12,10 @@ export default function SharedQuote(){
     async function read(){
       const current=++generation;
       const token=window.location.hash.slice(1);
-      if(!/^[A-Za-z0-9_-]{43}$/.test(token)){setQuote(null);setNotice("分享不存在或已失效，请联系顾问。");return;}
+      if(!/^[A-Za-z0-9_-]{43}$/.test(token)){setQuote(null);setNotice("报价已更新，请联系顾问。");return;}
       try{
         const response=await fetch("/warehouse-api/v1/public/quote",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token}),cache:"no-store",credentials:"omit",referrerPolicy:"no-referrer",signal:abort.signal});
-        if(!response.ok)throw new Error(response.status===404?"分享不存在或已失效，请联系顾问。":"暂时无法核对报价，请稍后刷新。");
+        if(!response.ok)throw new Error(response.status===404?"报价已更新，请联系顾问。":"暂时无法核对报价，请稍后刷新。");
         const result=await response.json() as CustomerQuoteData;
         if(active&&current===generation){setQuote(result);setNotice("");}
       }catch(err){if(active&&current===generation){setQuote(null);setNotice(err instanceof Error?err.message:"暂时无法读取报价。");}}

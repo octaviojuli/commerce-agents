@@ -1,6 +1,5 @@
 """One advisor copilot with a program-owned, bounded and always-answering turn pipeline."""
 
-import asyncio
 import re
 import time
 from datetime import datetime
@@ -14,21 +13,26 @@ from cloud_warehouse import (
     advisor_actions,
     advisor_flow,
     copilot_engine,
+    copilot_explore,
     copilot_facts,
+    copilot_memory,
+    copilot_plans,
+    copilot_policy,
     copilot_records,
+    copilot_reply,
     trip_brief,
 )
 from cloud_warehouse.changes import Conflict
 from cloud_warehouse.integrations import SourceError, fingerprint
 from cloud_warehouse.persistence import Forbidden, transaction
 from commerce_common.streaming import AgentEvent
-from shopping_agent import NotOffered
+from shopping_agent import NotOffered, SearchFilters
 
 from .copilot_model import Decision, TypedModel
 
 CLARIFY = {
-    "destinations": "这次最想去哪里，或更偏向海边、城市还是自然风光？",
-    "window": "大概哪段时间可以出发？",
+    "destinations": "这次更想海边放松、逛逛城市，还是亲近自然？",
+    "window": "您倾向近期出发，还是等假期再走？",
     "adults": "这次有几位成人同行？",
     "children": "有几位儿童同行？没有的话请说明。",
     "child_ages": "儿童分别多大？",
@@ -63,7 +67,10 @@ def load_context(backend, identifier):
                 .all()
             )
             if pages and (
-                (component == "warehouse_routes" and pages[0].get("page_scope") == route_scope)
+                (
+                    component == "warehouse_routes"
+                    and (pages[0].get("page_scope") == route_scope or pages[0].get("named_lookup"))
+                )
                 or (
                     component == "warehouse_departures"
                     and pages[0].get("product_id") == saved.route_id
@@ -80,29 +87,74 @@ def load_context(backend, identifier):
             .scalars()
             .all()
         )
-        return saved, version, current["lease_id"], message, visible, memory
+        customer = (
+            conn.execute(
+                text(
+                    "SELECT c.body->>'name' AS name, jsonb_path_query_array(c.body, '$.travelers[*].name') AS names FROM advisor_deal d JOIN advisor_customer c ON c.id=d.customer_id WHERE d.id=:id"
+                ),
+                {"id": identifier},
+            )
+            .mappings()
+            .one_or_none()
+        )
+        meta = {
+            "salutation": customer["name"] if customer else "",
+            "names": ([customer["name"]] + list(customer["names"] or [])) if customer else [],
+            "confirmed": copilot_engine.current_confirmation(conn, identifier, saved, version)
+            is not None,
+            "sold": bool(
+                conn.scalar(
+                    text(
+                        "SELECT EXISTS(SELECT 1 FROM advisor_record WHERE deal_id=:id AND kind='sale')"
+                    ),
+                    {"id": identifier},
+                )
+            ),
+            "pending": bool(copilot_engine.pending_fields(conn, identifier)),
+            "clarifications": conn.scalar(
+                text(
+                    "SELECT count(*) FROM (SELECT events FROM agent_turn WHERE conversation_id=:id AND status='complete' ORDER BY completed_at DESC LIMIT 2) t WHERE jsonb_path_exists(events, '$[*].data.payload ? (@.clarification == true)')"
+                ),
+                {"id": identifier},
+            ),
+        }
+        return saved, version, current["lease_id"], message, visible, memory, meta
 
 
-def redact(value):
+def redact(value, names=()):
     if isinstance(value, str):
+        for name in sorted(set(names), key=len, reverse=True):
+            if name:
+                value = value.replace(name, "[客人称呼]")
+        value = re.sub(r"[\u4e00-\u9fff]{1,3}(?:先生|女士|小姐|太太)", "[客人称呼]", value)
         return re.sub(r"(?<!\d)(?:\d{17}[\dXx]|1[3-9]\d{9})(?!\d)", "[个人信息已隐藏]", value)
     if isinstance(value, list):
-        return [redact(x) for x in value]
+        return [redact(x, names) for x in value]
     if isinstance(value, dict):
-        return {k: redact(v) for k, v in value.items()}
+        return {k: redact(v, names) for k, v in value.items()}
     return value
 
 
 def question(brief):
     ready = trip_brief.readiness(brief)
     missing = ready["search"]["missing"] or (ready["quote"]["missing"] if brief.route_id else [])
-    return CLARIFY.get(missing[0], "请核对需求卡中标记的待确认内容。") if missing else ""
+    return (
+        "\n".join(
+            CLARIFY.get(k, "请核对需求卡中标记的待确认内容。")
+            for k in list(dict.fromkeys(missing))[:2]
+        )
+        if missing
+        else ""
+    )
 
 
 class CopilotAgent:
     def __init__(self, backend, *, client=None):
         self.backend = backend
         self.models = TypedModel(client)
+
+    def set_metrics(self, metrics):
+        self.models.metrics = metrics
 
     async def aclose(self):
         await self.models.aclose()
@@ -131,7 +183,7 @@ class CopilotAgent:
     async def _stream_turn(self, messages, context, state):
         started = time.monotonic()
         identifier = UUID(context.session_id)
-        brief, version, turn_id, message, visible, memory = await run_in_threadpool(
+        brief, version, turn_id, message, visible, memory, meta = await run_in_threadpool(
             load_context, self.backend, identifier
         )
         yield AgentEvent(type="progress", data={"message": "正在理解本轮需求，核对当前版本…"})
@@ -155,23 +207,9 @@ class CopilotAgent:
             "memory": memory,
             "recent_messages": messages[-12:],
         }
-        extraction, decision = await asyncio.gather(
-            self.models.call("extract", redact(current)),
-            self.models.call("decide", redact(current)),
-        )
+        extraction = await self.models.call("extract", redact(current, meta["names"]))
+        decision = None
         degraded = []
-        if extraction and not extraction.changes and decision and decision.intent == "change":
-            extraction = await self.models.call(
-                "extract",
-                redact(
-                    {
-                        **current,
-                        "validation_feedback": "本轮意图是调整需求，但上次返回空 changes。重新逐项核对本轮原话与 requirements，补充未知字段也属于变化；不要从历史助手文字补事实。",
-                    }
-                ),
-            )
-            if extraction and not extraction.changes:
-                degraded.append("已识别需求调整，但未提取到可核对的变化，请检查需求卡。")
         proposal = None
         if extraction:
             fields = {
@@ -202,6 +240,8 @@ class CopilotAgent:
                 )
                 brief = trip_brief.TripBrief.model_validate(proposal["brief"]["body"])
                 version = proposal["brief"]["version"]
+                if proposal.get("rejected"):
+                    degraded.append("部分字段尚未理解，可在需求卡补充；有效字段已保留。")
                 if proposal["status"] == "pending":
                     yield AgentEvent.ui("copilot_proposal", {**proposal, "brief_version": version})
             except ValueError:
@@ -239,24 +279,141 @@ class CopilotAgent:
                     degraded.append("本轮需求解析未通过校验，请在需求卡核对后修改。")
         else:
             degraded.append("本轮自动理解暂不可用，已保留原话，可在需求卡补充。")
+        if extraction and extraction.rejected_fields:
+            degraded.append("部分字段格式未通过校验，其他有效字段已保留；请在需求卡核对。")
+        policy = copilot_policy.derive(
+            brief,
+            visible=visible,
+            pending=meta["pending"] or bool(proposal and proposal["status"] == "pending"),
+            confirmed=meta["confirmed"],
+            sold=meta["sold"],
+        )
+        decision = await self.models.call(
+            "decide",
+            redact(
+                {
+                    **current,
+                    "requirements": {
+                        k: getattr(brief, k).model_dump(mode="json") for k in trip_brief.FIELDS
+                    },
+                    **policy,
+                },
+                meta["names"],
+            ),
+        )
+        if extraction and not extraction.changes and decision and decision.intent == "change":
+            retry = await self.models.call(
+                "extract",
+                redact(
+                    {
+                        **current,
+                        "validation_feedback": "本轮意图为调整，changes 却为空。逐项检查本轮年龄、人数、房型和日期与已保存字段的差异。",
+                    },
+                    meta["names"],
+                ),
+            )
+            if retry and retry.changes:
+                extraction = retry
+                proposal = await run_in_threadpool(
+                    copilot_engine.propose,
+                    self.backend.engine,
+                    self.backend.actor,
+                    identifier,
+                    {c.field: c.model_dump(mode="json", exclude={"field"}) for c in retry.changes},
+                    message,
+                    turn_id,
+                )
+                brief = trip_brief.TripBrief.model_validate(proposal["brief"]["body"])
+                version = proposal["brief"]["version"]
+                if proposal["status"] == "pending":
+                    yield AgentEvent.ui("copilot_proposal", {**proposal, "brief_version": version})
+                policy = copilot_policy.derive(
+                    brief,
+                    visible=visible,
+                    pending=proposal["status"] == "pending",
+                    confirmed=meta["confirmed"],
+                    sold=meta["sold"],
+                )
+            else:
+                degraded.append("本轮理解不完整：提到了调整，但没有提取到可核对的变化，可重试。")
+        if decision is None:
+            degraded.append("本轮判断未完成，可重试。")
         decision = decision or Decision(intent="unknown", confidence=0)
-        if (
-            extraction
-            and any(q in message for q in extraction.questions if q)
-            and decision.intent != "quote"
+        action = (
+            decision.next_action
+            if decision.next_action in policy["allowed_actions"]
+            else policy["allowed_actions"][0]
+        )
+        if "present_directions" in policy["allowed_actions"] and (
+            meta["clarifications"] >= 2
+            or re.search(r"你推荐吧|你来推荐|帮我推荐|没想好.*推荐", message)
         ):
-            decision = decision.model_copy(update={"intent": "ask"})
+            action = "present_directions"
         valid = {p["product_id"] for p in visible}
         targets = [x for x in decision.target_ids if x in valid]
         if brief.route_id and not targets:
             targets = [brief.route_id]
         facts = []
+        forbidden = [p.get("attributes", {}).get("source_name", "") for p in visible]
         notice = []
         conclusion = "已保留本轮沟通。"
-        pending = bool(degraded or (proposal and proposal["status"] == "pending"))
+        pending = meta["pending"] or bool(proposal and proposal["status"] == "pending")
         if pending:
             conclusion = "发现需求变化，请先采纳或保留原需求。"
-        elif decision.intent == "select" and targets and decision.confidence >= 0.85:
+        elif degraded:
+            conclusion = "本轮理解不完整，可重试；已保存的需求保持有效。"
+        elif action == "present_directions":
+            result = await run_in_threadpool(
+                copilot_explore.directions, self.backend.engine, self.backend.actor
+            )
+            yield AgentEvent.ui("copilot_directions", {**result, "brief_version": version})
+            for item in result["items"]:
+                facts.append(
+                    copilot_facts.fact(
+                        f"{item['name']}，{item['days_min']}至{item['days_max']}天，客人价待核实",
+                        "direction",
+                        {"direction_id": item["id"]},
+                    )
+                )
+            conclusion = (
+                "根据当前在售团期整理了可探索的方向，选一个再细化。"
+                if result["items"]
+                else "当前没有可用的在售方向，先保留偏好，调整出发窗口后再查。"
+            )
+        elif action == "lookup_route" and decision.lookup_name and decision.lookup_name in message:
+            page = await run_in_threadpool(
+                self.backend.catalog_page,
+                context,
+                query=decision.lookup_name,
+                filters=SearchFilters(),
+                limit=3,
+            )
+            state.remember_products(page["items"])
+            products = [p.model_dump(mode="json") for p in page["items"]]
+            yield AgentEvent.ui(
+                "warehouse_routes",
+                {**page, "items": products, "brief_version": version, "named_lookup": True},
+            )
+            forbidden += [p["attributes"].get("source_name", "") for p in products]
+            for product in products:
+                facts.append(
+                    copilot_facts.fact(
+                        copilot_reply.display_name(product["title"]),
+                        "catalog",
+                        {"product_id": product["product_id"]},
+                    )
+                )
+            conclusion = (
+                "已按名称找到线路，可直接查看行程和团期。"
+                if products
+                else "未找到同名的可见线路，请核对名称中的关键词。"
+            )
+        elif (
+            decision.intent == "select"
+            and action in {"list_departures", "build_confirmation", "compare_dates"}
+            and targets
+            and decision.confidence >= 0.85
+        ):
             chosen = targets[0]
             command = "departures" if chosen.startswith("WP-") else "offers"
             yield AgentEvent.ui(
@@ -272,7 +429,7 @@ class CopilotAgent:
                 },
             )
             conclusion = "已识别客人的选择，请点击卡片确认后继续。"
-        elif decision.intent == "quote" and brief.departure_id:
+        elif action in {"quote", "recheck_price"} and brief.departure_id:
             if trip_brief.readiness(brief)["quote"]["ready"]:
                 yield AgentEvent.ui(
                     "copilot_choice",
@@ -287,7 +444,9 @@ class CopilotAgent:
                 conclusion = "人数与房型已齐，请点击核价；正式销售报价还需核对确认单。"
             else:
                 conclusion = "可以继续核价，先补齐这一项。"
-        elif decision.intent in {"ask", "compare", "recommend"} and targets:
+        elif (
+            action in {"answer_question", "route_facts", "compare_routes", "build_plan"} and targets
+        ):
             yield AgentEvent(
                 type="progress", data={"message": "正在读取当前线路内容与商户核实回复…"}
             )
@@ -323,7 +482,8 @@ class CopilotAgent:
                 },
             )
         elif (
-            trip_brief.readiness(brief)["search"]["ready"]
+            action == "search_routes"
+            and trip_brief.readiness(brief)["search"]["ready"]
             and not brief.route_id
             and decision.intent not in {"ask", "chitchat", "aftercare"}
         ):
@@ -344,14 +504,24 @@ class CopilotAgent:
             conclusion = result["payload"]["summary"]
             for p in result["payload"]["items"]:
                 attrs = p.get("attributes", {})
+                forbidden.append(attrs.get("source_name", ""))
                 facts.append(
                     copilot_facts.fact(
-                        f"{p['title']}；{attrs.get('days', '待核实')}天；{attrs.get('depart_city', '待核实')}出发。",
+                        f"{copilot_reply.display_name(p['title'])}，{attrs.get('days', '待核实')}天，{attrs.get('depart_city', '待核实')}出发。",
                         "catalog",
                         {"product_id": p["product_id"], "version": attrs.get("version")},
                     )
                 )
-        elif decision.intent == "aftercare":
+                facts[-1]["conflict"] = bool(
+                    brief.depart_city.value and attrs.get("depart_city") != brief.depart_city.value
+                )
+            policy = copilot_policy.derive(
+                brief,
+                visible=result["payload"]["items"],
+                confirmed=meta["confirmed"],
+                sold=meta["sold"],
+            )
+        elif action in {"collect_documents", "predeparture_task"}:
             conclusion = "可以登记线下收款、核对旅客材料并安排出发前待办。"
         else:
             conclusion = question(brief) or "可以继续查看行程、比较线路，或在确认后核价。"
@@ -365,41 +535,96 @@ class CopilotAgent:
                     identifier,
                     turn_id,
                     "memory",
-                    {"text": "；".join(remembered), "source": "said"},
+                    {"text": "；".join(remembered), "source": "said", "source_turn": str(turn_id)},
                     version,
                 )
         yield AgentEvent(type="progress", data={"message": "正在整理可发给客人的回复…"})
+        for preference in brief.preferences.value or []:
+            facts.append(
+                copilot_facts.fact(
+                    "您希望" + preference.label,
+                    "requirement",
+                    {"deal_id": str(identifier), "version": version},
+                )
+            )
+        if brief.children.value:
+            facts.append(
+                copilot_facts.fact(
+                    "这次有孩子同行",
+                    "requirement",
+                    {"deal_id": str(identifier), "version": version},
+                )
+            )
+        # Priorities are questions to ask, not questions already asked by the customer.
+        next_question = question(brief)
         drafted = await self.models.call(
             "draft",
             redact(
                 {
                     "message": message,
                     "facts": facts,
-                    "next_question": question(brief),
+                    "next_question": next_question,
+                    "clarify_candidates": [
+                        candidate
+                        for candidate in (extraction.clarify_candidates if extraction else [])
+                        if any(
+                            term in candidate and term in next_question
+                            for term in (
+                                "时间",
+                                "出发",
+                                "海边",
+                                "方向",
+                                "目的地",
+                                "几位",
+                                "占床",
+                                "年龄",
+                            )
+                        )
+                    ][:2],
+                    "memory": memory,
+                    "salutation": meta["salutation"],
                     "pending": pending,
+                    "degraded": bool(degraded),
                     "conclusion": conclusion,
-                }
+                    "allowed_actions": policy["allowed_actions"],
+                    "next_action": action,
+                },
+                meta["names"],
             ),
         )
-        by_id = {f["fact_id"]: f for f in facts if f["reviewed"]}
-        chosen = [by_id[x] for x in (drafted.fact_ids if drafted else []) if x in by_id]
-        if drafted and drafted.opening == "pending":
-            chosen = []
-        # Customer prose only contains server facts chosen by ID, preserving their conditions.
-        # Unvalidated free model prose is never a fallback for factual answers.
-        if pending:
-            customer = "收到您的调整，我会按更新后的需求重新核对方案。"
-        elif chosen:
-            customer = "我核对到以下信息：\n" + "\n".join(f["text"] for f in chosen)
-            if notice:
-                customer += "\n" + "\n".join(dict.fromkeys(notice))
-        elif decision.intent in {"ask", "compare", "recommend"}:
-            customer = "这个细节我还需要向供应商核实，确认适用条件后再回复您。"
+        if degraded:
+            fallback = "收到，我再核对一下这次沟通的细节，稍后继续和您确认。"
+        elif pending:
+            fallback = "收到您的想法，我先核对这些变化对方案的影响，再和您确认。"
+        elif policy["stage"] == "explore":
+            fallback = next_question or "这次更偏向海边放松，还是城市和自然风光？"
+        elif decision.intent == "ask":
+            fallback = "这个具体安排还缺少明确依据，我核实适用条件后再回复您。"
         else:
-            customer = question(brief) or "我已整理好当前方案，接下来为您核对具体团期和适用条件。"
+            fallback = next_question or "我们可以先看看这些备选，再一起确认出发时间和具体安排。"
+        validated = copilot_reply.validate(
+            drafted,
+            facts,
+            policy["allowed_actions"],
+            fallback=fallback,
+            conclusion=conclusion,
+            forbidden=forbidden,
+            metrics=self.models.metrics,
+            max_questions=2 if policy["stage"] == "explore" and action == "ask_clarify" else None,
+            preserve_requirements=action == "search_routes" and not pending and not degraded,
+        )
+        customer = validated["to_customer"].replace("[客人称呼]", meta["salutation"] or "您")
+        chosen = validated["claims"]
+        if degraded:
+            customer = fallback
+            validated["simplified"] = True
+        else:
+            conclusion = validated["to_advisor"]
         if drafted is None:
             degraded.append("起草服务暂不可用，本轮已使用依据模板。")
-        asked = [q for q in extraction.questions if q in message] if extraction else []
+        asked = [q for q in extraction.customer_questions if q in message] if extraction else []
+        if not asked and decision.intent == "ask":
+            asked = [message]
         if asked:
             await run_in_threadpool(
                 copilot_facts.save_output,
@@ -410,13 +635,21 @@ class CopilotAgent:
                 "qa",
                 {
                     "questions": asked,
+                    "topic": copilot_memory.topic("；".join(asked)),
+                    "product_id": targets[0] if targets else "",
                     "answer": customer,
                     "facts": chosen,
                     "status": "answered" if chosen else "pending",
                 },
                 version,
             )
-        if decision.intent == "recommend" and chosen:
+        if action in {"compare_routes", "build_plan"} and targets:
+            comparison = await run_in_threadpool(
+                copilot_plans.compare, self.backend.engine, self.backend.actor, identifier, targets
+            )
+            yield AgentEvent.ui("copilot_comparison", comparison)
+        if action == "build_plan" and targets:
+            with_version = {**comparison, "text": customer, "plan_version": version}
             await run_in_threadpool(
                 copilot_facts.save_output,
                 self.backend.engine,
@@ -424,14 +657,11 @@ class CopilotAgent:
                 identifier,
                 turn_id,
                 "plan",
-                {
-                    "text": customer,
-                    "facts": chosen,
-                    "limitation": "适用团期、费用及未核实事项需在正式报价前确认。",
-                },
+                with_version,
                 version,
             )
         payload = {
+            **validated,
             "to_advisor": conclusion,
             "to_customer": customer,
             "claims": chosen,
@@ -439,6 +669,10 @@ class CopilotAgent:
             "degraded": degraded,
             "clarity": copilot_engine.clarity(brief),
             "elapsed_ms": round((time.monotonic() - started) * 1000),
+            **policy,
+            "next_action": action,
+            "confidence": decision.confidence_by_question,
+            "clarification": bool(next_question and policy["stage"] == "explore"),
         }
         yield AgentEvent.ui("copilot_reply", payload)
         final = conclusion + ("\n" + "\n".join(degraded) if degraded else "")
