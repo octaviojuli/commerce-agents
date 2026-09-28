@@ -1,0 +1,386 @@
+"""Route search with a visible funnel, route quick-look and departure comparison.
+
+Must-have conditions (place, window, departure city, days) filter; nice-to-have ones
+(budget, preferences, themes, examples) only rank and explain. When few routes remain,
+the funnel says which condition removed them and what relaxing it would add.
+"""
+
+import asyncio
+import re
+from datetime import date, timedelta
+
+from . import need as needs
+from .facts import Route
+from .warehouse import WarehouseError
+
+CODE = re.compile(
+    r"^\s*(?:W[PDO]-[a-f\d-]{8,}|[A-Z]{1,5}\d{1,5}(?:-[A-Z]{1,3}(?=[-－_]))?)\s*[-－_：:]*\s*"
+)
+
+
+def display(title: str) -> str:
+    return CODE.sub("", title or "").strip()
+
+
+def _days(item):
+    try:
+        return int(item.get("attributes", {}).get("days") or 0) or None
+    except ValueError:
+        return None
+
+
+def _city(item):
+    return (item.get("attributes", {}).get("depart_city") or "").strip()
+
+
+def query_for(need) -> str:
+    places = need.get("destinations")
+    words = []
+    if places:
+        words = places.must or places.regions or places.examples
+    if not words:
+        words = need.get("themes") or []
+    return " ".join(words)
+
+
+async def document(wh, product_id, departure_id=None, cache=None):
+    key = (product_id, departure_id)
+    if cache is not None and key in cache:
+        return cache[key]
+    try:
+        doc = await wh.document(product_id, departure_id)
+    except WarehouseError:
+        doc = None
+    if cache is not None:
+        cache[key] = doc
+    return doc
+
+
+def route_view(item, doc) -> Route:
+    body = (doc or {}).get("body") or {}
+    return Route(item["product_id"], display(item.get("title", "")), body)
+
+
+async def search(wh, need, *, prices=None, cache=None, limit=5):
+    """Search the warehouse catalog for this need and explain the result."""
+    prices = prices or {}
+    places = need.get("destinations")
+    window, days, city = need.get("window"), need.get("days"), need.get("depart_city")
+    budget = need.get("budget")
+    query = query_for(need)
+    everything = (await wh.products(query, limit=60))["items"] if query else []
+    if places and places.exclude:
+        everything = [
+            i for i in everything if not any(x in i.get("title", "") for x in places.exclude)
+        ]
+    steps = []
+    label = query.replace(" ", "·") or "全部线路"
+    at_city = [i for i in everything if not city or city in _city(i)]
+    steps.append({"label": label + (f" · {city}出发" if city else ""), "count": len(at_city)})
+    in_window_ids = set()
+    if window:
+        dated = (
+            (await wh.products(query, start=window.start, end=window.end, limit=60))["items"]
+            if query
+            else []
+        )
+        in_window_ids = {i["product_id"] for i in dated}
+        in_window = [i for i in at_city if i["product_id"] in in_window_ids]
+        steps.append(
+            {
+                "label": f"{window.label or needs.show('window', window)} 有团",
+                "count": len(in_window),
+            }
+        )
+    else:
+        in_window = at_city
+    if days:
+        fits = [i for i in in_window if _days(i) is None or days.min <= _days(i) <= days.max]
+        steps.append({"label": f"{needs.show('days', days)}", "count": len(fits)})
+    else:
+        fits = in_window
+    alternatives = []
+    if not fits and city:
+        # Nothing from the stated city: other cities are shown only as alternatives.
+        others = [i for i in everything if i["product_id"] in in_window_ids or not window]
+        alternatives = [
+            i for i in others if not days or _days(i) is None or days.min <= _days(i) <= days.max
+        ][:3]
+    views = {}
+    pool = (fits or alternatives)[: max(limit + 3, 8)]
+    docs = await asyncio.gather(*(document(wh, i["product_id"], cache=cache) for i in pool))
+    for item, doc in zip(pool, docs, strict=True):
+        views[item["product_id"]] = route_view(item, doc)
+    cards = [
+        card(
+            item,
+            views[item["product_id"]],
+            need,
+            prices.get(item["product_id"]),
+            alternative=item in alternatives,
+        )
+        for item in pool
+    ]
+    cards.sort(key=lambda c: -c["score"])
+    within = [
+        c
+        for c in cards
+        if c["price"] and budget and c["price"]["per_person"] <= float(budget.per_person)
+    ]
+    if budget:
+        priced = [c for c in cards if c["price"]]
+        steps.append(
+            {
+                "label": "预算内",
+                "count": len(within) if priced else None,
+                "note": "" if priced else "询价后才能判断",
+                "over": [
+                    {
+                        "title": c["title"],
+                        "by": round(c["price"]["per_person"] - float(budget.per_person)),
+                    }
+                    for c in priced
+                    if c["price"]["per_person"] > float(budget.per_person)
+                ][:2],
+            }
+        )
+    relax = []
+    if len(fits) < 3:
+        if days:
+            wider = [
+                i
+                for i in in_window
+                if _days(i)
+                and not days.min <= _days(i) <= days.max
+                and abs(_days(i) - (days.min + days.max) / 2) <= 3
+            ]
+            if wider:
+                relax.append(
+                    {
+                        "field": "days",
+                        "text": f"天数放宽 ±2 天能多出 {len(wider)} 条",
+                        "count": len(wider),
+                    }
+                )
+        if city:
+            elsewhere = [
+                i
+                for i in everything
+                if city not in _city(i) and (not window or i["product_id"] in in_window_ids)
+            ]
+            if elsewhere:
+                relax.append(
+                    {
+                        "field": "depart_city",
+                        "text": f"不限出发地能多出 {len(elsewhere)} 条",
+                        "count": len(elsewhere),
+                    }
+                )
+        if window and query:
+            wide = await wh.products(
+                query,
+                start=window.start - timedelta(days=10),
+                end=window.end + timedelta(days=10),
+                limit=60,
+            )
+            extra = [
+                i
+                for i in wide["items"]
+                if i["product_id"] not in in_window_ids and (not city or city in _city(i))
+            ]
+            if extra:
+                relax.append(
+                    {
+                        "field": "window",
+                        "text": f"出发时间前后放宽 10 天能多出 {len(extra)} 条",
+                        "count": len(extra),
+                    }
+                )
+    must = [
+        x
+        for x in [
+            label if query else "",
+            needs.show("window", window) + " 出发" if window else "",
+            city,
+            needs.show("days", days) if days else "",
+        ]
+        if x
+    ]
+    nice = []
+    if budget:
+        nice.append(needs.show("budget", budget))
+    for p in need.get("preferences") or []:
+        nice.append(needs.PREFERENCES.get(p, p))
+    nice += need.get("themes") or []
+    if places and places.examples:
+        nice += places.examples
+    return {
+        "query": query,
+        "must": must,
+        "nice": nice,
+        "steps": steps,
+        "cards": cards[:limit],
+        "alternatives_only": bool(alternatives and not fits),
+        "relax": relax,
+        "explain": explain(steps, relax, len(fits)),
+    }
+
+
+def explain(steps, relax, count):
+    if count >= 3 or not steps:
+        return ""
+    worst = min(
+        (
+            (a, b)
+            for a, b in zip(steps, steps[1:], strict=False)
+            if a["count"] and b["count"] is not None and b["count"] < a["count"]
+        ),
+        key=lambda pair: (pair[1]["count"] or 0) - (pair[0]["count"] or 0),
+        default=None,
+    )
+    text = (
+        f"卡在“{worst[1]['label']}”这一步：{worst[0]['count']} 条里只剩 {worst[1]['count']} 条。"
+        if worst
+        else ""
+    )
+    if relax:
+        text += relax[0]["text"] + "。"
+    return text
+
+
+def card(item, route: Route, need, price=None, *, alternative=False):
+    """One candidate as shown in the search result and in the conversation."""
+    grid = {g["label"]: g["value"] for g in route.grid()}
+    yes, no, unknown = [], [], []
+    score = 60
+    city = need.get("depart_city")
+    if city:
+        if city in _city(item):
+            yes.append(f"{city}出发")
+            score += 5
+        else:
+            no.append(f"{_city(item) or '出发地未写明'}出发")
+            score -= 30
+    days = need.get("days")
+    d = _days(item)
+    if days and d:
+        if days.min <= d <= days.max:
+            yes.append(f"{d} 天")
+            score += 5
+        else:
+            no.append(f"{d} 天")
+            score -= 10
+    prefs = need.get("preferences") or []
+    shopping = grid.get("购物", "")
+    if "no_shopping" in prefs:
+        if "未列购物店" in shopping:
+            yes.append("未列购物店")
+            score += 10
+        elif "店" in shopping:
+            no.append(shopping)
+            score -= 10
+        else:
+            unknown.append("购物未写明")
+    if "slow_pace" in prefs:
+        stays = [x["stay"] for x in route.days if x["stay"]]
+        moves = len({s for s in stays})
+        if route.days and stays:
+            if moves <= max(2, len(route.days) // 3):
+                yes.append("换酒店少")
+                score += 10
+            else:
+                no.append(f"换酒店 {moves} 次")
+                score -= 5
+        else:
+            unknown.append("节奏待看行程")
+    places = need.get("destinations")
+    title = display(item.get("title", ""))
+    for example in places.examples if places else []:
+        if example in title or any(example in x["title"] for x in route.days):
+            yes.append(example)
+            score += 5
+    for theme in need.get("themes") or []:
+        if theme in title:
+            yes.append(theme)
+            score += 5
+    budget = need.get("budget")
+    per_person = price["per_person"] if price else None
+    if budget and per_person is not None:
+        if per_person <= float(budget.per_person):
+            yes.append("预算内")
+            score += 10
+        else:
+            no.append(f"超 ¥{round(per_person - float(budget.per_person)):,}")
+            score -= 10
+    elif budget:
+        unknown.append("价格待询")
+    if not route.days:
+        unknown.append("暂无已发布行程")
+        score -= 5
+    if not route.reviewed:
+        unknown.append("行程未人工审核")
+    return {
+        "product_id": item["product_id"],
+        "title": title,
+        "days": d,
+        "depart_city": _city(item),
+        "three": {
+            "hotel": grid.get("酒店", "未写明"),
+            "meals": grid.get("含餐", "未写明"),
+            "shopping": grid.get("购物", "未写明"),
+        },
+        "yes": yes,
+        "no": no,
+        "unknown": unknown,
+        "score": max(0, min(100, score)),
+        "price": price,
+        "alternative": alternative,
+        "notice": route.notice,
+    }
+
+
+async def departures(wh, product_id, need, *, around_days=7):
+    """Departures near the need's window, the calendar of screen 15."""
+    window = need.get("window")
+    start = end = None
+    if window:
+        start, end = (
+            window.start - timedelta(days=around_days),
+            window.end + timedelta(days=around_days),
+        )
+    page = await wh.departures(product_id, start=start, end=end, limit=25)
+    out = []
+    for item in page.get("items", []):
+        a = item.get("attributes", {})
+        try:
+            depart = date.fromisoformat(a.get("depart_date", ""))
+        except ValueError:
+            continue
+        back = a.get("return_date") or ""
+        out.append(
+            {
+                "departure_id": item["product_id"],
+                "offer_id": a.get("offer_id") or None,
+                "date": depart.isoformat(),
+                "weekday": "一二三四五六日"[depart.weekday()],
+                "return_date": back,
+                "return_weekday": "一二三四五六日"[date.fromisoformat(back).weekday()]
+                if back
+                else "",
+                "availability": a.get("availability", ""),
+                "sales_status": a.get("sales_status_label", ""),
+                "in_window": bool(window and window.start <= depart <= window.end),
+                "code": item.get("option_values", {}).get("团期", ""),
+                "leave_days": _workdays(depart, date.fromisoformat(back)) if back else None,
+            }
+        )
+    return out
+
+
+def _workdays(start: date, end: date) -> int:
+    days, current = 0, start
+    while current <= end:
+        if current.weekday() < 5:
+            days += 1
+        current += timedelta(days=1)
+    return days

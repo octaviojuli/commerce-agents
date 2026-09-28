@@ -1,0 +1,373 @@
+"""Check a customer draft sentence by sentence against this turn's facts.
+
+A factual clause stays only when one fact supports it: its numbers come from that fact,
+it adds no negation or limit the fact does not have, and when it restates a clause of the
+fact it keeps that clause's limits and quantities. A sentence that fails is removed whole.
+"""
+
+import re
+
+INTERNAL = re.compile(r"(?<![A-Za-z0-9])(?:W[PDO]-[A-Za-z0-9-]+|[A-Z]{1,5}\d{1,5}[-－_])")
+PRIVATE = re.compile(
+    r"同[行业]价|结算价|毛利|利润|(?:余位|剩余名额|库存)[：:\s]*[\d一二三四五六七八九十]+|\{\s*\""
+)
+PROMISE = re.compile(r"(?<!不)(?<!无法)(?<!不能)(?:保证|一定|肯定|确保|包退|绝对|百分百)")
+# Clauses that state something checkable. Wishes, questions and connectives do not.
+FACTUAL = re.compile(
+    r"\d|[￥¥]|(?<!旦)元(?!旦)|包含|不含|含[早午晚三]?餐|赠送|免费|入住|[1-5一二三四五]星|购物|自费|另付|退改|退款|"
+    r"手续费|签证|保险|占床|自理|已(?:经)?(?:安排|订好|预订|预留|确认)"
+)
+# Negations and limits, longest first so "无须" is never read as "须".
+POLAR = (
+    "无须",
+    "无需",
+    "不需要",
+    "不需",
+    "不用",
+    "不必",
+    "不包含",
+    "不包括",
+    "不含",
+    "不占",
+    "不能",
+    "无法",
+    "不保证",
+    "不可",
+    "不退",
+    "免费",
+    "自理",
+    "自费",
+    "另付",
+    "现付",
+    "须",
+    "需要",
+    "需",
+    "仅限",
+    "仅",
+    "限",
+    "为准",
+    "提前",
+)
+LIMITS = {
+    "须",
+    "需要",
+    "需",
+    "自理",
+    "自费",
+    "另付",
+    "现付",
+    "不含",
+    "不包含",
+    "不包括",
+    "仅",
+    "仅限",
+    "限",
+    "为准",
+    "提前",
+    "不能",
+    "无法",
+    "不保证",
+    "不可",
+    "不退",
+    "不占",
+    "免费",
+    "无须",
+    "无需",
+    "不需要",
+    "不需",
+    "不用",
+    "不必",
+}
+SCOPE = {"仅限", "仅", "限"}
+SYNONYMS = (
+    ("包含", "含"),
+    ("已含", "含"),
+    ("在内", ""),
+    ("大人", "成人"),
+    ("小朋友", "儿童"),
+    ("小孩", "儿童"),
+    ("孩子", "儿童"),
+    ("位", "个"),
+    ("需要", "需"),
+)
+CN_DIGITS = {
+    "零": 0,
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
+KNOWN_QUESTIONS = {
+    "party": r"几位|几个人|多少人|几口人|几个大人|几个儿童|几个孩子|人数",
+    "child_ages": r"(?:孩子|小孩|儿童|宝宝).{0,6}(?:几岁|多大|年龄)",
+    "window": r"什么时候(?:出发|走|去|出行)|打算几月|哪个月出发",
+    "days": r"玩几天|几天行程|多少天",
+    "depart_city": r"哪里出发|从哪.{0,3}出发|出发城市",
+    "destinations": r"想去哪|去哪里玩|目的地是",
+    "budget": r"预算(?:多少|大概|是多少)",
+    "child_beds": r"占床|不占床",
+    "rooms": r"几间房|住几间|房间怎么(?:安排|住)|单住",
+}
+REQUEST = re.compile(r"告诉我|说一下|说下|发我|确认一下|方便.{0,6}(?:说|告诉|提供)")
+
+
+def chinese_numbers(value: str) -> str:
+    """Write Chinese numerals and 万 amounts as digits: 两天 → 2天, 1.5万 → 15000."""
+
+    def wan(m):
+        number = float(m.group(1)) * 10000
+        return str(int(number)) if number.is_integer() else str(number)
+
+    value = re.sub(r"(\d+(?:\.\d+)?)\s*万", wan, value)
+
+    def cn(m):
+        text = m.group(0)
+        total, current = 0, 0
+        for ch in text:
+            if ch in CN_DIGITS:
+                current = CN_DIGITS[ch]
+            elif ch == "十":
+                total += (current or 1) * 10
+                current = 0
+            elif ch == "百":
+                total += (current or 1) * 100
+                current = 0
+            elif ch == "千":
+                total += (current or 1) * 1000
+                current = 0
+        return str(total + current)
+
+    return re.sub(
+        r"[零一二两三四五六七八九十百千]+(?=[天晚岁人位间个次元小时分钟点号月日周星钻顿餐项店])",
+        cn,
+        value,
+    )
+
+
+def normalized(value: str) -> str:
+    value = chinese_numbers(value)
+    value = re.sub(r"[\s，。；：、！？,.!?;:（）()【】\[\]“”\"'·～~—\-]", "", value)
+    for word, replacement in SYNONYMS:
+        value = value.replace(word, replacement)
+    return value
+
+
+def numbers(value: str) -> set:
+    found = set()
+    for item in re.findall(r"\d[\d,]*(?:\.\d+)?", chinese_numbers(value)):
+        item = item.replace(",", "")
+        found.add(re.sub(r"\.0+$", "", item))
+    return found
+
+
+def bigrams(value: str) -> set:
+    value = normalized(value)
+    return {value[i : i + 2] for i in range(len(value) - 1)}
+
+
+def polar(value: str) -> list:
+    """Negation and limit words in reading order, longest match first."""
+    out, i = [], 0
+    while i < len(value):
+        for token in POLAR:
+            if value.startswith(token, i):
+                out.append(token)
+                i += len(token)
+                break
+        else:
+            i += 1
+    return out
+
+
+def clauses(value: str) -> list:
+    return [c for c in re.split(r"[，,；;。！？!?\n]", value) if c.strip()]
+
+
+def core(claim: str, text: str) -> bool:
+    """Each factual phrase of the claim appears in the fact together with its neighbours."""
+    claim_n, text_n = normalized(claim), normalized(text)
+    spans = [m for m in FACTUAL.finditer(claim_n) if not m.group(0).isdigit()]
+    if not spans:
+        return True
+    for match in spans:
+        start, end = match.span()
+        windows = [
+            claim_n[i:j]
+            for i in range(max(0, start - 2), start + 1)
+            for j in range(end, min(len(claim_n), end + 2) + 1)
+            if j - i >= 3
+        ]
+        if not any(w in text_n for w in windows):
+            return False
+    return True
+
+
+def supported(claim: str, fact: dict) -> bool:
+    text = fact["text"]
+    words = bigrams(claim)
+    if not words:
+        return False
+    target, source = normalized(claim), normalized(text)
+    if (
+        target not in source
+        and len(words & bigrams(text)) < 0.5 * len(words)
+        and not core(claim, text)
+    ):
+        return False
+    if target not in source and not core(claim, text):
+        return False
+    if not numbers(claim) <= numbers(text):
+        return False
+    # A scope limit ("仅限6岁以下儿童") governs the whole unit, not only its own clause.
+    scope = [t for t in polar(text) if t in SCOPE]
+    if scope and not any(t in polar(claim) for t in scope):
+        return False
+    related = [c for c in clauses(text) if words & bigrams(c)]
+    fact_polar = set(polar("".join(related) or text))
+    for token in polar(claim):
+        # A claim may not add a negation or a limit the fact does not state.
+        if token not in fact_polar and not (token == "需" and "需要" in fact_polar):
+            return False
+    for clause in related:
+        shared = words & bigrams(clause)
+        if not shared:
+            continue
+        if numbers(claim) and not numbers(claim) & numbers(clause) and numbers(clause):
+            # A sibling clause about another number ("8岁的占床" beside "5岁不占床").
+            continue
+        need = [t for t in polar(clause) if t in LIMITS]
+        have = set(polar(claim))
+        if any(t not in have and not (t == "需要" and "需" in have) for t in need):
+            return False
+        if numbers(clause) - numbers(claim):
+            return False
+    return True
+
+
+def _support(clause, facts):
+    return next((f for f in facts if supported(clause, f)), None)
+
+
+def asks_known(sentence: str, known: set):
+    return next(
+        (
+            f
+            for f, pattern in KNOWN_QUESTIONS.items()
+            if f in known and re.search(pattern, sentence)
+        ),
+        None,
+    )
+
+
+def check(
+    text: str,
+    facts: list,
+    *,
+    said: list = (),
+    known=(),
+    forbidden=(),
+    conflicts=(),
+    max_questions=None,
+):
+    """Return the kept draft, the claims found for each kept factual clause, and what was cut.
+
+    ``said`` is the customer's own words: they may back a restated number, never a fact.
+    ``conflicts`` are route names that do not fit the need; they may only appear as an
+    alternative that still needs confirming.
+    """
+    reviewed = [f for f in facts if f.get("reviewed", True)]
+    said_numbers = set().union(*(numbers(s) for s in said)) if said else set()
+    known = set(known)
+    kept, claims, removed, reasons = [], [], [], []
+    questions = 0
+    for sentence in re.findall(r"[^。！？\n]+[。！？]?", text or ""):
+        stripped = sentence.strip()
+        if not stripped:
+            continue
+        question = stripped.endswith(("？", "?"))
+        reason = ""
+        found = []
+        if question:
+            questions += 1
+            if max_questions is not None and questions > max_questions:
+                reason = "too_many_questions"
+        if not reason and (question or REQUEST.search(stripped)) and asks_known(stripped, known):
+            reason = "asks_known"
+        if not reason and (
+            INTERNAL.search(stripped)
+            or PRIVATE.search(stripped)
+            or any(t and t in stripped for t in forbidden)
+        ):
+            reason = "private"
+        if not reason and not question:
+            parts = [
+                c.strip()
+                for c in clauses(
+                    re.sub(r"^\s*(?:\d{1,2}|[①②③④⑤⑥⑦⑧⑨])\s*[)）.、]?\s*", "", stripped)
+                )
+            ]
+            k = 0
+            while k < len(parts):
+                clause = parts[k]
+                k += 1
+                if not FACTUAL.search(clause):
+                    continue
+                fact = _support(clause, reviewed)
+                if fact is None and k < len(parts):
+                    # "如果孩子不占床，每位11800元": a condition and its number span two clauses.
+                    joined = clause + "，" + parts[k]
+                    fact = _support(joined, reviewed)
+                    if fact is not None:
+                        found.append(
+                            {
+                                "text": joined,
+                                "fact_id": fact["fact_id"],
+                                "section": fact.get("section", ""),
+                            }
+                        )
+                        k += 1
+                        continue
+                if fact is None and not FACTUAL.search(re.sub(r"\d", "", chinese_numbers(clause))):
+                    allowed = (
+                        set().union(*(numbers(f["text"]) for f in reviewed)) | said_numbers
+                        if reviewed
+                        else said_numbers
+                    )
+                    if numbers(clause) <= allowed:
+                        found.append({"text": clause, "fact_id": None})
+                        continue
+                if fact is None:
+                    reason = "unproven"
+                    break
+                found.append(
+                    {"text": clause, "fact_id": fact["fact_id"], "section": fact.get("section", "")}
+                )
+        if not reason and PROMISE.search(stripped):
+            backed = [f for f in reviewed if any(c["fact_id"] == f["fact_id"] for c in found)]
+            if not any(PROMISE.search(f["text"]) for f in backed):
+                reason = "promise"
+        if (
+            not reason
+            and any(name in stripped for name in conflicts)
+            and not ("备选" in stripped and "确认" in stripped)
+        ):
+            reason = "conflict"
+        if reason:
+            removed.append(stripped)
+            reasons.append(reason)
+        else:
+            kept.append(stripped)
+            claims.extend(c for c in found if c["fact_id"])
+    return {
+        "text": "\n".join(kept),
+        "claims": claims,
+        "removed": removed,
+        "reasons": reasons,
+        "sentences": len(kept) + len(removed),
+    }

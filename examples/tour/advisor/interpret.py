@@ -1,0 +1,240 @@
+"""Turn the model's reading of a message into checked field changes.
+
+Evidence must be the customer's own words. Places and holidays are parsed by rule;
+the party is merged child by child so a partial answer never fills in the others.
+A field with no saved value is filled directly; a field that already has a value
+becomes a proposal the advisor adopts or keeps.
+"""
+
+import re
+from datetime import date
+
+from cloud_warehouse import advisor_holidays, destinations, travel_requirements
+
+from . import need as needs
+from .need import Need
+
+PUNCT = str.maketrans("，。；：！？（）", ",.;:!?()")
+
+
+def grounded(message: str, evidence: str) -> str:
+    """The span of ``message`` the evidence quotes, ignoring punctuation width; or ""."""
+    evidence = (evidence or "").strip()
+    if not evidence:
+        return ""
+    if evidence in message:
+        return evidence
+    source = [(c.translate(PUNCT), i) for i, c in enumerate(message) if not c.isspace()]
+    target = "".join(c.translate(PUNCT) for c in evidence if not c.isspace())
+    joined = "".join(c for c, _ in source)
+    at = joined.find(target) if target else -1
+    if at >= 0:
+        return message[source[at][1] : source[at + len(target) - 1][1] + 1]
+    parts = [p.strip() for p in re.split(r"[、，,；;/…]+|\.{2,}", evidence) if len(p.strip()) >= 2]
+    if len(parts) > 1:
+        found = [grounded(message, p) for p in parts]
+        if all(found):
+            return max(found, key=len)
+    return ""
+
+
+def places(message: str, saved) -> tuple[dict | None, str]:
+    """Destinations stated in the message, by rule. None when the message names none."""
+    if travel_requirements.route_question(message):
+        return None, ""
+    spans = []
+    must, examples, exclude, regions = travel_requirements.location_intent(message, spans)
+    if not (must or examples or exclude or regions):
+        return None, ""
+    current = saved or needs.Places()
+    if re.search(r"加上|再加|还要去|也要去", message) and not re.search(
+        r"改成|改去|换成|只去", message
+    ):
+        must = [*current.must, *must]
+    if exclude and not must and not regions and not examples:
+        must = [x for x in current.must if x not in exclude]
+        examples = [x for x in current.examples if x not in exclude]
+        regions = current.regions
+    exclude = list(dict.fromkeys([*current.exclude, *exclude]))
+    must = (
+        [x for x in dict.fromkeys(destinations.canonical_terms(" ".join(must))) if x not in exclude]
+        if must
+        else []
+    )
+    value = {"must": must, "examples": examples, "regions": regions, "exclude": exclude}
+    return value, "，".join(dict.fromkeys(spans))[:200]
+
+
+def window(message: str, value, today: date):
+    """Holiday words come from the operator table; a bare month is a whole month, inferred."""
+    # "改元旦" means travelling around the holiday, as operators define "前后".
+    holiday = advisor_holidays.window(message if "前后" in message else message + " 前后", today)
+    if holiday and holiday.get("value"):
+        v = holiday["value"]
+        if "前后" not in message:
+            holiday["evidence"] = holiday["evidence"].replace("前后", "")
+        return (
+            {"start": v["start"], "end": v["end"], "label": holiday["evidence"]},
+            holiday["evidence"],
+            holiday["hint"],
+        )
+    if not value:
+        return None, "", ""
+    hint = ""
+    if not re.search(r"20\d{2}\s*年", message):
+        hint = "原话没说年份，按最近的日期推断"
+    label = value.get("label", "") if isinstance(value, dict) else ""
+    return {**value, "label": label}, "", hint
+
+
+def merge_party(saved: needs.Party | None, change: dict) -> dict:
+    """Merge a partial party. Children are matched by age, then by position."""
+    base = (saved or needs.Party()).model_dump(mode="json")
+    if "adults" in change and change["adults"] is not None:
+        base["adults"] = change["adults"]
+    if "seniors" in change and change["seniors"] is not None:
+        base["seniors"] = [s for s in change["seniors"] if isinstance(s, dict)]
+    if "children" in change and change["children"] is not None:
+        new = [c for c in change["children"] if isinstance(c, dict)]
+        old = base.get("children")
+        if not new:
+            base["children"] = []
+        elif old and len(new) <= len(old):
+            merged = [dict(c) for c in old]
+            used = set()
+            for c in new:
+                index = next(
+                    (
+                        i
+                        for i, o in enumerate(merged)
+                        if i not in used
+                        and c.get("age") is not None
+                        and o.get("age") == c.get("age")
+                    ),
+                    None,
+                )
+                if index is None:
+                    index = next(
+                        (
+                            i
+                            for i in range(len(merged))
+                            if i not in used and merged[i].get("age") is None
+                        ),
+                        None,
+                    )
+                if index is None and len(new) == len(old):
+                    index = next(i for i in range(len(merged)) if i not in used)
+                if index is None:
+                    continue
+                used.add(index)
+                for key in ("age", "bed"):
+                    if c.get(key) is not None:
+                        merged[index][key] = c[key]
+            base["children"] = merged
+        else:
+            base["children"] = [{"age": c.get("age"), "bed": c.get("bed")} for c in new]
+    return base
+
+
+def changes(need: Need, understanding, message: str, today: date, *, turn=None):
+    """Checked changes: ``fills`` go in directly, ``proposals`` wait for the advisor."""
+    fills, proposals, rejected = {}, [], list(understanding.rejected if understanding else [])
+    by_field = {c.field: c for c in (understanding.changes if understanding else [])}
+    parsed_places, place_evidence = places(message, need.get("destinations"))
+    if parsed_places is not None:
+        by_field.pop("destinations", None)
+    elif "destinations" in by_field and travel_requirements.route_question(message):
+        by_field.pop("destinations")
+    candidates = []
+    if parsed_places is not None:
+        candidates.append(("destinations", parsed_places, "said", place_evidence, ""))
+    holiday_value, holiday_evidence, holiday_hint = window(message, None, today)
+    if holiday_value:
+        by_field.pop("window", None)
+        candidates.append(("window", holiday_value, "inferred", holiday_evidence, holiday_hint))
+    for field, change in by_field.items():
+        value = change.value
+        source, hint = change.source, change.hint
+        evidence = grounded(message, change.evidence)
+        if field == "window":
+            value, _, window_hint = window(message, value, today)
+            if window_hint:
+                source, hint = "inferred", hint or window_hint
+        if field == "party" and isinstance(value, dict):
+            value = merge_party(need.get("party"), value)
+        if (
+            field == "preferences"
+            and isinstance(value, list)
+            and not re.search(r"孩子|小孩|儿童|宝宝|娃|小朋友", message)
+        ):
+            # Family travel is not the same as travelling with children.
+            value = [v for v in value if v != "family"]
+            if not value:
+                continue
+        if field == "days" and re.search(r"一周|一个星期|七天左右|7天左右", message):
+            value, source, hint = {"min": 6, "max": 8}, "inferred", "约一周按 6–8 天"
+        if source == "said" and not evidence:
+            rejected.append(field)
+            continue
+        if source == "inferred" and not hint:
+            hint = "按原话推断，待确认"
+        candidates.append((field, value, source, evidence, hint))
+    for field, value, source, evidence, hint in candidates:
+        try:
+            parsed = needs.parse(field, value)
+        except (ValueError, TypeError):
+            rejected.append(field)
+            continue
+        if (parsed is None or parsed == []) and need.get(field) in (None, []):
+            continue
+        current = need.get(field)
+        if _same(current, parsed):
+            continue
+        item = {
+            "field": field,
+            "old": needs._json(current),
+            "new": needs._json(parsed),
+            "source": source,
+            "evidence": evidence,
+            "hint": hint,
+            "turn": turn,
+        }
+        grows = (
+            isinstance(current, list) and isinstance(parsed, list) and set(current) <= set(parsed)
+        )
+        if current in (None, []) or grows or (field == "party" and _only_adds(current, parsed)):
+            fills[field] = item
+        else:
+            proposals.append(item)
+    return fills, proposals, list(dict.fromkeys(rejected))
+
+
+def _same(a, b):
+    if isinstance(a, needs.Party) and isinstance(b, needs.Party):
+        return a.model_dump() == b.model_dump()
+    if hasattr(a, "model_dump") and hasattr(b, "model_dump"):
+        return a.model_dump() == b.model_dump()
+    return a == b
+
+
+def _only_adds(old: needs.Party, new: needs.Party) -> bool:
+    """Answering an open party question (ages, beds, "no children") fills; it changes nothing.
+
+    Adding or removing a traveller, or changing a known age or bed, is a change.
+    """
+    if old.adults is not None and new.adults != old.adults:
+        return False
+    if len(new.seniors) != len(old.seniors):
+        return False
+    if any(
+        o.age is not None and n.age != o.age for o, n in zip(old.seniors, new.seniors, strict=True)
+    ):
+        return False
+    if old.children is None:
+        return True
+    if new.children is None or len(new.children) != len(old.children):
+        return False
+    return all(
+        (o.age is None or n.age == o.age) and (o.bed is None or n.bed == o.bed)
+        for o, n in zip(old.children, new.children, strict=True)
+    )
