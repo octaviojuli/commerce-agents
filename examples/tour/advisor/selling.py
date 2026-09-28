@@ -460,6 +460,9 @@ def public(engine, token, signal=None, route=0):
     }
 
 
+BUDGET_LINE = re.compile(r"每人约 ¥[\d,]+(?:，超 ¥[\d,]+)?")
+
+
 def public_route(r):
     """One route as the customer sees it; a price past its validity is withdrawn, not shown."""
     price = r.get("price")
@@ -467,10 +470,11 @@ def public_route(r):
     expired = bool(until) and datetime.fromisoformat(until) <= datetime.now(UTC)
     shown = price if price and not expired else None
 
-    # Everything drawn from the price goes with it; route facts stay. Plans saved before
-    # over-budget notes were tagged "报价" are recognised by the amount they quote.
+    # Everything drawn from the price goes with it; supplier terms stay, amounts and all.
+    # Plans saved before over-budget notes were tagged "报价" carry the budget line in the
+    # program's own wording, which no supplier text uses.
     def priced(x):
-        return x["source"] == "报价" or "¥" in x["text"]
+        return x["source"] == "报价" or BUDGET_LINE.fullmatch(x["text"]) is not None
 
     reasons = [x for x in r["reasons"] if shown or not priced(x)]
     tell = [x for x in r["tell"] if shown or not priced(x)]

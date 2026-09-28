@@ -711,3 +711,69 @@ def test_conversation_cannot_reactivate_void_confirmation(env):
     assert all(s["status"] == "void" for s in sheets)
     assert any(c["type"] == "confirm_reply" and c["status"] == "stale" for c in result["cards"])
     assert client.post(f"/api/deals/{deal}/quotes/formal").status_code == 409
+
+
+def build_with_supplier_notice(engine, owner, deal, notice):
+    def source(request):
+        response = warehouse(request)
+        if request.url.path.endswith("/document"):
+            body = response.json()
+            body["body"]["notices"] = [{"title": "费用提醒", "items": [notice]}]
+            return httpx.Response(200, json=body)
+        return response
+
+    async def build():
+        wh = Warehouse(
+            "http://warehouse.test", "t", str(owner.org_id), transport=httpx.MockTransport(source)
+        )
+        try:
+            return await selling.build_plan(engine, owner, wh, deal, [SLOW])
+        finally:
+            await wh.aclose()
+
+    return asyncio.run(build())
+
+
+@pytest.mark.parametrize(
+    "has_expired_quote", [False, True], ids=["not-yet-priced", "expired-quote"]
+)
+def test_supplier_extra_payment_condition_survives_price_withdrawal(
+    env, monkeypatch, has_expired_quote
+):
+    client, engine, owner = env
+    deal = UUID(ready(client))
+    quote = quoted(client, deal) if has_expired_quote else None
+    notice = "ACME 签证服务费须另付 ¥300/人，出发前支付"
+    plan = build_with_supplier_notice(engine, owner, deal, notice)
+    assert plan["body"]["routes"][0]["tell"] == [
+        {"concern": "说清", "text": notice, "source": "注意事项"}
+    ]
+    token = selling.share(engine, owner, deal, UUID(plan["id"]))
+    if quote:
+        future = datetime.fromisoformat(quote["valid_until"]) + timedelta(days=1)
+
+        class Later(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return future if tz else future.replace(tzinfo=None)
+
+        monkeypatch.setattr(selling, "datetime", Later)
+    public = client.get(f"/api/public/plans/{token}").json()["routes"][0]
+    assert public["total"] is None
+    assert notice in public["tell"] or notice in public["includes"], public
+
+
+def test_historical_over_budget_note_is_withdrawn_without_rewriting_the_plan():
+    old = {
+        "title": "ACME 历史方案",
+        "days": 12,
+        "reasons": [{"concern": "节奏", "text": "安排自由活动", "source": "行程"}],
+        "tell": [{"concern": "说清", "text": "每人约 ¥14,800，超 ¥4,800", "source": "行程"}],
+        "price": {"valid_until": "2000-01-01T00:00:00+00:00"},
+        "dates": [],
+        "includes": "含早餐；午晚餐自理",
+    }
+    public = selling.public_route(old)
+    assert public["why"] == "安排自由活动" and public["tell"] == ""
+    assert public["total"] is None and "过期" in public["price_note"]
+    assert old["tell"][0]["text"] == "每人约 ¥14,800，超 ¥4,800"
