@@ -23,8 +23,21 @@ DEP = "WD-33333333-3333-3333-3333-333333333333"
 DAY = "ACME 小镇散步，含早餐；午餐和晚餐自理。每天预留自由活动时间。"
 
 
+SUPPLIERS = {SLOW: ("S-A", "ACME 环线"), CITY: ("S-B", "ACME 城游")}
+
+
 def product(pid, title, city):
-    return {"product_id": pid, "title": title, "attributes": {"days": "12", "depart_city": city}}
+    supplier_id, supplier_name = SUPPLIERS.get(pid, ("", ""))
+    return {
+        "product_id": pid,
+        "title": title,
+        "attributes": {
+            "days": "12",
+            "depart_city": city,
+            "supplier_id": supplier_id,
+            "supplier_name": supplier_name,
+        },
+    }
 
 
 def warehouse(request: httpx.Request):

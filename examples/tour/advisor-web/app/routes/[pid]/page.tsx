@@ -2,9 +2,9 @@
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { ErrorBox, Loading, useToast } from "@/components/ui";
+import { ErrorBox, Loading, Sheet, Supplier, useToast } from "@/components/ui";
 import { api, cover } from "@/lib/api";
-import type { Answer } from "@/lib/types";
+import type { Answer, SupplierView } from "@/lib/types";
 
 type RouteView = {
   product_id: string;
@@ -13,6 +13,7 @@ type RouteView = {
   depart_city: string;
   published: boolean;
   reviewed: boolean;
+  supplier: SupplierView;
   notice: string;
   grid: { label: string; value: string }[];
   watch: { text: string; section: string }[];
@@ -32,6 +33,19 @@ function RoutePage() {
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState("");
   const [all, setAll] = useState(false);
+  const [marking, setMarking] = useState(false);
+  const [stance, setStance] = useState<SupplierView["stance"]>("");
+  const [note, setNote] = useState("");
+  async function mark() {
+    if (!route) return;
+    try {
+      const s = await api.put<SupplierView>(`/suppliers/${encodeURIComponent(route.supplier.id)}`, { name: route.supplier.name, stance, note });
+      setRoute({ ...route, supplier: s });
+      setMarking(false);
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  }
   useEffect(() => {
     api.get<RouteView>(`/routes/${pid}${deal ? `?deal=${deal}` : ""}`).then(setRoute).catch((e) => setError(e.message));
   }, [pid, deal]);
@@ -66,6 +80,24 @@ function RoutePage() {
           </div>
         </div>
         <div className="pad" style={{ paddingTop: 12 }}>
+          {route.supplier.id && (
+            <div className="card row" style={{ gap: 8, marginBottom: 10 }}>
+              <span className="lbl">供应商</span>
+              <span className="grow">
+                <Supplier s={route.supplier} note />
+              </span>
+              <button
+                className="b sm b-soft"
+                onClick={() => {
+                  setStance(route.supplier.stance);
+                  setNote(route.supplier.note);
+                  setMarking(true);
+                }}
+              >
+                {route.supplier.stance || route.supplier.note ? "改标记" : "标记"}
+              </button>
+            </div>
+          )}
           <form
             className="ask"
             onSubmit={(e) => {
@@ -159,7 +191,7 @@ function RoutePage() {
           <button
             className="b b-line"
             onClick={async () => {
-              await api.post(`/deals/${deal}/route`, { product_id: route.product_id, title: route.title });
+              await api.post(`/deals/${deal}/route`, { product_id: route.product_id, title: route.title, supplier: { id: route.supplier.id, name: route.supplier.name } });
               toast("已选定这条线");
               router.push(`/deals/${deal}/plan?ids=${route.product_id}`);
             }}
@@ -170,7 +202,7 @@ function RoutePage() {
             <button
               className="b b-br"
               onClick={async () => {
-                await api.post(`/deals/${deal}/route`, { product_id: route.product_id, title: route.title });
+                await api.post(`/deals/${deal}/route`, { product_id: route.product_id, title: route.title, supplier: { id: route.supplier.id, name: route.supplier.name } });
                 router.push(`/deals/${deal}/dates`);
               }}
             >
@@ -179,6 +211,23 @@ function RoutePage() {
           </div>
         </div>
       )}
+      <Sheet open={marking} onClose={() => setMarking(false)} title={`我对 ${route.supplier.name} 的标记`}>
+        <div className="row" style={{ gap: 6 }}>
+          {([["", "不标"], ["preferred", "常用"], ["cautious", "慎用"]] as const).map(([v, label]) => (
+            <button key={v} className={"b sm " + (stance === v ? "b-br" : "b-soft")} onClick={() => setStance(v)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <label className="field">
+          备注（只有你自己看得到）
+          <input value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="比如：改行程要提前三天说" />
+        </label>
+        <button className="b b-br" onClick={mark}>
+          保存
+        </button>
+        <span className="lbl">标记只在你的顾问端显示，不会给客人，也不会发给供应商。</span>
+      </Sheet>
     </div>
   );
 }

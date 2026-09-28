@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Chips, ErrorBox, Loading, Top, useToast } from "@/components/ui";
+import { Chips, ErrorBox, Loading, Supplier, Top, useToast } from "@/components/ui";
 import { api, cover, money } from "@/lib/api";
 import type { Deal, Search } from "@/lib/types";
 
@@ -16,10 +16,10 @@ export default function SearchPage() {
   const [picked, setPicked] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  async function run() {
+  async function run(suppliers: string[] = search?.supplier_filter ?? []) {
     setBusy(true);
     try {
-      const r = await api.post<{ body: Search }>(`/deals/${id}/search`);
+      const r = await api.post<{ body: Search }>(`/deals/${id}/search`, { suppliers });
       setSearch(r.body);
     } catch (e) {
       setError((e as Error).message);
@@ -43,7 +43,7 @@ export default function SearchPage() {
         sub={deal ? `${deal.title} · ${deal.need.summary}` : ""}
         back={`/deals/${id}`}
         right={
-          <button className="ic" aria-label="重新找线" onClick={run} disabled={busy}>
+          <button className="ic" aria-label="重新找线" onClick={() => run()} disabled={busy}>
             ↻
           </button>
         }
@@ -78,6 +78,22 @@ export default function SearchPage() {
                   </div>
                 ))}
               </div>
+              {(search.suppliers?.length ?? 0) > 1 && (
+                <div className="facet" role="group" aria-label="按供应商看">
+                  <button className={"b sm " + (search.supplier_filter?.length ? "b-soft" : "b-br")} onClick={() => run([])}>
+                    全部供应商
+                  </button>
+                  {search.suppliers!.map((s) => {
+                    const on = search.supplier_filter?.includes(s.id);
+                    return (
+                      <button key={s.id} className={"b sm " + (on ? "b-br" : "b-soft")} onClick={() => run(on ? [] : [s.id])}>
+                        {s.name} {s.count}
+                        {s.stance_text && ` · ${s.stance_text}`}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               <div className="card res">
                 {!search.cards.length && <div className="empty">没有找到合适的线路</div>}
                 {search.cards.map((c) => (
@@ -87,6 +103,10 @@ export default function SearchPage() {
                       <Link href={`/routes/${c.product_id}?deal=${id}`}>
                         <b>{c.title}</b>
                       </Link>
+                      <div className="row" style={{ gap: 6, flexWrap: "wrap", margin: "3px 0" }}>
+                        <Supplier s={c.supplier} note />
+                        {c.also && c.also.length > 0 && <span className="lbl">别家也在卖：{c.also.map((a) => a.supplier.name).join("、")}</span>}
+                      </div>
                       <div className="mbar">
                         <i style={{ width: `${c.score}%` }} />
                       </div>

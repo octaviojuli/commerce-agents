@@ -2,11 +2,12 @@
 
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Fragment, Suspense, useEffect, useState } from "react";
-import { Chips, ErrorBox, Loading, Top, WxIcon, useToast } from "@/components/ui";
+import { Chips, ErrorBox, Loading, Supplier, Top, WxIcon, useToast } from "@/components/ui";
 import { api, copy, cover, money } from "@/lib/api";
+import type { SupplierView } from "@/lib/types";
 
 type Compare = {
-  routes: { product_id: string; title: string; days: number | null; price: { per_person: number; date?: string } | null }[];
+  routes: { product_id: string; title: string; days: number | null; price: { per_person: number; date?: string } | null; supplier?: SupplierView }[];
   rows: { topic: string; concern: string; count: number; cells: { mark: "y" | "n" | "q"; text: string }[] }[];
   delta: { high: string; per_person: number; family: number | null; extras: string[] } | null;
   pros_cons: { title: string; good: string[]; tell: string[] }[];
@@ -55,6 +56,7 @@ function ComparePage() {
                       <b>
                         {letters[i]} {r.title}
                       </b>
+                      <Supplier s={r.supplier} />
                       <span className="num">
                         {r.price ? `${money(r.price.per_person)}` : "待询价"}
                         {r.days ? ` · ${r.days} 天` : ""}

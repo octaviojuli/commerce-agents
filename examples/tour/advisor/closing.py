@@ -180,13 +180,20 @@ def void_settled(conn, owner, deal_id, reason):
         store.change(conn, owner, db.quotes, row["id"], status="void", void_reason=reason)
 
 
-def settle_route(conn, owner, deal_id, product_id, title):
+def settle_route(conn, owner, deal_id, product_id, title, supplier=None):
     """The one way a deal takes a route, from a button or from the conversation.
 
-    Another route ends the old departure, its confirmations and its prices.
+    Another route ends the old departure, its confirmations and its prices. The supplier's
+    short name is kept for the advisor's screens only.
     """
     deal = store.deal(conn, owner, deal_id, lock=True)
-    route = {"product_id": product_id, "title": routes.display(title)}
+    supplier = supplier or {}
+    route = {
+        "product_id": product_id,
+        "title": routes.display(title),
+        "supplier_id": supplier.get("id", ""),
+        "supplier": supplier.get("name", ""),
+    }
     if (deal.get("route") or {}).get("product_id") == product_id:
         return deal, route
     void_settled(conn, owner, deal_id, "线路已换，需要重新核价")
@@ -194,9 +201,9 @@ def settle_route(conn, owner, deal_id, product_id, title):
     return deal, route
 
 
-def choose_route(engine, owner, deal_id, product_id, title):
+def choose_route(engine, owner, deal_id, product_id, title, supplier=None):
     with engine.begin() as conn:
-        deal, route = settle_route(conn, owner, deal_id, product_id, title)
+        deal, route = settle_route(conn, owner, deal_id, product_id, title, supplier)
         return {"route": route, "previous": deal.get("route")}
 
 

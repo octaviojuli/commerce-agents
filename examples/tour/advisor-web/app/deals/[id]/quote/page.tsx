@@ -46,7 +46,7 @@ export default function QuotePage() {
   const rooms = deal?.need.fields.find((f) => f.field === "rooms")?.text ?? "";
   return (
     <div className="app">
-      <Top title={`正式报价 · ${deal?.title ?? ""}`} sub={deal ? `按确认单 · ${deal.departure?.date ?? ""} · ${people} · ${rooms}` : ""} back={`/deals/${id}`} />
+      <Top title={`正式报价 · ${deal?.title ?? ""}`} sub={deal ? `按确认单${deal.route?.supplier ? ` · ${deal.route.supplier}` : ""} · ${deal.departure?.date ?? ""} · ${people} · ${rooms}` : ""} back={`/deals/${id}`} />
       <Track stage={3} />
       <div className="sc">
         <div className="pad" style={{ paddingTop: 12 }}>

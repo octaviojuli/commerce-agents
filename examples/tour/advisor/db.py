@@ -139,6 +139,20 @@ turns = Table(
     Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
 )
 
+supplier_notes = Table(
+    "supplier_note",
+    metadata,
+    _id(),
+    *_owner(),
+    # The advisor's own view of a supplier: stays with this advisor, never reaches the warehouse.
+    Column("supplier_id", String(80), nullable=False),
+    Column("name", String(40), nullable=False, server_default=""),
+    Column("stance", String(20), nullable=False, server_default=""),
+    Column("note", String(200), nullable=False, server_default=""),
+    *_stamps(),
+    UniqueConstraint("org_id", "user_id", "supplier_id"),
+)
+
 memory = Table(
     "memory",
     metadata,

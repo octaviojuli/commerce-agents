@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from cloud_warehouse import auth
+from cloud_warehouse.admin import set_short_name
 from cloud_warehouse.advisor import WarehouseAdvisorBackend, departure_id
 from cloud_warehouse.api import create_app
 from cloud_warehouse.catalog import list_departures, synchronize
@@ -584,3 +585,25 @@ async def test_catalog_and_departure_filter_shapes_preserve_boundaries(database,
                 conn, parent=product(route), departure=departure(1), start=start, end=end
             )
             assert [row["id"] for row in rows] == ([departure(1)] if departure(1) in wanted else [])
+
+
+async def test_advisors_see_the_suppliers_short_name(database, tenant):
+    admin, runtime = database
+    await synchronize(runtime, tenant.worker, tenant.connection_id, Connector(batch()))
+    backend, context = WarehouseAdvisorBackend(runtime, tenant.buyer), session(tenant.buyer)
+    product = (await backend.search_products(context, "ACME"))[0]
+    assert product.attributes["supplier_name"] == "ACME Supplier"
+    supplier = tenant.supplier.organization_id
+    assert set_short_name(admin, supplier, " ACME 环线 ")["short_name"] == "ACME 环线"
+    product = (await backend.search_products(context, "ACME"))[0]
+    departure = backend.departures_page(context, product.product_id)["items"][0]
+    details = await backend.get_product_details(context, product.product_id)
+    assert {
+        product.attributes["supplier_name"],
+        departure.attributes["supplier_name"],
+        details.attributes["supplier_name"],
+    } == {"ACME 环线"}
+    with pytest.raises(ValueError):
+        set_short_name(admin, supplier, "一个超过十二个字的供应商简称写法")
+    with pytest.raises(ValueError):
+        set_short_name(admin, tenant.buyer.organization_id, "ACME")

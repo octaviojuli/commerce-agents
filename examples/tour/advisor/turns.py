@@ -15,6 +15,7 @@ from cloud_warehouse import destinations
 
 from . import closing, db, grounding, memory, pricing, routes, store
 from . import need as needs
+from . import suppliers as supplier_notes
 from .facts import Route
 from .interpret import changes as read_changes
 from .model import ModelUnavailable
@@ -277,7 +278,12 @@ class Turns:
             if chosen and chosen["product_id"] != (deal.get("route") or {}).get("product_id"):
                 with self.engine.begin() as conn:
                     closing.settle_route(
-                        conn, owner, deal_id, chosen["product_id"], chosen["title"]
+                        conn,
+                        owner,
+                        deal_id,
+                        chosen["product_id"],
+                        chosen["title"],
+                        chosen.get("supplier"),
                     )
                     deal = store.deal(conn, owner, deal_id)
                     context = self._context(conn, owner, deal)
@@ -493,6 +499,7 @@ class Turns:
         ]
         return {
             "visible": visible,
+            "supplier_notes": supplier_notes.notes(conn, owner),
             "search": latest[0] if latest else None,
             "plan": plans[0] if plans else None,
             "quote": quotes[0] if quotes else None,
@@ -614,12 +621,15 @@ class Turns:
             out.append({"level": "ok", "title": "保留", "text": "、".join(kept)})
         return out
 
-    async def search(self, owner, wh, deal_id):
+    async def search(self, owner, wh, deal_id, suppliers=()):
         with self.engine.connect() as conn:
             deal = store.deal(conn, owner, deal_id)
             prices = prices_by_route(conn, owner, deal)
+            notes = supplier_notes.notes(conn, owner)
         need = Need.model_validate(deal["need"])
-        body = await routes.search(wh, need, prices=prices, cache={})
+        body = await routes.search(
+            wh, need, prices=prices, cache={}, suppliers=suppliers, notes=notes
+        )
         body["version"] = deal["need_version"]
         with self.engine.begin() as conn:
             row = store.add(
@@ -778,6 +788,8 @@ class Turns:
             # The saved need is the customer's words too: its numbers may be restated.
             said=[text, needs.summary(need)],
             known=known,
+            # Supplier names are the advisor's to know, never the customer's to read.
+            forbidden=supplier_names(context, deal),
             conflicts=conflicts,
             max_questions=3 if not needs.gates(need)["search"]["ready"] else 2,
         )
@@ -804,6 +816,14 @@ class Turns:
             "to_advisor": d.to_advisor,
             "may_ask": may_ask,
         }
+
+
+def supplier_names(context, deal) -> list:
+    names = {(v.get("supplier") or {}).get("name", "") for v in context["visible"]}
+    names |= {x["supplier"]["name"] for v in context["visible"] for x in v.get("also", [])}
+    names.add((deal.get("route") or {}).get("supplier", ""))
+    names |= {n["name"] for n in context.get("supplier_notes", {}).values()}
+    return sorted(n for n in names if n and n != "供应商未标注")
 
 
 def pending_line(answers):

@@ -147,6 +147,14 @@ HTTP 身份入口使用独立认证角色，在同一条实时查询中检查会
 .venv/bin/python cloud-warehouse/scripts/local_warehouse.py status
 ```
 
+供应商简称由平台运维设置，最多 12 个字，留空则用全称：
+
+```bash
+.venv/bin/python -m cloud_warehouse.cli supplier-short-name --organization <供应组织 ID> --name <简称>
+```
+
+顾问接口在产品和团期的 `attributes.supplier_name` 返回简称。名称经 `warehouse_supplier_name` 读取，只对供应商本身和持有其有效分销授权的采购组织可见；`organization` 表不对运行角色开放。
+
 `onboard` 只为当前授权源建立一个供应组织和一个明确授权的内部采购测试组织；不代表其他采购方自动取得相同客户价或授权。`sync` 读取已授权的 `examples/tour/.env`。新供应商必须单独配置组织、连接、凭据绑定和分销授权。
 
 读取全部分页并校验数量、重复编号和首尾锚点后，单事务发布。接口若返回 `pageNum`，首个响应、后续分页及复查首页均必须与请求页码一致；错页即失败，即使总数和内容哈希相同也不接受。接口没有上游一致性快照令牌，因此不能证明所有页来自同一上游时刻；本地发布是原子的。重复同步保持全局 UUID，失败保留已发布目录，缺失团期仅使其可用量过期。库存缺失或过期返回未知，不返回零。`routeId=0` 的团期保留来源快照并进入供应商复核清单，不虚构产品关联。

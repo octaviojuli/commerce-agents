@@ -30,7 +30,7 @@ export default function ConfirmPage() {
   const missing = c ? c.missing.length + (c.status === "confirmed" ? 0 : 1) : 0;
   return (
     <div className="app">
-      <Top title={`确认单 · ${deal?.title ?? ""}`} sub={deal ? `需求 v${deal.version} · ${deal.route?.title ?? ""} · ${deal.departure?.date ?? ""}` : ""} back={`/deals/${id}`} />
+      <Top title={`确认单 · ${deal?.title ?? ""}`} sub={deal ? `需求 v${deal.version} · ${deal.route?.title ?? ""}${deal.route?.supplier ? `（${deal.route.supplier}）` : ""} · ${deal.departure?.date ?? ""}` : ""} back={`/deals/${id}`} />
       <Track stage={2} />
       <div className="sc">
         <div className="pad" style={{ paddingTop: 12 }}>

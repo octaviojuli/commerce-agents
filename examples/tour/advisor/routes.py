@@ -9,8 +9,11 @@ import asyncio
 import re
 from datetime import date, timedelta
 
+from cloud_warehouse import destinations
+
 from . import need as needs
 from .facts import Route
+from .suppliers import view as suppliers_view
 from .warehouse import WarehouseError
 
 CODE = re.compile(
@@ -65,9 +68,27 @@ def route_view(item, doc) -> Route:
     return Route(item["product_id"], display(item.get("title", "")), body)
 
 
-async def search(wh, need, *, prices=None, cache=None, limit=5):
-    """Search the warehouse catalog for this need and explain the result."""
-    prices = prices or {}
+def supplier_of(item) -> tuple[str, str]:
+    """The supplier's id and the short name advisors know it by."""
+    a = item.get("attributes", {})
+    return a.get("supplier_id", ""), a.get("supplier_name", "")
+
+
+def _similar(a, b) -> bool:
+    """Two routes a customer would weigh against each other: same countries, days within one."""
+    ca = destinations.country_codes(a.get("title", ""), cities=True)
+    cb = destinations.country_codes(b.get("title", ""), cities=True)
+    da, db_ = _days(a), _days(b)
+    return bool(ca) and ca == cb and (da is None or db_ is None or abs(da - db_) <= 1)
+
+
+async def search(wh, need, *, prices=None, cache=None, limit=5, suppliers=(), notes=None):
+    """Search the warehouse catalog for this need and explain the result.
+
+    ``suppliers`` keeps only those suppliers' routes; ``notes`` are the advisor's own
+    supplier notes, shown on each card.
+    """
+    prices, notes = prices or {}, notes or {}
     places = need.get("destinations")
     window, days, city = need.get("window"), need.get("days"), need.get("depart_city")
     budget = need.get("budget")
@@ -103,6 +124,16 @@ async def search(wh, need, *, prices=None, cache=None, limit=5):
         steps.append({"label": f"{needs.show('days', days)}", "count": len(fits)})
     else:
         fits = in_window
+    # Which suppliers sell what fits, before any supplier filter narrows it.
+    facet = {}
+    for i in fits:
+        sid, name = supplier_of(i)
+        facet.setdefault(sid, {**suppliers_view(sid, name, notes), "count": 0})["count"] += 1
+    fitting = fits
+    if suppliers:
+        fits = [i for i in fits if supplier_of(i)[0] in suppliers]
+        names = "、".join(facet[s]["name"] for s in suppliers if s in facet) or "所选供应商"
+        steps.append({"label": f"只看 {names}", "count": len(fits)})
     alternatives = []
     if not fits and city:
         # Nothing from the stated city: other cities are shown only as alternatives.
@@ -125,6 +156,20 @@ async def search(wh, need, *, prices=None, cache=None, limit=5):
         )
         for item in pool
     ]
+    by_id = {i["product_id"]: i for i in pool}
+    for c in cards:
+        item = by_id[c["product_id"]]
+        c["supplier"] = suppliers_view(*supplier_of(item), notes)
+        # The same kind of route from other suppliers, so the advisor can choose whose to sell.
+        c["also"] = [
+            {
+                "product_id": o["product_id"],
+                "title": display(o.get("title", "")),
+                "supplier": suppliers_view(*supplier_of(o), notes),
+            }
+            for o in fitting
+            if supplier_of(o)[0] != supplier_of(item)[0] and _similar(o, item)
+        ][:3]
     cards.sort(key=lambda c: -c["score"])
     within = [
         c
@@ -224,6 +269,8 @@ async def search(wh, need, *, prices=None, cache=None, limit=5):
         "nice": nice,
         "steps": steps,
         "cards": cards[:limit],
+        "suppliers": sorted(facet.values(), key=lambda f: -f["count"]),
+        "supplier_filter": list(suppliers),
         "alternatives_only": bool(alternatives and not fits),
         "relax": relax,
         "explain": explain(steps, relax, len(fits)),

@@ -10,7 +10,7 @@ import re
 import secrets
 from datetime import UTC, datetime
 
-from . import db, memory, pricing, routes, store
+from . import db, memory, pricing, routes, store, suppliers
 from . import need as needs
 from .facts import Route
 from .need import Need
@@ -121,6 +121,7 @@ async def compare(engine, owner, wh, deal_id, product_ids):
         from .turns import prices_by_route
 
         prices = prices_by_route(conn, owner, deal)
+        notes = suppliers.notes(conn, owner)
     cards = {c["product_id"]: c for c in (latest[0]["body"]["cards"] if latest else [])}
     views = []
     for pid in dict.fromkeys(product_ids):
@@ -129,6 +130,7 @@ async def compare(engine, owner, wh, deal_id, product_ids):
         if not item.get("title"):
             detail = await wh.product(pid)
             item = routes.card(detail, routes.route_view(detail, doc), need, prices.get(pid))
+            item["supplier"] = suppliers.view(*routes.supplier_of(detail), notes)
         route = Route(pid, item["title"], (doc or {}).get("body"))
         views.append((item, route, prices.get(pid)))
     rows = []
@@ -193,7 +195,13 @@ async def compare(engine, owner, wh, deal_id, product_ids):
             verdict += f"如果更看重“{second['concern']}”，{views[other][0]['title']}更合适。"
     return {
         "routes": [
-            {"product_id": c["product_id"], "title": c["title"], "days": c.get("days"), "price": p}
+            {
+                "product_id": c["product_id"],
+                "title": c["title"],
+                "days": c.get("days"),
+                "price": p,
+                "supplier": c.get("supplier"),
+            }
             for c, _, p in views
         ],
         "rows": rows,

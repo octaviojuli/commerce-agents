@@ -47,6 +47,10 @@ departures, offers and quotes.
 - The warehouse owns the login: a 401 from it ends the local session, and every five minutes
   the session checks that its organisation still grants the advisor role.
 - The customer's plan page withdraws a price past its validity, and every reason drawn from it.
+- Every route the advisor sees carries its supplier's short name, the advisor's own mark and
+  note for that supplier, and the other suppliers selling the same kind of route (same
+  countries, days within one); the search can be narrowed to chosen suppliers. Supplier names
+  are cut from every draft and never reach the customer's plan page.
 
 ## Modules
 
@@ -61,6 +65,7 @@ departures, offers and quotes.
 | `turns.py` | The turn pipeline |
 | `memory.py` | Concerns, things to avoid, salutation, the question book, sent statements |
 | `selling.py` | Compare, plans, the customer's plan page |
+| `suppliers.py` | The advisor's own supplier notes (常用 / 慎用 and a line of their own) |
 | `closing.py` | Change adoption, dates, confirmation sheet, formal quote, sale, tasks, notes |
 | `papers.py` | Encrypted document scans and local passport MRZ reading |
 | `warehouse.py` | The warehouse HTTP client |

@@ -70,6 +70,8 @@ class WarehouseAdvisorBackend(StorefrontBackend):
             short_description=row.get("description") or None,
             attributes={
                 "supplier_id": str(row["supplier_org_id"]),
+                # The short name advisors use for this supplier; never shown to customers.
+                "supplier_name": row.get("supplier_name") or "",
                 "source_name": row["source_name"],
                 "name_origin": row["name_origin"],
                 "version": str(row["version"]),
@@ -133,6 +135,8 @@ class WarehouseAdvisorBackend(StorefrontBackend):
                 "inventory_status": row["availability_status"],
                 "inventory_observed_at": row["observed_at"].isoformat(),
                 "supplier_id": str(row["supplier_org_id"]),
+                # The short name advisors use for this supplier; never shown to customers.
+                "supplier_name": row.get("supplier_name") or "",
                 "source_name": row["source_name"],
                 "name_origin": row["name_origin"],
                 "version": str(row["version"]),
@@ -277,7 +281,7 @@ class WarehouseAdvisorBackend(StorefrontBackend):
                     # Each source contributes at most one page of candidates. The
                     # global first N cannot contain a source's (N+1)th result.
                     # Keep filters/cursor inside that window and RLS on every table.
-                    text(f"""SELECT candidate.*,c.name AS source_name
+                    text(f"""SELECT candidate.*,c.name AS source_name,warehouse_supplier_name(c.supplier_org_id) AS supplier_name
                 FROM supplier_connection c CROSS JOIN LATERAL (
                 SELECT p.id,p.supplier_org_id,p.effective_name AS name,p.days,p.gateway,p.effective_description AS description,p.name_origin,p.description_origin,p.version
                 FROM product_listing p {search_join} WHERE {where}
@@ -436,7 +440,7 @@ class WarehouseAdvisorBackend(StorefrontBackend):
         return (
             conn.execute(
                 text(f"""SELECT {outside} AS outside_rank,d.id,d.product_id,d.supplier_org_id,d.code,d.depart_date,d.return_date,
-          d.version,d.observed_at,d.sales_paused,d.local_booking_deadline,p.effective_name AS name,p.name_origin,p.days AS route_days,o.id AS offer_id,c.name AS source_name,
+          d.version,d.observed_at,d.sales_paused,d.local_booking_deadline,p.effective_name AS name,p.name_origin,p.days AS route_days,o.id AS offer_id,c.name AS source_name,warehouse_supplier_name(c.supplier_org_id) AS supplier_name,
           COALESCE(c.capabilities->>'business_timezone','Asia/Shanghai') AS business_timezone,
           CASE WHEN i.id IS NOT NULL THEN i.total-i.sold-i.held-i.blocked
             WHEN d.availability_expires_at>now() THEN d.available_seats END AS available,
@@ -481,7 +485,7 @@ class WarehouseAdvisorBackend(StorefrontBackend):
             row = (
                 conn.execute(
                     text(
-                        "SELECT p.id,p.supplier_org_id,p.effective_name AS name,p.effective_description AS description,p.name_origin,p.description_origin,p.days,p.gateway,p.version,c.name AS source_name FROM product_listing p JOIN supplier_connection c ON c.id=p.connection_id WHERE p.id=:id AND p.status='published'"
+                        "SELECT p.id,p.supplier_org_id,p.effective_name AS name,p.effective_description AS description,p.name_origin,p.description_origin,p.days,p.gateway,p.version,c.name AS source_name,warehouse_supplier_name(c.supplier_org_id) AS supplier_name FROM product_listing p JOIN supplier_connection c ON c.id=p.connection_id WHERE p.id=:id AND p.status='published'"
                     ),
                     {"id": route_id},
                 )

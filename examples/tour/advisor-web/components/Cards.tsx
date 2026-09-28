@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { api, cover, money } from "@/lib/api";
 import type { Answer, Card, ChangeItem, Gates, Impact, RouteCard, Search } from "@/lib/types";
-import { Tag, useToast } from "./ui";
+import { Supplier, Tag, useToast } from "./ui";
 
 const LABELS: Record<string, string> = {
   destinations: "目的地",
@@ -336,8 +336,18 @@ export function RouteOpt({ card, rank, deal, picked, onPick }: { card: RouteCard
           <h4>{card.title}</h4>
         </Link>
         <span className="m">
-          {card.days ?? "—"} 天 · {card.depart_city || "出发地待核实"}出发
+          {card.days ?? "—"} 天 · {card.depart_city || "出发地待核实"}出发 <Supplier s={card.supplier} />
         </span>
+        {card.also && card.also.length > 0 && (
+          <div className="also">
+            别家也在卖：
+            {card.also.map((a) => (
+              <Link key={a.product_id} href={`/routes/${a.product_id}?deal=${deal}`}>
+                <Supplier s={a.supplier} />
+              </Link>
+            ))}
+          </div>
+        )}
         <div className="three">
           <div>
             <b>{card.three.hotel}</b>

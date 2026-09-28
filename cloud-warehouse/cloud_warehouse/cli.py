@@ -11,7 +11,7 @@ from pathlib import Path
 from uuid import UUID
 
 from . import jobs
-from .admin import grant_auth, grant_runtime, migrate, onboard
+from .admin import grant_auth, grant_runtime, migrate, onboard, set_short_name
 from .catalog import synchronize
 from .integrations import SourceError
 from .persistence import Principal, engine_for, require_runtime_role
@@ -71,6 +71,9 @@ def main() -> None:
     setup.add_argument("--supplier", required=True)
     setup.add_argument("--buyer", required=True)
     setup.add_argument("--worker-email", required=True)
+    short = sub.add_parser("supplier-short-name")
+    short.add_argument("--organization", type=UUID, required=True)
+    short.add_argument("--name", default="")
     sync = sub.add_parser("sync")
     sync.add_argument("--connection", type=UUID, required=True)
     sync.add_argument("--organization", type=UUID, required=True)
@@ -461,6 +464,10 @@ def main() -> None:
         elif args.command == "grant-auth":
             grant_auth(engine, args.role)
             print(json.dumps({"granted": args.role}))
+        elif args.command == "supplier-short-name":
+            print(
+                json.dumps(set_short_name(engine, args.organization, args.name), ensure_ascii=False)
+            )
         elif args.command == "onboard":
             print(json.dumps(onboard(engine, args.supplier, args.buyer, args.worker_email)))
         elif args.command == "retry-sync":

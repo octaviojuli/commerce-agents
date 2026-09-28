@@ -19,7 +19,7 @@ type Dep = {
   leave_days: number | null;
   price: QuoteView | null;
 };
-type Dates = { route: { product_id: string; title: string }; items: Dep[]; compare: Dep[]; formation: { text: string } | null; window: string };
+type Dates = { route: { product_id: string; title: string; supplier?: string }; items: Dep[]; compare: Dep[]; formation: { text: string } | null; window: string };
 
 export default function DatesPage() {
   const { id } = useParams<{ id: string }>();
@@ -75,7 +75,7 @@ export default function DatesPage() {
   const byDate = Object.fromEntries((data?.items ?? []).map((d) => [d.date, d]));
   return (
     <div className="app">
-      <Top title={data ? `选了${data.route.title}` : "团期选择"} sub={data?.window ? `需求时间：${data.window}` : ""} back={`/deals/${id}`} />
+      <Top title={data ? `选了${data.route.title}` : "团期选择"} sub={[data?.route.supplier, data?.window ? `需求时间：${data.window}` : ""].filter(Boolean).join(" · ")} back={`/deals/${id}`} />
       <Track stage={2} />
       <div className="sc">
         <div className="pad" style={{ paddingTop: 12 }}>

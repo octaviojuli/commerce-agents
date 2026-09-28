@@ -130,6 +130,7 @@ def grant_runtime(engine: Engine, role: str) -> None:
             "warehouse_source_cooldown(uuid,bigint)",
             "warehouse_has_role(text[])",
             "warehouse_org_active(uuid)",
+            "warehouse_supplier_name(uuid)",
             "warehouse_catalog_access(uuid,uuid)",
             "warehouse_buyer_connections()",
             "warehouse_sales_version()",
@@ -201,6 +202,28 @@ def onboard(engine: Engine, supplier_name: str, buyer_name: str, worker_email: s
             ids,
         )
     return {key: str(value) for key, value in ids.items()}
+
+
+def set_short_name(engine: Engine, organization_id, short_name: str | None) -> dict:
+    """Name a supplier the way advisors do; an empty name falls back to the full name."""
+    value = (short_name or "").strip() or None
+    if value and len(value) > 12:
+        raise ValueError("简称最多 12 个字")
+    with engine.begin() as conn:
+        row = (
+            conn.execute(
+                text(
+                    "UPDATE organization SET short_name=:short WHERE id=:id AND 'supplier'=ANY(kinds)"
+                    " RETURNING id,name,short_name"
+                ),
+                {"id": organization_id, "short": value},
+            )
+            .mappings()
+            .one_or_none()
+        )
+    if row is None:
+        raise ValueError("没有这个供应商组织")
+    return {"id": str(row["id"]), "name": row["name"], "short_name": row["short_name"]}
 
 
 def grant_auth(engine: Engine, role: str) -> None:

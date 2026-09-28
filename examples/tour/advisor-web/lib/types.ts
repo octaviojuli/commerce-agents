@@ -31,6 +31,8 @@ export type ChangeItem = {
 
 export type Impact = { level: "bad" | "warn" | "ok"; title: string; text: string };
 
+export type SupplierView = { id: string; name: string; stance: "" | "preferred" | "cautious"; stance_text: string; note: string };
+
 export type RouteCard = {
   product_id: string;
   title: string;
@@ -44,6 +46,8 @@ export type RouteCard = {
   price: { per_person: number; total: string; date?: string } | null;
   alternative: boolean;
   notice: string;
+  supplier?: SupplierView;
+  also?: { product_id: string; title: string; supplier: SupplierView }[];
 };
 
 export type Search = {
@@ -56,6 +60,8 @@ export type Search = {
   relax: { field: string; text: string; count: number }[];
   explain: string;
   alternatives_only: boolean;
+  suppliers?: (SupplierView & { count: number })[];
+  supplier_filter?: string[];
 };
 
 export type Answer = {
@@ -151,7 +157,7 @@ export type Deal = {
   need: { fields: NeedField[]; beds: string; summary: string };
   gates: Gates;
   clarity: number;
-  route: { product_id: string; title: string } | null;
+  route: { product_id: string; title: string; supplier?: string; supplier_id?: string } | null;
   departure: { departure_id: string; offer_id?: string | null; date: string; return_date?: string } | null;
   turns: Turn[];
   pending: Proposal[];

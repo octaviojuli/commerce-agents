@@ -28,7 +28,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import closing, db, memory, papers, routes, selling, store
+from . import closing, db, memory, papers, routes, selling, store, suppliers
 from . import need as needs
 from .facts import Route
 from .model import ModelUnavailable, TypedModel
@@ -76,9 +76,25 @@ class Ids(BaseModel):
     product_ids: list[str] = Field(min_length=1, max_length=3)
 
 
+class SupplierRef(BaseModel):
+    id: str = Field(default="", max_length=80)
+    name: str = Field(default="", max_length=40)
+
+
 class RouteChoice(BaseModel):
     product_id: str
     title: str = ""
+    supplier: SupplierRef | None = None
+
+
+class SupplierNote(BaseModel):
+    name: str = Field(default="", max_length=40)
+    stance: str = Field(default="", max_length=20)
+    note: str = Field(default="", max_length=200)
+
+
+class SearchIn(BaseModel):
+    suppliers: list[str] = Field(default_factory=list, max_length=20)
 
 
 class Departure(BaseModel):
@@ -440,34 +456,60 @@ def create_app(settings: Settings, *, model=None, transport=None):
         )
 
     @app.post("/api/deals/{deal_id}/search")
-    async def search(deal_id: UUID, session: Session):
+    async def search(deal_id: UUID, session: Session, body: SearchIn | None = None):
         owner = owner_of(session)
         wh = warehouse(session)
         try:
-            return await turns.search(owner, wh, deal_id)
+            return await turns.search(owner, wh, deal_id, (body or SearchIn()).suppliers)
         finally:
             await wh.aclose()
 
     @app.get("/api/routes")
     async def browse(
-        session: Session, query: str = "", start: date | None = None, end: date | None = None
+        session: Session,
+        query: str = "",
+        start: date | None = None,
+        end: date | None = None,
+        supplier: str = "",
     ):
+        owner = owner_of(session)
         wh = warehouse(session)
         try:
             page = await wh.products(query, start=start, end=end, limit=40)
         finally:
             await wh.aclose()
+        with engine.connect() as conn:
+            notes = suppliers.notes(conn, owner)
+        items = [
+            {
+                "product_id": i["product_id"],
+                "title": routes.display(i.get("title", "")),
+                "days": routes._days(i),
+                "depart_city": routes._city(i),
+                "supplier": suppliers.view(*routes.supplier_of(i), notes),
+            }
+            for i in page.get("items", [])
+        ]
+        facet = {}
+        for i in items:
+            facet.setdefault(i["supplier"]["id"], {**i["supplier"], "count": 0})["count"] += 1
         return {
-            "items": [
-                {
-                    "product_id": i["product_id"],
-                    "title": routes.display(i.get("title", "")),
-                    "days": routes._days(i),
-                    "depart_city": routes._city(i),
-                }
-                for i in page.get("items", [])
-            ]
+            "items": [i for i in items if not supplier or i["supplier"]["id"] == supplier],
+            "suppliers": sorted(facet.values(), key=lambda f: -f["count"]),
         }
+
+    @app.get("/api/suppliers")
+    def supplier_list(session: Session):
+        with engine.connect() as conn:
+            notes = suppliers.notes(conn, owner_of(session))
+        return {"items": [suppliers.view(k, v["name"], notes) for k, v in notes.items()]}
+
+    @app.put("/api/suppliers/{supplier_id}")
+    def supplier_note(supplier_id: str, body: SupplierNote, session: Session):
+        with engine.begin() as conn:
+            return suppliers.save(
+                conn, owner_of(session), supplier_id, body.name, body.stance, body.note
+            )
 
     @app.get("/api/routes/{product_id}")
     async def route(product_id: str, session: Session, deal: UUID | None = None):
@@ -485,9 +527,12 @@ def create_app(settings: Settings, *, model=None, transport=None):
         finally:
             await wh.aclose()
         view = Route(product_id, routes.display(detail_.get("title", "")), (doc or {}).get("body"))
+        with engine.connect() as conn:
+            notes = suppliers.notes(conn, owner)
         return {
             "product_id": product_id,
             "title": view.title,
+            "supplier": suppliers.view(*routes.supplier_of(detail_), notes),
             "days": routes._days(detail_),
             "depart_city": routes._city(detail_),
             "published": bool(view.days),
@@ -573,7 +618,14 @@ def create_app(settings: Settings, *, model=None, transport=None):
 
     @app.post("/api/deals/{deal_id}/route")
     def choose_route(deal_id: UUID, body: RouteChoice, session: Session):
-        return closing.choose_route(engine, owner_of(session), deal_id, body.product_id, body.title)
+        return closing.choose_route(
+            engine,
+            owner_of(session),
+            deal_id,
+            body.product_id,
+            body.title,
+            body.supplier.model_dump() if body.supplier else None,
+        )
 
     # ------------------------------------------------------------ closing
 

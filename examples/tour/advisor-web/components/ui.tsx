@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { copy } from "@/lib/api";
-import { STAGES } from "@/lib/types";
+import { STAGES, type SupplierView } from "@/lib/types";
 
 export function Top({
   title,
@@ -243,6 +243,18 @@ export function Toasts() {
 
 export function Tag({ tone, children }: { tone: string; children: ReactNode }) {
   return <span className={"tag t-" + tone}>{children}</span>;
+}
+
+// The supplier as the advisor knows it; never rendered on a customer page.
+export function Supplier({ s, note = false }: { s?: SupplierView | null; note?: boolean }) {
+  if (!s) return null;
+  return (
+    <span className={"sup" + (s.stance ? " " + s.stance : "")} title={s.note || undefined}>
+      {s.name}
+      {s.stance_text && <em>{s.stance_text}</em>}
+      {note && s.note && <small>{s.note}</small>}
+    </span>
+  );
 }
 
 export function Loading() {
