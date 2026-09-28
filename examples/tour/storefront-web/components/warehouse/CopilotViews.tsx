@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { Deal } from "./copilot-types";
 import { amount, stamp } from "@/lib/warehouse";
 import { copyText } from "./mobile";
+import { displayRoute, stripCodes } from "@/lib/warehouse";
 
 export const stages = ["需求", "选线", "定团", "确认", "报价", "成交"];
 export function stageOf(brief: any, sold = false, hasRoutes = false) {
@@ -93,37 +94,66 @@ export function DealCard({
     </button>
   );
 }
-export function displayRoute(value: string) {
-  return value
-    .replace(/^\s*(?:W[PDO]-[a-f\d-]{8,}|[A-Z]{1,5}\d{1,5})\s*[-－_：:]*/i, "")
-    .trim();
-}
+export { displayRoute, stripCodes };
 
 export async function exportComparison(data: any) {
   const canvas = document.createElement("canvas");
   canvas.width = 1080;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("当前浏览器无法生成图片");
-  const lines:{text:string;size:number;color:string;y:number}[]=[];
-  let y=180;
-  const line=(text:string,size=24,color="#26343d")=>{
-    ctx.font=size+"px sans-serif";let row="";
-    for(const char of text){if(ctx.measureText(row+char).width>970){lines.push({text:row,size,color,y});y+=size*1.6;row="";}row+=char;}
-    if(row){lines.push({text:row,size,color,y});y+=size*1.6;}
+  const lines: { text: string; size: number; color: string; y: number }[] = [];
+  let y = 180;
+  const line = (text: string, size = 24, color = "#26343d") => {
+    ctx.font = size + "px sans-serif";
+    let row = "";
+    for (const char of text) {
+      if (ctx.measureText(row + char).width > 970) {
+        lines.push({ text: row, size, color, y });
+        y += size * 1.6;
+        row = "";
+      }
+      row += char;
+    }
+    if (row) {
+      lines.push({ text: row, size, color, y });
+      y += size * 1.6;
+    }
   };
-  for(const route of data.routes||[]){
-    line(displayRoute(route.title),30,"#0f6e6e");
-    line((route.days||"待定")+"天 · "+(route.depart_city||"出发地待确认")+" · "+(route.sales_total?route.currency+" "+route.sales_total+" / 全家":"费用待核实"));
-    for(const d of (route.dimensions||[]).slice(0,2))line(d.concern+"："+d.text,22);
-    for(const drawback of route.drawbacks||[])line("要说清："+drawback,22,"#85442c");
-    y+=28;
+  for (const route of data.routes || []) {
+    line(displayRoute(route.title), 30, "#0f6e6e");
+    line(
+      (route.days || "待定") +
+        "天 · " +
+        (route.depart_city || "出发地待确认") +
+        " · " +
+        (route.sales_total
+          ? route.currency + " " + route.sales_total + " / 全家"
+          : "费用待核实"),
+    );
+    for (const d of (route.dimensions || []).slice(0, 2))
+      line(d.concern + "：" + d.text, 22);
+    for (const drawback of route.drawbacks || [])
+      line("要说清：" + drawback, 22, "#85442c");
+    y += 28;
   }
-  line("选择方案仅表示沟通意向。具体费用、房间及退改条件须再次核对。",21,"#56616d");
-  canvas.height=Math.ceil(y+48);
-  ctx.fillStyle="#f3f4f6";ctx.fillRect(0,0,1080,canvas.height);
-  ctx.fillStyle="#0f6e6e";ctx.fillRect(0,0,1080,130);
-  ctx.fillStyle="white";ctx.font="bold 40px sans-serif";ctx.fillText("旅行方案 · 一起看看如何取舍",48,80);
-  for(const row of lines){ctx.font=row.size+"px sans-serif";ctx.fillStyle=row.color;ctx.fillText(row.text,48,row.y);}
+  line(
+    "选择方案仅表示沟通意向。具体费用、房间及退改条件须再次核对。",
+    21,
+    "#56616d",
+  );
+  canvas.height = Math.ceil(y + 48);
+  ctx.fillStyle = "#f3f4f6";
+  ctx.fillRect(0, 0, 1080, canvas.height);
+  ctx.fillStyle = "#0f6e6e";
+  ctx.fillRect(0, 0, 1080, 130);
+  ctx.fillStyle = "white";
+  ctx.font = "bold 40px sans-serif";
+  ctx.fillText("旅行方案 · 一起看看如何取舍", 48, 80);
+  for (const row of lines) {
+    ctx.font = row.size + "px sans-serif";
+    ctx.fillStyle = row.color;
+    ctx.fillText(row.text, 48, row.y);
+  }
   const blob = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob(resolve, "image/png"),
   );

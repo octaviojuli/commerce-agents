@@ -29,9 +29,20 @@ import {
   DealCard,
   StageStrip,
   stageOf,
+  stripCodes,
   stages,
 } from "./CopilotViews";
 import { Sheet, useMobile, useViewport } from "./mobile";
+
+// What the status bar says the deal needs next, by stage.
+const stageNext = [
+  "",
+  "选一条线路",
+  "选团期",
+  "核对确认单",
+  "报价可分享",
+  "已成交 · 收证件与行前",
+];
 
 export default function CopilotDeal({
   api,
@@ -404,9 +415,11 @@ export default function CopilotDeal({
                 []
               ).join("·") || "方向待定"}{" "}
               ·{" "}
-              {detail.brief.readiness.search.ready
-                ? "可找线"
-                : "先补方向和时间"}
+              {stage === 0
+                ? detail.brief.readiness.search.ready
+                  ? "可找线"
+                  : "先补方向和时间"
+                : stageNext[stage]}
             </span>
             <small>
               {missing.length
@@ -489,10 +502,17 @@ export default function CopilotDeal({
             )}
             {transcript.turns.map((t: Turn) => (
               <section className="cp-turn" key={t.id}>
-                <div className="cp-human">
-                  <small>客人 · 从微信粘贴</small>
-                  <p>{t.message}</p>
-                </div>
+                {t.message.startsWith("▸") ? (
+                  <div className="cp-human cp-operation">
+                    <small>顾问操作</small>
+                    <p>{stripCodes(t.message.replace(/^▸\s*/, ""))}</p>
+                  </div>
+                ) : (
+                  <div className="cp-human">
+                    <small>客人 · 从微信粘贴</small>
+                    <p>{t.message}</p>
+                  </div>
+                )}
                 {assistant(t.events, t.id)}
                 {t.status === "interrupted" && (
                   <p className="cp-error">本轮未完成，原话已保留，请重试。</p>

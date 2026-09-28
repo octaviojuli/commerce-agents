@@ -10,7 +10,7 @@ import { copyText } from "./mobile";
 import CopilotMaterialReview from "./CopilotMaterialReview";
 import CopilotCustomer from "./CopilotCustomer";
 import FormSheet from "./CopilotFormSheet";
-import { ComparisonCard } from "./CopilotViews";
+import { ComparisonCard, displayRoute, stripCodes } from "./CopilotViews";
 
 type Props = {
   api: WarehouseClient;
@@ -120,7 +120,11 @@ export default function CopilotBusiness({
       <div className="cp-business-grid">
         <section className="cp-panel">
           <span className="cp-eyebrow">当前方案</span>
-          <h2>{brief.route_title || "还没有选定线路"}</h2>
+          <h2>
+            {brief.route_title
+              ? displayRoute(brief.route_title)
+              : "还没有选定线路"}
+          </h2>
           {brief.route_id && (
             <button
               disabled={busy}
@@ -137,7 +141,9 @@ export default function CopilotBusiness({
             </a>
           )}
           <p>
-            {brief.departure_title || "先与搭档沟通，选择合适的线路和团期。"}
+            {brief.departure_title
+              ? stripCodes(brief.departure_title)
+              : "先与搭档沟通，选择合适的线路和团期。"}
           </p>
           {brief.route_id && (
             <RoutePreview api={api} productId={brief.route_id} />
@@ -457,7 +463,7 @@ export default function CopilotBusiness({
               </p>
             ) : (
               <>
-                <p>{brief.route_title}</p>
+                <p>{displayRoute(brief.route_title)}</p>
                 <label>
                   需要商户核实的问题
                   <textarea

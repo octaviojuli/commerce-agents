@@ -50,6 +50,22 @@ export function fieldText(key: string, value: any): string {
   if (Array.isArray(value)) return value.join("、") || "无";
   return String(value);
 }
+const HIDDEN = [
+  "rooms.child_bed",
+  "party_total_mismatch",
+  "rooms_exceed_party",
+];
+const OPTIONAL = [
+  "destination_examples",
+  "destination_regions",
+  "excluded_destinations",
+  "themes",
+  "party_total",
+];
+// An empty list ("不去的目的地：无") is not something the customer said.
+const known = (value: unknown) =>
+  value != null && !(Array.isArray(value) && value.length === 0);
+
 export default function BriefPanel({
   brief,
   busy,
@@ -61,6 +77,13 @@ export default function BriefPanel({
 }) {
   const [edit, setEdit] = useState<string | null>(null);
   const b = brief?.body;
+  const missing = Object.keys(fieldNames).filter(
+    (key) =>
+      !HIDDEN.includes(key) &&
+      !known(b?.[key]?.value) &&
+      // Once a destination is set, the other place fields are optional.
+      !(OPTIONAL.includes(key) && known(b?.destinations?.value)),
+  );
   return (
     <section aria-label="需求单">
       <div className="aw-section-head">
@@ -86,74 +109,46 @@ export default function BriefPanel({
       </div>
       <div className="cp-brief-known">
         {Object.keys(fieldNames)
-          .filter(
-            (key) =>
-              ![
-                "rooms.child_bed",
-                "party_total_mismatch",
-                "rooms_exceed_party",
-              ].includes(key),
-          )
-          .filter((key) => b?.[key]?.value != null)
+          .filter((key) => !HIDDEN.includes(key) && known(b?.[key]?.value))
           .map((key) => {
-            const field = b?.[key] as BriefField | undefined;
-            const source =
-              field?.value == null
-                ? "未提"
-                : field.source === "said"
-                  ? "客人说"
-                  : field.source === "inferred"
-                    ? "推断·待确认"
-                    : field.source === "explore"
-                      ? "探索"
-                      : "顾问改";
+            const field = b?.[key] as BriefField;
+            const mark =
+              field.source === "inferred"
+                ? "推断"
+                : field.source === "explore"
+                  ? "探索"
+                  : field.source === "advisor"
+                    ? "顾问改"
+                    : "";
             return (
-              <div className="aw-field" key={key}>
-                <label>{fieldNames[key]}</label>
-                <div>
-                  <strong>{fieldText(key, field?.value)}</strong>
-                  {field?.hint && <p className="aw-warn">{field.hint}</p>}
-                  {field?.evidence && (
-                    <p className="aw-evidence" title={field.evidence}>
-                      “{field.evidence}”
-                    </p>
-                  )}
-                </div>
-                <div className="aw-field-actions">
-                  <span
-                    className={`aw-source ${field?.source === "inferred" ? "aw-inferred" : ""}`}
-                  >
-                    {source}
-                  </span>
-                  <button
-                    disabled={busy}
-                    onClick={() => setEdit(key)}
-                    aria-label={`修改${fieldNames[key]}`}
-                  >
-                    修改
-                  </button>
-                </div>
-              </div>
+              <button
+                className={`cp-known-tag ${mark === "推断" ? "cp-known-inferred" : ""}`}
+                key={key}
+                disabled={busy}
+                onClick={() => setEdit(key)}
+                title={
+                  field.hint ||
+                  (field.evidence ? `客人原话：${field.evidence}` : "")
+                }
+                aria-label={`修改${fieldNames[key]}`}
+              >
+                <small>{fieldNames[key]}</small>
+                <strong>{fieldText(key, field.value)}</strong>
+                {mark && <em>{mark}</em>}
+              </button>
             );
           })}
       </div>
-      <div className="cp-missing-fields">
-        <span>还没提：</span>
-        {Object.keys(fieldNames)
-          .filter(
-            (key) =>
-              ![
-                "rooms.child_bed",
-                "party_total_mismatch",
-                "rooms_exceed_party",
-              ].includes(key) && b?.[key]?.value == null,
-          )
-          .map((key) => (
+      {missing.length > 0 && (
+        <div className="cp-missing-fields">
+          <span>还没提：</span>
+          {missing.map((key) => (
             <button key={key} disabled={busy} onClick={() => setEdit(key)}>
               {fieldNames[key]}
             </button>
           ))}
-      </div>
+        </div>
+      )}
       {edit && (
         <FieldEditor
           key={edit}

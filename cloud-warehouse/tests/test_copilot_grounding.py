@@ -99,6 +99,8 @@ def test_salutation_is_not_doubled():
     assert salute("[客人称呼]您好！", "") == "您好！"
     assert salute("[客人称呼]，您好！", "王女士") == "王女士，您好！"
     assert salute("您您好～", "") == "您好～"
+    assert salute("[客人称呼]，好的，我重新筛了一遍。", "") == "好的，我重新筛了一遍。"
+    assert salute("这是给[客人称呼]的方案。", "") == "这是给您的方案。"
 
 
 def test_each_child_is_priced_by_their_own_bed():
@@ -143,3 +145,39 @@ def test_list_numbers_and_stated_counts_pass():
     route = copilot_facts.fact("ACME 德法意瑞慢游小镇，12天，上海出发。", "catalog", {})
     result = check("1）ACME 德法意瑞慢游小镇，12天，上海出发。", (route,))
     assert not result["simplified"]
+
+
+def test_directions_name_a_real_place_or_theme():
+    from cloud_warehouse.copilot_explore import direction_label
+
+    assert direction_label("ACME 德法意瑞慢游小镇") == "欧洲"
+    assert direction_label("ACME 日本海边放松") == "日本"
+    assert direction_label("ACME 雪山小径") == "自然风光"
+    assert direction_label("ACME 精选特惠") is None
+
+
+def test_drawbacks_are_the_limiting_sentence_not_the_day():
+    from cloud_warehouse.copilot_plans import LIMITING, clip
+
+    day = "第 4 天：ACME 小镇散步，含早餐。每天预留自由活动时间。儿童餐需要提前两天登记；安排以出发前商户确认结果为准。"
+    assert clip(day, LIMITING) == "第 4 天：儿童餐需要提前两天登记；安排以出发前商户确认结果为准。"
+    assert clip("第 2 天：ACME 小镇散步，含早餐。", LIMITING) == ""
+
+
+def test_research_stays_available_after_a_route_is_chosen():
+    from cloud_warehouse import copilot_policy
+
+    chosen = trip_brief.TripBrief.model_validate(
+        {
+            **family().model_dump(mode="json"),
+            "destinations": {"value": ["德国"], "source": "said"},
+            "route_id": "WP-1",
+        }
+    )
+    assert "search_routes" in copilot_policy.derive(chosen)["allowed_actions"]
+
+
+def test_a_request_phrased_as_a_statement_is_still_asking():
+    facts, known, _ = requirement_facts(family(), {"deal_id": "d"})
+    result = check("护照我来确认递交方式。方便的话也告诉我您希望什么时候出发。", facts, known)
+    assert result["to_customer"] == "护照我来确认递交方式。"

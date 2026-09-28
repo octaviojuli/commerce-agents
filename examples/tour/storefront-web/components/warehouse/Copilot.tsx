@@ -16,7 +16,7 @@ import CopilotDeal from "./CopilotDeal";
 import ShareHistory from "./ShareHistory";
 import LegacyCases from "./LegacyCases";
 import RoutePreview from "./RoutePreview";
-import { DealCard, nextStep } from "./CopilotViews";
+import { DealCard, nextStep, stripCodes } from "./CopilotViews";
 import { stamp } from "@/lib/warehouse";
 import "./copilot.css";
 
@@ -146,7 +146,8 @@ export default function Copilot({
     }
   }
   const deadlines = deals
-    .filter((d) => d.deadline)
+    // A sold deal's quote no longer needs chasing.
+    .filter((d) => d.deadline && !d.sold)
     .sort((a, b) => Date.parse(a.deadline!) - Date.parse(b.deadline!));
   const waiting = deals.filter((d) => d.waiting_reply || d.pending_tasks);
   const today = new Intl.DateTimeFormat("en-CA", {
@@ -255,7 +256,7 @@ export default function Copilot({
                   onClick={() => open(d.id)}
                 >
                   <b>{d.customer_name || d.title}</b>
-                  <span>{d.brief.departure_title}</span>
+                  <span>{stripCodes(d.brief.departure_title)}</span>
                 </button>
               ))}
               {!timepoints.length && (
@@ -340,7 +341,12 @@ export default function Copilot({
                   <p>
                     {d.count} 条线路 · {d.days_min}–{d.days_max} 天
                   </p>
-                  {d.price_range && <small>{d.price_range.currency} {d.price_range.min}–{d.price_range.max} / 成人起</small>}
+                  {d.price_range && (
+                    <small>
+                      {d.price_range.currency} {d.price_range.min}–
+                      {d.price_range.max} / 成人起
+                    </small>
+                  )}
                   <p>
                     {d.start} 至 {d.end}
                   </p>

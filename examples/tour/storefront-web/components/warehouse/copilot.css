@@ -952,34 +952,47 @@
   border-radius: 10px;
   padding: 10px;
 }
-.cp-brief-known .aw-field {
-  display: grid;
-  grid-template-columns: 90px minmax(0, 1fr) auto;
-  gap: 5px 8px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--cp-line);
+.cp-brief-known {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 4px;
 }
-.cp-brief-known .aw-field label {
+.cp-known-tag {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--cp-line);
+  border-radius: 10px;
+  background: #fff;
+  text-align: left;
+}
+.cp-known-tag small {
+  flex: none;
+  color: var(--cp-soft);
+  font-size: 12px;
   white-space: nowrap;
-  font-size: 12px;
 }
-.cp-brief-known .aw-field strong {
-  font-size: 12px;
-  word-break: keep-all;
+.cp-known-tag strong {
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
-.cp-brief-known .aw-field p {
+.cp-known-tag em {
+  flex: none;
+  font-style: normal;
   font-size: 11px;
+  color: var(--cp-brand);
 }
-.cp-brief-known .aw-field-actions {
-  display: grid;
-  gap: 2px;
+.cp-known-tag.cp-known-inferred {
+  border-style: dashed;
+  border-color: #c9a24a;
 }
-.cp-brief-known .aw-field-actions span {
-  font-size: 10px;
-}
-.cp-brief-known .aw-field-actions button {
-  font-size: 11px;
-  padding: 5px 7px;
+.cp-known-tag.cp-known-inferred em {
+  color: #8a6512;
 }
 .cp-missing-fields {
   display: flex;
@@ -990,6 +1003,7 @@
   margin: 8px 0;
 }
 .cp-missing-fields button {
+  min-height: 44px;
   font-size: 11px;
   padding: 4px 8px;
   border-style: dashed;

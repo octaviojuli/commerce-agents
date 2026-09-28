@@ -14,6 +14,32 @@ from .integrations import fingerprint
 from .persistence import transaction
 
 
+def direction_label(name):
+    """A region, else the country visited, else a title theme; None when there is none."""
+    codes = destinations.country_codes(name, cities=True)
+    region = next(
+        (region for region, countries in destinations.REGIONS.items() if codes & set(countries)),
+        None,
+    )
+    if region:
+        return region
+    countries = sorted(destinations.COUNTRIES[c][0] for c in codes if c in destinations.COUNTRIES)
+    if countries:
+        return countries[0]
+    return next(
+        (
+            theme
+            for theme, pattern in (
+                ("海边放松", "海岛|沙滩|海滨|海湾"),
+                ("自然风光", "雪山|山水|峡谷|森林|观鲸"),
+                ("城市漫游", "城市|古城|都市|博物馆"),
+            )
+            if re.search(pattern, name)
+        ),
+        None,
+    )
+
+
 def _directions(conn):
     today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
     rows = (
@@ -38,29 +64,10 @@ def _directions(conn):
     )
     groups = defaultdict(list)
     for row in rows:
-        codes = destinations.country_codes(row["name"], cities=True)
-        label = next(
-            (
-                region
-                for region, countries in destinations.REGIONS.items()
-                if codes & set(countries)
-            ),
-            None,
-        )
-        if not label:
-            label = next(
-                (
-                    name
-                    for name, pattern in (
-                        ("海边放松", "海岛|沙滩|海滨|海湾"),
-                        ("自然风光", "雪山|山水|峡谷|森林|观鲸"),
-                        ("城市漫游", "城市|古城|都市|博物馆"),
-                    )
-                    if re.search(pattern, row["name"])
-                ),
-                "综合经典",
-            )
-        groups[label].append(row)
+        label = direction_label(row["name"])
+        if label:
+            # A route with no place or theme is not offered as a made-up direction.
+            groups[label].append(row)
     # When the available catalog is concentrated in one region, real title
     # themes can supply additional choices. Never fabricate three directions.
     if len(groups) < 3:

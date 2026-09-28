@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { amount, bedText, cardStyle, stamp, type Quote } from "@/lib/warehouse";
+import {
+  amount,
+  bedText,
+  cardStyle,
+  displayRoute,
+  stamp,
+  type Quote,
+} from "@/lib/warehouse";
 
 const names: Record<string, string> = {
   adult: "成人",
@@ -64,7 +71,9 @@ export function QuoteCard({
           <p className="text-xs text-(--ink-soft)">线路名称为云仓展示补充</p>
         )}
         {quote.product_name && (
-          <p className="mt-2 font-semibold">{quote.product_name}</p>
+          <p className="mt-2 font-semibold">
+            {displayRoute(quote.product_name)}
+          </p>
         )}
         {quote.offer_name && (
           <p className="text-sm font-semibold">方案：{quote.offer_name}</p>
@@ -180,8 +189,17 @@ export function QuoteCard({
       </p>
       <div className="space-y-1 text-xs text-(--ink-soft)">
         <p>查询时间：{stamp(quote.observed_at)}</p>
-        <p>价格 {Math.max(0, Math.floor((now-new Date(quote.observed_at).getTime())/60000))} 分钟前核实</p>
-        <p>报价单有效至：{stamp(quote.quote_valid_until || quote.fresh_until)}</p>
+        <p>
+          价格{" "}
+          {Math.max(
+            0,
+            Math.floor((now - new Date(quote.observed_at).getTime()) / 60000),
+          )}{" "}
+          分钟前核实
+        </p>
+        <p>
+          报价单有效至：{stamp(quote.quote_valid_until || quote.fresh_until)}
+        </p>
         <p>来源价格有效期：{stamp(quote.expires_at)}</p>
         {quote.local_booking_deadline && (
           <p>云仓报名截止：{stamp(quote.local_booking_deadline)}</p>

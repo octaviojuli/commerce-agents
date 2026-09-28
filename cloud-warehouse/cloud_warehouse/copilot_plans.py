@@ -16,7 +16,7 @@ from .changes import Conflict
 from .persistence import Forbidden, Principal, transaction
 
 TOPICS = {
-    "节奏与孩子": "慢|累|孩子|儿童|亲子|连住|车程",
+    "节奏与孩子": "慢|累|孩子|儿童|亲子|连住|车程|自由活动|休息|散步|节奏",
     "购物与另付": "购物|自费|费用|另付|不含",
     "住宿与房间": "酒店|住宿|房|相邻|床",
     "餐食": "餐|早餐|午餐|晚餐",
@@ -36,6 +36,22 @@ def valid_price(conn, actor, brief, row):
         return False
     snapshot = quotes._read(conn, UUID(body["quote_id"]))
     return bool(snapshot and not quotes._display(conn, actor, snapshot)["quote_expired"])
+
+
+LIMITING = r"不含|自费|不能保证|购物|不予|以.{0,20}为准|需要提前|须提前"
+
+
+def clip(text_value, pattern):
+    """The sentences of a fact that match a topic, keeping the day or section label."""
+    label, _, body = text_value.partition("：")
+    if not body:
+        label, body = "", text_value
+    kept = [
+        s.strip() for s in re.split(r"(?<=[。；！？])", body) if s.strip() and re.search(pattern, s)
+    ]
+    if not kept:
+        return ""
+    return (label + "：" if label else "") + "".join(kept).rstrip("；")
 
 
 def compare(engine, actor, identifier, products):
@@ -83,22 +99,29 @@ def compare(engine, actor, identifier, products):
         dimensions = []
         for topic in topics:
             matches = [
-                f for f in facts if f["kind"] != "catalog" and re.search(TOPICS[topic], f["text"])
+                (f, clip(f["text"], TOPICS[topic]))
+                for f in facts
+                if f["kind"] != "catalog" and clip(f["text"], TOPICS[topic])
             ][:2]
             dimensions.append(
                 {
                     "concern": topic,
-                    "text": "；".join(f["text"] for f in matches) or "暂无已复核依据，需向商户核实",
-                    "fact_ids": [f["fact_id"] for f in matches],
+                    "text": "；".join(dict.fromkeys(text for _, text in matches))
+                    or "暂无已复核依据，需向商户核实",
+                    "fact_ids": [f["fact_id"] for f, _ in matches],
                     "known": bool(matches),
                 }
             )
-        drawbacks = [
-            f["text"]
-            for f in facts
-            if f["kind"] != "catalog"
-            and re.search(r"不含|自费|不能保证|购物|不予|以.*为准", f["text"])
-        ][:3] or [read["notice"] or "房间、费用和退改的适用条件仍需在确认单逐项核对"]
+        # A drawback is the limiting sentence itself, not the day it appears in.
+        drawbacks = list(
+            dict.fromkeys(
+                clip(f["text"], LIMITING)
+                for f in facts
+                if f["kind"] != "catalog"
+                and not f["text"].startswith("费用包含")
+                and clip(f["text"], LIMITING)
+            )
+        )[:3] or [read["notice"] or "房间、费用和退改的适用条件仍需在确认单逐项核对"]
         price = prices.get(product)
         total = brief.adults.value or 0
         total += (brief.children.value or 0) + (brief.seniors.value or 0)

@@ -49,7 +49,7 @@ def derive(brief, *, visible=(), pending=False, confirmed=False, sold=False):
         )
         if ready["quote"]["ready"] and "recheck_price" not in actions:
             actions.append("recheck_price")
-        actions += ["answer_question", "route_facts", "list_departures"]
+        actions += ["answer_question", "route_facts", "list_departures", "search_routes"]
     elif brief.route_id:
         stage, actions = (
             "date",
@@ -60,6 +60,7 @@ def derive(brief, *, visible=(), pending=False, confirmed=False, sold=False):
                 "answer_question",
                 "route_facts",
                 "ask_clarify",
+                "search_routes",
             ],
         )
     elif visible:

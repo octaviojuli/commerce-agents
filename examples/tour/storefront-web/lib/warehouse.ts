@@ -127,7 +127,9 @@ export class WarehouseAgentApi extends AgentApi {
         if (event.type !== "ui_partial") yield event as AgentEvent;
       }
       if (!complete && !refused)
-        throw new Error("连接暂时中断，服务端可能仍在处理。恢复连接后将读取会话状态。");
+        throw new Error(
+          "连接暂时中断，服务端可能仍在处理。恢复连接后将读取会话状态。",
+        );
     } catch (error) {
       if (!cancel.signal.aborted)
         yield {
@@ -179,9 +181,16 @@ export type Rooms = {
 export function bedText(rooms: Rooms, unknown: string) {
   if (rooms.child_beds?.length)
     return rooms.child_beds
-      .map((c) => `${c.age != null ? `${c.age}岁` : "儿童"}${c.bed ? "占床" : "不占床"}`)
+      .map(
+        (c) =>
+          `${c.age != null ? `${c.age}岁` : "儿童"}${c.bed ? "占床" : "不占床"}`,
+      )
       .join("、");
-  return rooms.child_bed == null ? unknown : rooms.child_bed ? "儿童占床" : "儿童不占床";
+  return rooms.child_bed == null
+    ? unknown
+    : rooms.child_bed
+      ? "儿童占床"
+      : "儿童不占床";
 }
 export type BriefEnvelope = {
   version: number;
@@ -214,3 +223,17 @@ export type WorkbenchAction = {
   filters?: Record<string, string>;
   note?: string;
 };
+
+/** Supplier codes ("X1-", "WP-…") removed anywhere in a line, e.g. "看团期：X1-ACME 线路". */
+export function stripCodes(value: string) {
+  return value.replace(
+    /(^|[：:\s·])(?:W[PDO]-[a-f\d-]{8,}|[A-Z]{1,5}\d{1,5})\s*[-－_]\s*/gi,
+    "$1",
+  );
+}
+
+export function displayRoute(value: string) {
+  return value
+    .replace(/^\s*(?:W[PDO]-[a-f\d-]{8,}|[A-Z]{1,5}\d{1,5})\s*[-－_：:]*/i, "")
+    .trim();
+}

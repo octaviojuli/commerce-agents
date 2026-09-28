@@ -189,6 +189,8 @@ LINE_LABELS = {
 CONCERN = re.compile(r"怕|担心|在意|顾虑|别太|不要|不想|希望|最好|讨厌|受不了|晕车|第一次")
 
 
+# Asking to look again is not a requirement change.
+RESEARCH = re.compile(r"重新找|再找找|重新搜|重新检索|换[一]?条|其他线路|别的线路")
 # Actions that make no commitment and give way to answering a question.
 YIELDING = {"ask_clarify", "search_routes", "list_departures", "note_memory", "compare_dates"}
 
@@ -386,6 +388,9 @@ def salute(text_value, salutation):
     text_value = re.sub(
         r"\[客人称呼\]\s*[，,]?\s*(?=您好)", (name + "，") if name else "", text_value
     )
+    if not name:
+        # Without a saved name an opening placeholder is dropped, not turned into "您，".
+        text_value = re.sub(r"(^|(?<=[\n。！？!?]))\s*\[客人称呼\][，,、\s]*", "", text_value)
     text_value = text_value.replace("[客人称呼]", name or "您")
     return re.sub(r"您[，,\s]*您好", "您好", text_value)
 
@@ -528,7 +533,7 @@ class CopilotAgent:
         policy = copilot_policy.derive(
             brief,
             visible=visible,
-            pending=meta["pending"] or bool(proposal and proposal["status"] == "pending"),
+            pending=bool(proposal and proposal["status"] == "pending"),
             confirmed=meta["confirmed"],
             sold=meta["sold"],
         )
@@ -545,7 +550,13 @@ class CopilotAgent:
                 meta["names"],
             ),
         )
-        if extraction and not extraction.changes and decision and decision.intent == "change":
+        if (
+            extraction
+            and not extraction.changes
+            and decision
+            and decision.intent == "change"
+            and not RESEARCH.search(message)
+        ):
             retry = await self.models.call(
                 "extract",
                 redact(
@@ -583,6 +594,12 @@ class CopilotAgent:
         if decision is None:
             degraded.append("本轮判断未完成，可重试。")
         decision = decision or Decision(intent="unknown", confidence=0)
+        fresh = bool(proposal and proposal["status"] == "pending")
+        # A change left undecided from an earlier turn does not stop the work;
+        # the saved values stand until the advisor adopts it.
+        leftover = meta["pending"] and not fresh
+        if leftover and "accept_changes" not in policy["allowed_actions"]:
+            policy["allowed_actions"] = [*policy["allowed_actions"], "accept_changes"]
         action = (
             decision.next_action
             if decision.next_action in policy["allowed_actions"]
@@ -593,6 +610,9 @@ class CopilotAgent:
             or re.search(r"你推荐吧|你来推荐|帮我推荐|没想好.*推荐", message)
         ):
             action = "present_directions"
+        research = "search_routes" in policy["allowed_actions"] and bool(RESEARCH.search(message))
+        if research:
+            action = "search_routes"
         valid = {p["product_id"] for p in visible}
         targets = [x for x in decision.target_ids if x in valid] or named_routes(message, visible)
         if brief.route_id and not targets:
@@ -601,7 +621,7 @@ class CopilotAgent:
         forbidden = [p.get("attributes", {}).get("source_name", "") for p in visible]
         notice = []
         conclusion = "已保留本轮沟通。"
-        pending = meta["pending"] or bool(proposal and proposal["status"] == "pending")
+        pending = fresh
         asking = decision.intent in {"ask", "compare"} or bool(re.search(r"[？?]|吗", message))
         if targets and asking and not pending and action in YIELDING:
             # A question about a named route is answered from its facts.
@@ -630,8 +650,14 @@ class CopilotAgent:
                         )
                         + f"，{item['count']}条线路在售"
                         + (
-                            f"，客人价{item['price_range']}"
+                            "，成人客人价"
+                            + (
+                                f"{_num(item['price_range']['min'])}元起"
+                                if item["price_range"]["min"] != item["price_range"]["max"]
+                                else f"{_num(item['price_range']['min'])}元"
+                            )
                             if item.get("price_range")
+                            and item["price_range"].get("currency") == "CNY"
                             else "，价格选团期后核实"
                         ),
                         "direction",
@@ -747,8 +773,7 @@ class CopilotAgent:
         elif (
             action == "search_routes"
             and trip_brief.readiness(brief)["search"]["ready"]
-            and not brief.route_id
-            and decision.intent not in {"ask", "chitchat", "aftercare"}
+            and (research or decision.intent not in {"ask", "chitchat", "aftercare"})
         ):
             result = await advisor_actions.perform(
                 self.backend,
@@ -936,6 +961,8 @@ class CopilotAgent:
                 with_version,
                 version,
             )
+        if leftover:
+            conclusion += "（还有需求变化未处理，当前按已采纳的需求继续）"
         if unread:
             fields = list(dict.fromkeys(unread))
             conclusion += (

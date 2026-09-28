@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   amount,
   cardStyle,
+  displayRoute,
   stamp,
   type QuoteLine,
   type Party,
@@ -44,7 +45,8 @@ export default function CustomerQuote({ quote }: { quote: CustomerQuoteData }) {
     return () => clearInterval(timer);
   }, []);
   const stale =
-    (quote.quote_expired ?? quote.snapshot_stale) || now >= new Date(quote.quote_valid_until || quote.fresh_until).getTime();
+    (quote.quote_expired ?? quote.snapshot_stale) ||
+    now >= new Date(quote.quote_valid_until || quote.fresh_until).getTime();
   if (
     quote.share_expires_at &&
     now >= new Date(quote.share_expires_at).getTime()
@@ -59,7 +61,9 @@ export default function CustomerQuote({ quote }: { quote: CustomerQuoteData }) {
       <p className="text-[15px] font-semibold text-(--accent)">
         旅行报价 · 供行程沟通参考
       </p>
-      <h1 className="text-xl font-semibold">{quote.product_name}</h1>
+      <h1 className="text-xl font-semibold">
+        {displayRoute(quote.product_name)}
+      </h1>
       {quote.product_name_origin === "warehouse_display" && (
         <p className="text-[15px] text-(--ink-soft)">线路名称为云仓展示补充</p>
       )}
@@ -125,7 +129,10 @@ export default function CustomerQuote({ quote }: { quote: CustomerQuoteData }) {
       )}
       <div className="space-y-1 text-[15px] text-(--ink-soft)">
         <p>报价查询时间：{stamp(quote.observed_at)}（北京时间）</p>
-        <p>报价单有效至：{stamp(quote.quote_valid_until || quote.fresh_until)}（北京时间）</p>
+        <p>
+          报价单有效至：{stamp(quote.quote_valid_until || quote.fresh_until)}
+          （北京时间）
+        </p>
         {quote.local_booking_deadline && (
           <p>云仓报名截止：{stamp(quote.local_booking_deadline)}（北京时间）</p>
         )}

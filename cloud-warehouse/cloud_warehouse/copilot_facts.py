@@ -67,8 +67,9 @@ def read(engine, actor, product_id, departure_id=None, *, day=None):
             if value:
                 values = value if isinstance(value, list) else [value]
                 for item in values[:12]:
-                    rendered = copilot_reply.plain(item)
-                    if len(rendered) <= 1800:
+                    rendered = copilot_reply.plain(item).strip("：:；; ")
+                    # A label with no content ("政策：") is not a fact.
+                    if rendered and len(rendered) <= 1800:
                         facts.append(
                             fact(f"{label}：{rendered}", "itinerary", scope, reviewed=human)
                         )
@@ -76,15 +77,16 @@ def read(engine, actor, product_id, departure_id=None, *, day=None):
             if day is not None and item.get("day") != day:
                 continue
             label = f"第 {item['day']} 天"
-            facts.append(
-                fact(
-                    f"{label}：{item.get('title', '')}",
-                    "itinerary",
-                    scope,
-                    node_id=item.get("day_id"),
-                    reviewed=human,
+            if (item.get("title") or "").strip():
+                facts.append(
+                    fact(
+                        f"{label}：{item['title'].strip()}",
+                        "itinerary",
+                        scope,
+                        node_id=item.get("day_id"),
+                        reviewed=human,
+                    )
                 )
-            )
             for node in item.get("items", item.get("blocks", []))[:20]:
                 details = {
                     k: v

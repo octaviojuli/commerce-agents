@@ -92,7 +92,12 @@ export default function CopilotConversation({
               <p>
                 {d.days_min}–{d.days_max} 天 · {d.count} 条在售线路
               </p>
-              {d.price_range && <p>{d.price_range.currency} {d.price_range.min}–{d.price_range.max} / 成人起</p>}
+              {d.price_range && (
+                <p>
+                  {d.price_range.currency} {d.price_range.min}–
+                  {d.price_range.max} / 成人起
+                </p>
+              )}
               <small>{d.price_note}</small>
               <button
                 className="cp-primary"
@@ -172,7 +177,10 @@ export default function CopilotConversation({
             ))}
           <div className="cp-impact">
             {Array.isArray(p.impact)
-              ? p.impact.map((i: any, j: number) => <p key={j}>{i.text}</p>)
+              ? p.impact
+                  // Only what the undecided items would still change.
+                  .filter((i: any) => !i.field || remaining.includes(i.field))
+                  .map((i: any, j: number) => <p key={j}>{i.text}</p>)
               : p.impact}
           </div>
           <button
@@ -311,7 +319,7 @@ export default function CopilotConversation({
                   .map((c: any) => (
                     <button
                       disabled={locked}
-                      key={c.action+c.label}
+                      key={c.action + c.label}
                       onClick={() => chip(c.action, c.label)}
                     >
                       {c.label}

@@ -22,6 +22,8 @@ LIMIT = re.compile(
 CONCERN_WORDS = re.compile(r"慢|累|赶|轻松|孩子|小朋友|亲子|宝宝")
 LIST_MARKER = re.compile(r"^\s*(?:\d{1,2}|[一二三四五六七八九十])\s*[)）.、:：]\s*")
 NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+# A request for information phrased as a statement ("方便告诉我…").
+REQUEST = re.compile(r"告诉我|说一下|说下|发我|确认一下|方便.{0,6}(?:说|告诉|提供)")
 # A customer question about a requirement already on file.
 KNOWN_QUESTIONS = {
     "party": r"几位|几个人|多少人|几口人|几个大人|几个小孩|几个孩子|人数",
@@ -232,11 +234,11 @@ def validate(
                 violations.append("excess_questions")
                 removed.append(sentence.strip())
                 continue
-            if asks_known(sentence, known):
-                # The requirement is on file; asking again reads as not listening.
-                violations.append("asks_known")
-                removed.append(sentence.strip())
-                continue
+        if (question or REQUEST.search(sentence)) and asks_known(sentence, known):
+            # The requirement is on file; asking again reads as not listening.
+            violations.append("asks_known")
+            removed.append(sentence.strip())
+            continue
         found = []
         if not question:
             for clause in re.split(r"[，,；;：:]", LIST_MARKER.sub("", covered)):
