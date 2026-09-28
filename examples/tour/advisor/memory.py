@@ -61,6 +61,8 @@ def remember(conn, owner, deal_id, understanding, message, seq):
     for text in understanding.avoid:
         _upsert(conn, owner, deal_id, "avoid", "要避开", text, seq)
     for text in understanding.habits:
+        if "称呼" in text:
+            continue  # the salutation is kept once, on its own
         _upsert(conn, owner, deal_id, "habit", "沟通", text, seq)
     for q in understanding.questions:
         # A question asked again is also a concern being raised again.

@@ -124,6 +124,35 @@ def consequences(conn, owner, deal, need, fields):
     return effects
 
 
+def choose_direction(engine, owner, deal_id, label, region, start, end):
+    """The customer picked a direction: it ranks the search, it is not something they said."""
+    with engine.begin() as conn:
+        deal = store.deal(conn, owner, deal_id, lock=True)
+        need = Need.model_validate(deal["need"])
+        places = {
+            "must": [] if region else [label],
+            "examples": [],
+            "regions": [label] if region else [],
+            "exclude": [],
+        }
+        need = needs.set_field(
+            need, "destinations", places, "explore", "", "客人从方向里选的，只影响排序"
+        )
+        fields = ["destinations"]
+        if not need.get("window"):
+            need = needs.set_field(
+                need,
+                "window",
+                {"start": start, "end": end, "label": "在售日期"},
+                "explore",
+                "",
+                "方向的在售日期，客人出发时间待问",
+            )
+            fields.append("window")
+        version = store.save_need(conn, owner, deal, need, fields, "客人选了方向：" + label)
+        return {"version": version}
+
+
 def edit_need(engine, owner, deal_id, field, value):
     """The advisor's own edit; it is never overwritten by the model."""
     with engine.begin() as conn:

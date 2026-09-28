@@ -205,14 +205,9 @@ async def build_plan(engine, owner, wh, deal_id, product_ids):
     comparison = (
         await compare(engine, owner, wh, deal_id, product_ids) if len(product_ids) > 1 else None
     )
-    with engine.begin() as conn:
-        deal = store.deal(conn, owner, deal_id, lock=True)
+    with engine.connect() as conn:
+        deal = store.deal(conn, owner, deal_id)
         need = Need.model_validate(deal["need"])
-        existing = store.rows(conn, owner, db.plans, deal_id, order=db.plans.c.version.desc())
-        version = (existing[0]["version"] + 1) if existing else 1
-        for old in existing:
-            if old["status"] in ("draft", "sent"):
-                store.change(conn, owner, db.plans, old["id"], status="void")
         quotes = store.rows(conn, owner, db.quotes, deal_id, where=[db.quotes.c.status == "active"])
     plan_routes = []
     for index, pid in enumerate(product_ids):
@@ -225,13 +220,10 @@ async def build_plan(engine, owner, wh, deal_id, product_ids):
                 cell = row["cells"][index]
                 if not cell["text"]:
                     continue
+                source = "报价" if row["topic"] == "预算" else _section(route, cell["fact_id"])
                 if cell["mark"] == "y":
                     reasons.append(
-                        {
-                            "concern": row["topic"],
-                            "text": cell["text"],
-                            "source": _section(route, cell["fact_id"]),
-                        }
+                        {"concern": row["topic"], "text": cell["text"], "source": source}
                     )
                 elif cell["mark"] == "n":
                     tell.append(
@@ -291,12 +283,18 @@ async def build_plan(engine, owner, wh, deal_id, product_ids):
         "comparison": comparison,
     }
     with engine.begin() as conn:
+        # The version is decided under the deal lock, so two requests never share one.
+        deal = store.deal(conn, owner, deal_id, lock=True)
+        existing = store.rows(conn, owner, db.plans, deal_id, order=db.plans.c.version.desc())
+        for old in existing:
+            if old["status"] in ("draft", "sent"):
+                store.change(conn, owner, db.plans, old["id"], status="void")
         row = store.add(
             conn,
             owner,
             db.plans,
             deal_id=deal_id,
-            version=version,
+            version=(existing[0]["version"] + 1) if existing else 1,
             need_version=deal["need_version"],
             body=body,
             status="draft",

@@ -4,7 +4,8 @@
   "workspaces": [
     "web-shared",
     "*/storefront-web",
-    "*/merchant-web"
+    "*/merchant-web",
+    "*/advisor-web"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present"

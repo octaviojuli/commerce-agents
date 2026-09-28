@@ -712,7 +712,12 @@ class Turns:
                 "may_ask": [],
             }
         checked = grounding.check(
-            d.to_customer, facts, said=[text], known=known, conflicts=conflicts, max_questions=2
+            d.to_customer,
+            facts,
+            said=[text],
+            known=known,
+            conflicts=conflicts,
+            max_questions=3 if not needs.gates(need)["search"]["ready"] else 2,
         )
         body = salute(checked["text"], mem.get("salutation", ""))
         simplified = bool(checked["removed"])
@@ -880,6 +885,9 @@ async def explore(wh, limit=3):
         )
         out.append(
             {
+                "region": label in destinations.REGIONS,
+                "start": today().isoformat(),
+                "end": (today() + timedelta(days=180)).isoformat(),
                 "name": label + ("经典" if label in destinations.REGIONS else ""),
                 "label": label,
                 "days": span,

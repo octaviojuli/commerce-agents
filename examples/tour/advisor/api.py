@@ -119,6 +119,13 @@ class Sent(BaseModel):
     seq: int
 
 
+class Direction(BaseModel):
+    label: str = Field(min_length=1, max_length=40)
+    region: bool = False
+    start: str
+    end: str
+
+
 class Ask(BaseModel):
     question: str = Field(min_length=1, max_length=300)
     deal_id: UUID | None = None
@@ -381,6 +388,22 @@ def create_app(settings: Settings, *, model=None, transport=None):
             }
 
     # ------------------------------------------------------------ routes
+
+    @app.get("/api/directions")
+    async def directions(session: Session):
+        from .turns import explore
+
+        wh = warehouse(session)
+        try:
+            return {"items": await explore(wh)}
+        finally:
+            await wh.aclose()
+
+    @app.post("/api/deals/{deal_id}/direction")
+    def direction(deal_id: UUID, body: Direction, session: Session):
+        return closing.choose_direction(
+            engine, owner_of(session), deal_id, body.label, body.region, body.start, body.end
+        )
 
     @app.post("/api/deals/{deal_id}/search")
     async def search(deal_id: UUID, session: Session):
