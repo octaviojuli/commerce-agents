@@ -113,13 +113,22 @@ def propose(engine, actor, identifier, fields, message, turn_id):
                 continue
             if getattr(brief, name).value == value.value:
                 continue
+            if name == "child_ages" and sorted(getattr(brief, name).value or []) == sorted(
+                value.value or []
+            ):
+                # The same children listed in another order is not a change.
+                continue
             if value.source == Source.said:
                 value.evidence = original_evidence(message, value.evidence)
                 if not value.evidence or len(value.evidence) > 120 or value.evidence not in message:
                     rejected[name] = "缺少本轮原话依据"
                     continue
-                if len(message) > 30 and len(value.evidence) >= 0.8 * len(message):
-                    # Citing the whole message is not evidence for one field.
+                if (
+                    name in travel_requirements.GEO_FIELDS
+                    and len(message) > 30
+                    and len(value.evidence) >= 0.8 * len(message)
+                ):
+                    # A whole message is not evidence for one place.
                     rejected[name] = "原话依据不具体"
                     continue
             elif value.source == Source.inferred:

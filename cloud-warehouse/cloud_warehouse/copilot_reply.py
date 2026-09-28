@@ -18,12 +18,15 @@ FACTUAL = re.compile(
 LIMIT = re.compile(
     r"不含|不包含|不占|不保证|不能|无法|自理|自费|另付|需[要由]?|须|仅限|为准|待确认"
 )
+# The customer's priorities already addressed in the reply's own words.
+CONCERN_WORDS = re.compile(r"慢|累|赶|轻松|孩子|小朋友|亲子|宝宝")
+LIST_MARKER = re.compile(r"^\s*(?:\d{1,2}|[一二三四五六七八九十])\s*[)）.、:：]\s*")
 NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 # A customer question about a requirement already on file.
 KNOWN_QUESTIONS = {
     "party": r"几位|几个人|多少人|几口人|几个大人|几个小孩|几个孩子|人数",
     "child_ages": r"(?:孩子|小孩|儿童|宝宝).{0,6}(?:几岁|多大|年龄)|几岁",
-    "window": r"什么时候|哪天|几月|出发(?:时间|日期)|日期",
+    "window": r"什么时候(?:出发|走|去|出行)|打算几月|哪个月",
     "days": r"玩几天|几天|多少天",
     "depart_city": r"哪里出发|从哪|出发城市|出发地",
     "destinations": r"想去哪|去哪|目的地|哪个国家",
@@ -84,14 +87,50 @@ def numbers(value):
     return found
 
 
-SYNONYMS = (("包含", "含"), ("已含", "含"), ("在内", ""), ("都", ""), ("均", ""), ("费用", ""))
+SYNONYMS = (
+    ("包含", "含"),
+    ("已含", "含"),
+    ("在内", ""),
+    ("都", ""),
+    ("均", ""),
+    ("费用", ""),
+    ("大人", "成人"),
+    ("小朋友", "儿童"),
+    ("小孩", "儿童"),
+    ("孩子", "儿童"),
+    ("位", "个"),
+)
 
 
 def bigrams(value):
+    value = canonical(value)
+    return {value[i : i + 2] for i in range(len(value) - 1)}
+
+
+def canonical(value):
     value = normalized(value)
     for word, replacement in SYNONYMS:
         value = value.replace(word, replacement)
-    return {value[i : i + 2] for i in range(len(value) - 1)}
+    return value
+
+
+def core(claim, fact_text):
+    """Each factual phrase of a claim, with its neighbours, appears in the fact."""
+    claim, fact_text = canonical(claim), canonical(fact_text)
+    spans = list(FACTUAL.finditer(claim))
+    if not spans:
+        return False
+    for match in spans:
+        start, end = match.span()
+        windows = [
+            claim[i:j]
+            for i in range(max(0, start - 2), start + 1)
+            for j in range(end, min(len(claim), end + 2) + 1)
+            if j - i >= 3
+        ]
+        if not any(w in fact_text for w in windows):
+            return False
+    return True
 
 
 def supported(claim, fact):
@@ -101,7 +140,9 @@ def supported(claim, fact):
         return False
     if target not in normalized(fact["text"]):
         words = bigrams(claim)
-        if not words or len(words & bigrams(fact["text"])) < 0.5 * len(words):
+        if (not words or len(words & bigrams(fact["text"])) < 0.5 * len(words)) and not core(
+            claim, fact["text"]
+        ):
             return False
     if not numbers(claim) <= numbers(fact["text"]):
         return False
@@ -165,9 +206,11 @@ def validate(
         else:
             # A bad citation alone removes nothing; the sentence is checked below.
             violations.append("claim_rejected")
-    accepted = []
+    accepted, removed = [], []
     question_count = 0
     sentences = re.findall(r"[^。！？\n]+[。！？]?", data.get("to_customer", ""))
+    # A number stated anywhere in this turn's facts, e.g. an age, a day count or a price.
+    stated = set().union(*(numbers(f["text"]) for f in by_id.values())) if by_id else set()
     # Route names of candidates that conflict with the need, e.g. another departure city.
     conflicting = [
         f["text"].split("，")[0]
@@ -187,18 +230,33 @@ def validate(
             question_count += 1
             if max_questions is not None and question_count > max_questions:
                 violations.append("excess_questions")
+                removed.append(sentence.strip())
                 continue
             if asks_known(sentence, known):
                 # The requirement is on file; asking again reads as not listening.
                 violations.append("asks_known")
+                removed.append(sentence.strip())
                 continue
         found = []
         if not question:
-            for clause in re.split(r"[，,；;：:]", covered):
-                clause = clause.strip(" 。！？")
+            for clause in re.split(r"[，,；;：:]", LIST_MARKER.sub("", covered)):
+                clause = LIST_MARKER.sub("", clause).strip(" 。！？")
                 if not FACTUAL.search(clause):
                     continue
-                fact = next((f for f in by_id.values() if supported(clause, f)), None)
+                # The customer's own words back numbers only, never an inclusion or a price.
+                fact = next(
+                    (
+                        f
+                        for f in by_id.values()
+                        if f.get("scope", {}).get("field") != "said" and supported(clause, f)
+                    ),
+                    None,
+                )
+                if fact is None and not FACTUAL.search(re.sub(r"\d", "", clause)):
+                    # Only numbers make this clause factual; each must be stated in a fact.
+                    wanted = numbers(clause)
+                    if wanted <= stated:
+                        fact = max(by_id.values(), key=lambda f: len(wanted & numbers(f["text"])))
                 if fact is None:
                     reason = "unproven"
                     break
@@ -228,6 +286,7 @@ def validate(
             reason = "conflict"
         if reason:
             violations.append(reason)
+            removed.append(sentence.strip())
         else:
             accepted.append(sentence.strip())
             claims.extend(found)
@@ -250,6 +309,7 @@ def validate(
         preserve_requirements
         and requirements
         and not any(c["kind"] == "requirement" for c in claims)
+        and not CONCERN_WORDS.search(customer)
     ):
         retained = requirements[:2]
         prefix = "。".join(f["text"] for f in retained) + "。"
@@ -288,7 +348,10 @@ def validate(
         for reason in violations:
             metrics.observe_reply(reason)
     advisor = data.get("to_advisor", "").strip()[:80] or conclusion
-    if re.search(r"已(?:下单|占位|付款|预订|确认|采纳|成交)", advisor):
+    if re.search(r"已(?:下单|占位|付款|预订|确认|采纳|成交)", advisor) or not numbers(
+        advisor
+    ) <= stated | numbers(conclusion):
+        # The advisor note may not carry a number no fact states.
         advisor = conclusion
     return {
         "to_advisor": advisor,
@@ -303,5 +366,6 @@ def validate(
         "validation": {
             "sentences": len(sentences),
             "dropped": len(sentences) - len(accepted),
+            "removed": removed[:6],
         },
     }

@@ -131,3 +131,15 @@ def test_each_child_is_priced_by_their_own_bed():
     assert lines["child.occupied"]["total"] == "12800.00"
     assert lines["child.unoccupied"]["total"] == "11800.00"
     assert quote["market_total"] == "54200.00"
+
+
+def test_customer_words_back_numbers_but_not_inclusions():
+    said = copilot_facts.fact("听说包含午餐，我们5个人去", "requirement", {"field": "said"})
+    result = check("您5个人一起出行。午餐包含在内。", (DAY, said))
+    assert result["to_customer"] == "您5个人一起出行。"
+
+
+def test_list_numbers_and_stated_counts_pass():
+    route = copilot_facts.fact("ACME 德法意瑞慢游小镇，12天，上海出发。", "catalog", {})
+    result = check("1）ACME 德法意瑞慢游小镇，12天，上海出发。", (route,))
+    assert not result["simplified"]

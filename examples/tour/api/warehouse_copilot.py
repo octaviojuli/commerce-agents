@@ -189,6 +189,36 @@ LINE_LABELS = {
 CONCERN = re.compile(r"怕|担心|在意|顾虑|别太|不要|不想|希望|最好|讨厌|受不了|晕车|第一次")
 
 
+# Actions that make no commitment and give way to answering a question.
+YIELDING = {"ask_clarify", "search_routes", "list_departures", "note_memory", "compare_dates"}
+
+
+def named_routes(message, visible):
+    """Routes the message names by a distinctive part of their title, e.g. "慢游小镇"."""
+    text_value = re.sub(r"\s", "", message)
+    scores = {}
+    for product in visible:
+        if not product["product_id"].startswith("WP-"):
+            continue
+        title = re.sub(r"\s|ACME", "", copilot_reply.display_name(product["title"]))
+        best = max(
+            (
+                n
+                for n in range(3, len(title) + 1)
+                for i in range(len(title) - n + 1)
+                if title[i : i + n] in text_value
+            ),
+            default=0,
+        )
+        scores[product["product_id"]] = best
+    if not scores:
+        return []
+    # A part shared by every route ("德法意瑞") names none of them.
+    shared = min(scores.values()) if len(scores) > 1 else 0
+    named = [pid for pid, score in scores.items() if score >= 3 and score > shared]
+    return named[:3]
+
+
 def _num(value):
     amount = Decimal(str(value))
     return str(amount.quantize(Decimal(1))) if amount == amount.to_integral() else str(amount)
@@ -254,6 +284,13 @@ def requirement_facts(brief, scope):
             else ""
         )
         add("rooms", "、".join(kinds) + (f"；{beds}" if beds else ""))
+    for name in trip_brief.FIELDS:
+        saved = getattr(brief, name)
+        if saved.value is not None and saved.source == trip_brief.Source.said and saved.evidence:
+            # The customer's own phrase may be restated as said.
+            facts.append(
+                copilot_facts.fact(saved.evidence, "requirement", {**scope, "field": "said"})
+            )
     for preference in brief.preferences.value or []:
         known.add("preferences")
         facts.append(
@@ -297,6 +334,19 @@ def offer_facts(brief, scope):
                 {**scope, "quote_id": quote.get("quote_id")},
             )
         )
+        units = {
+            line.get("code"): Decimal(line["unit_amount"])
+            for line in quote.get("market_lines", [])
+            if line.get("unit_amount")
+        }
+        if "child.occupied" in units and "child.unoccupied" in units:
+            facts.append(
+                copilot_facts.fact(
+                    f"儿童不占床比占床每位便宜{_num(units['child.occupied'] - units['child.unoccupied'])}{currency}",
+                    "price",
+                    {**scope, "quote_id": quote.get("quote_id")},
+                )
+            )
         for line in quote.get("market_lines", []):
             label = LINE_LABELS.get(line.get("code"))
             if label and line.get("unit_amount"):
@@ -326,7 +376,8 @@ def grounded_memory(items, message):
             and len(words & copilot_reply.bigrams(best)) >= 0.5 * len(copilot_reply.bigrams(best))
         ):
             kept.append(best)
-    return list(dict.fromkeys(kept))[:3]
+    kept = list(dict.fromkeys(kept))
+    return [k for k in kept if not any(k != other and k in other for other in kept)][:3]
 
 
 def salute(text_value, salutation):
@@ -543,7 +594,7 @@ class CopilotAgent:
         ):
             action = "present_directions"
         valid = {p["product_id"] for p in visible}
-        targets = [x for x in decision.target_ids if x in valid]
+        targets = [x for x in decision.target_ids if x in valid] or named_routes(message, visible)
         if brief.route_id and not targets:
             targets = [brief.route_id]
         facts = []
@@ -551,6 +602,14 @@ class CopilotAgent:
         notice = []
         conclusion = "已保留本轮沟通。"
         pending = meta["pending"] or bool(proposal and proposal["status"] == "pending")
+        asking = decision.intent in {"ask", "compare"} or bool(re.search(r"[？?]|吗", message))
+        if targets and asking and not pending and action in YIELDING:
+            # A question about a named route is answered from its facts.
+            wanted = "compare_routes" if len(targets) > 1 else "answer_question"
+            if wanted in policy["allowed_actions"]:
+                action = wanted
+            elif "route_facts" in policy["allowed_actions"]:
+                action = "route_facts"
         if pending:
             conclusion = "发现需求变化，请先采纳或保留原需求。"
         elif degraded:
@@ -742,8 +801,32 @@ class CopilotAgent:
                 version,
             )
         yield AgentEvent(type="progress", data={"message": "正在整理可发给客人的回复…"})
+        if not brief.route_id and not any(f["kind"] == "catalog" for f in facts):
+            # Routes already on screen can be named without searching again.
+            for p in [p for p in visible if p["product_id"].startswith("WP-")][:3]:
+                attrs = p.get("attributes", {})
+                forbidden.append(attrs.get("source_name", ""))
+                facts.append(
+                    copilot_facts.fact(
+                        f"{copilot_reply.display_name(p['title'])}，{attrs.get('days', '待核实')}天，{attrs.get('depart_city', '待核实')}出发。",
+                        "catalog",
+                        {"product_id": p["product_id"], "version": attrs.get("version")},
+                    )
+                )
+                facts[-1]["conflict"] = bool(
+                    brief.depart_city.value and attrs.get("depart_city") != brief.depart_city.value
+                )
+        routes = [f for f in facts if f["kind"] == "catalog"]
+        if len(routes) > 1:
+            facts.append(copilot_facts.fact(f"{len(routes)}条线路", "catalog", {"routes": True}))
         scope = {"deal_id": str(identifier), "version": version}
         saved_facts, known, still_missing = requirement_facts(brief, scope)
+        # The customer's words this turn may be restated back to them.
+        saved_facts.append(
+            copilot_facts.fact(
+                redact(message, meta["names"]), "requirement", {**scope, "field": "said"}
+            )
+        )
         facts.extend(saved_facts + offer_facts(brief, scope))
         # Priorities are questions to ask, not questions already asked by the customer.
         next_question = question(brief)
