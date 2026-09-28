@@ -270,6 +270,20 @@ class Turns:
                     memory.salutation(conn, owner, deal, understanding.salutation)
         with self.engine.connect() as conn:
             context = self._context(conn, owner, deal)
+        if understanding and understanding.selection.route and not proposals:
+            # A route chosen this turn is settled before any fact or price is gathered, so the
+            # reply is written for the deal as it stands after the choice.
+            chosen = routes_named(understanding.selection.route, context["visible"])
+            if chosen and chosen["product_id"] != (deal.get("route") or {}).get("product_id"):
+                with self.engine.begin() as conn:
+                    closing.settle_route(
+                        conn, owner, deal_id, chosen["product_id"], chosen["title"]
+                    )
+                    deal = store.deal(conn, owner, deal_id)
+                    context = self._context(conn, owner, deal)
+                result["cards"].append(
+                    {"type": "chosen", "title": chosen["title"], "product_id": chosen["product_id"]}
+                )
         gates = needs.gates(need)
         result["gates"] = gates
         result["clarity"] = needs.clarity(need)
@@ -378,17 +392,6 @@ class Turns:
             ]
             with self.engine.begin() as conn:
                 memory.book(conn, owner, deal_id, answered, seq)
-        if understanding and understanding.selection.route and not proposals:
-            chosen = routes_named(understanding.selection.route, context["visible"])
-            if chosen and chosen["product_id"] != (deal.get("route") or {}).get("product_id"):
-                with self.engine.begin() as conn:
-                    _, route = closing.settle_route(
-                        conn, owner, deal_id, chosen["product_id"], chosen["title"]
-                    )
-                deal["route"], deal["departure"] = route, None
-                result["cards"].append(
-                    {"type": "chosen", "title": chosen["title"], "product_id": chosen["product_id"]}
-                )
         if understanding and "confirm" in tags and context.get("confirmation"):
             confirmed = understanding.confirms and not understanding.disputes
             try:

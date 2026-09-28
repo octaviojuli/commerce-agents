@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ErrorBox, Loading, Top, Track, WxIcon, useToast } from "@/components/ui";
@@ -63,6 +64,26 @@ export default function QuotePage() {
           {q && (
             <>
               {!q.valid && <div className="err">{q.reason}</div>}
+              {!q.valid && (
+                // The old quote stays readable; the way forward is a new price on a sheet that holds.
+                <div className="card row" style={{ gap: 8 }}>
+                  {deal?.confirmation?.current && deal.confirmation.status === "confirmed" ? (
+                    <>
+                      <span className="grow lbl">这份报价已不能发给客人，按当前确认单重新核价。</span>
+                      <button className="b b-br" disabled={busy} onClick={make}>
+                        {busy ? "正在向云仓核价…" : "重新核价"}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="grow lbl">确认单需要按当前线路、团期和套餐重新确认，再出报价。</span>
+                      <Link className="b b-br" href={`/deals/${id}/confirm`}>
+                        去确认单
+                      </Link>
+                    </>
+                  )}
+                </div>
+              )}
               {q.hints && q.hints.length > 0 && (
                 <div className="card" style={{ padding: "10px 14px" }}>
                   <b style={{ fontSize: 13 }}>线路资料里写的（发前向供应商核对）</b>

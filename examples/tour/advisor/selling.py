@@ -250,7 +250,7 @@ async def _build(engine, owner, wh, deal_id, product_ids):
                         {
                             "concern": "说清",
                             "text": cell["text"],
-                            "source": _section(route, cell["fact_id"]),
+                            "source": source,
                         }
                     )
         watch = route.watch()
@@ -466,9 +466,14 @@ def public_route(r):
     until = price and price.get("valid_until")
     expired = bool(until) and datetime.fromisoformat(until) <= datetime.now(UTC)
     shown = price if price and not expired else None
-    # Reasons drawn from the price go with it; route facts stay.
-    reasons = [x for x in r["reasons"] if shown or x["source"] != "报价"]
-    tell = [x for x in r["tell"] if shown or x["source"] != "报价"]
+
+    # Everything drawn from the price goes with it; route facts stay. Plans saved before
+    # over-budget notes were tagged "报价" are recognised by the amount they quote.
+    def priced(x):
+        return x["source"] == "报价" or "¥" in x["text"]
+
+    reasons = [x for x in r["reasons"] if shown or not priced(x)]
+    tell = [x for x in r["tell"] if shown or not priced(x)]
     return {
         "title": r["title"],
         "days": r["days"],

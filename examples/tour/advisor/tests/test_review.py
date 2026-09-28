@@ -17,7 +17,7 @@ from sqlalchemy.engine import make_url
 
 from tour.advisor import closing, db, selling, store
 from tour.advisor.api import COOKIE, Settings, create_app
-from tour.advisor.model import Understanding
+from tour.advisor.model import Draft, Understanding
 from tour.advisor.need import Need
 from tour.advisor.tests.test_story import CITY, DEP, SLOW, Scripted, warehouse
 from tour.advisor.turns import Turns
@@ -582,3 +582,132 @@ def test_an_upgrade_stops_on_duplicate_sales_and_keeps_them(env):
         with engine.begin() as conn:
             conn.execute(db.ledger.delete().where(db.ledger.c.deal_id == deal))
         db.migrate(engine)
+
+
+def run_turn(engine, owner, deal, model, message):
+    async def run():
+        wh = Warehouse(
+            "http://warehouse.test",
+            "t",
+            str(owner.org_id),
+            transport=httpx.MockTransport(warehouse),
+        )
+        try:
+            return await Turns(engine, model).run(owner, wh, deal, message)
+        finally:
+            await wh.aclose()
+
+    return asyncio.run(run())
+
+
+def test_route_change_removes_old_price_from_same_turn_reply(env):
+    client, engine, owner = env
+    deal = UUID(ready(client))
+    quote = quoted(client, deal)
+    with engine.begin() as conn:
+        store.add(
+            conn,
+            owner,
+            db.searches,
+            deal_id=deal,
+            need_version=4,
+            body={"cards": [{"product_id": CITY, "title": "ACME 城市巡游"}]},
+        )
+    supplied = {}
+
+    class SwitchAndRepeat(Scripted):
+        async def call(self, name, payload):
+            if name == "understand":
+                return Understanding.model_validate(
+                    {
+                        "kinds": ["decide"],
+                        "selection": {"route": "城市巡游"},
+                    }
+                )
+            if name == "draft":
+                supplied.update(payload)
+                # This follows the model instruction to repeat the supplied price verbatim.
+                price = next((f for f in payload["facts"] if f.startswith("全家合计")), None)
+                return Draft(to_customer=f"城市巡游，{price}。" if price else "新线路还需要核价。")
+            return await super().call(name, payload)
+
+    result = run_turn(engine, owner, deal, SwitchAndRepeat(), "就选城市巡游那条")
+    with engine.connect() as conn:
+        current = store.deal(conn, owner, deal)
+        old = store.one(conn, owner, db.quotes, UUID(quote["id"]))
+    assert current["route"]["product_id"] == CITY and current["departure"] is None
+    assert old["status"] == "void"
+    assert "29600" not in result["draft"]["text"], {
+        "current_route": current["route"],
+        "old_quote_status": old["status"],
+        "supplied_facts": supplied["facts"],
+        "reply": result["draft"],
+    }
+
+
+def test_expired_price_is_removed_from_over_budget_warning(env, monkeypatch):
+    client, _, _ = env
+    deal = ready(client)
+    client.put(
+        f"/api/deals/{deal}/need/budget", json={"value": {"per_person": 10000}}
+    ).raise_for_status()
+    quote = quoted(client, deal)
+    plan = client.post(f"/api/deals/{deal}/plans", json={"product_ids": [SLOW, CITY]})
+    plan.raise_for_status()
+    token = client.post(f"/api/deals/{deal}/plans/{plan.json()['id']}/share").json()["token"]
+    before = client.get(f"/api/public/plans/{token}").json()["routes"][0]
+    assert "14,800" in before["tell"] and "4,800" in before["tell"], before
+    future = datetime.fromisoformat(quote["valid_until"]) + timedelta(days=1)
+
+    class Later(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return future if tz else future.replace(tzinfo=None)
+
+    monkeypatch.setattr(selling, "datetime", Later)
+    after = client.get(f"/api/public/plans/{token}").json()["routes"][0]
+    assert after["total"] is None and "过期" in after["price_note"]
+    assert "14,800" not in after["tell"] and "4,800" not in after["tell"], after
+
+
+def test_same_route_reselection_preserves_its_valid_choice(env):
+    client, engine, owner = env
+    deal = ready(client)
+    quote = quoted(client, deal)
+    client.post(
+        f"/api/deals/{deal}/route", json={"product_id": SLOW, "title": "ACME 原线路"}
+    ).raise_for_status()
+    with engine.connect() as conn:
+        current = store.deal(conn, owner, UUID(deal))
+    assert current["departure"]["departure_id"] == DEP
+    assert client.post(f"/api/deals/{deal}/quotes/{quote['id']}/send").status_code == 200
+
+
+def test_conversation_cannot_reactivate_void_confirmation(env):
+    client, engine, owner = env
+    deal = UUID(ready(client))
+    quoted(client, deal)
+    closing.choose_departure(
+        engine,
+        owner,
+        deal,
+        {
+            "departure_id": DEP,
+            "offer_id": "o2",
+            "date": "2026-12-28",
+            "return_date": "2027-01-08",
+        },
+    )
+
+    class LateConfirm(Scripted):
+        async def call(self, name, payload):
+            if name == "understand":
+                return Understanding(kinds=["confirm"], confirms=True)
+            return await super().call(name, payload)
+
+    result = run_turn(engine, owner, deal, LateConfirm(), "之前那张确认单我确认")
+    with engine.connect() as conn:
+        sheets = store.rows(conn, owner, db.confirmations, deal)
+    assert all(s["status"] == "void" for s in sheets)
+    assert any(c["type"] == "confirm_reply" and c["status"] == "stale" for c in result["cards"])
+    assert client.post(f"/api/deals/{deal}/quotes/formal").status_code == 409
