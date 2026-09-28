@@ -149,7 +149,16 @@ export default function AfterPage() {
           </button>
         </div>
       </div>
-      <Sheet open={pay} onClose={() => setPay(false)} title="登记收款">
+      <Sheet
+        open={pay}
+        onClose={() => {
+          // A closed sheet is a new entry next time; a retry inside it keeps its key.
+          payKey.current = crypto.randomUUID();
+          setPay(false);
+          load();
+        }}
+        title="登记收款"
+      >
         <label className="field">
           金额（元）
           <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
@@ -159,7 +168,12 @@ export default function AfterPage() {
           disabled={!amount}
           onClick={async () => {
             // One key per entry: a retried save finds the receipt it already made.
-            await api.post(`/deals/${id}/receipts`, { amount: Number(amount), note: "收款" }, { "Idempotency-Key": payKey.current });
+            try {
+              await api.post(`/deals/${id}/receipts`, { amount: Number(amount), note: "收款" }, { "Idempotency-Key": payKey.current });
+            } catch (e) {
+              toast((e as Error).message);
+              return;
+            }
             payKey.current = crypto.randomUUID();
             setPay(false);
             setAmount("");

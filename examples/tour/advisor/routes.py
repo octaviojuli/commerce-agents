@@ -366,7 +366,8 @@ async def departures(wh, product_id, need, *, around_days=7):
         out.append(
             {
                 "departure_id": item["product_id"],
-                "offer_id": a.get("offer_id") or None,
+                # The catalog's default offer is not the advisor's choice; `closing.dates` fills it.
+                "offer_id": None,
                 "date": depart.isoformat(),
                 "weekday": "一二三四五六日"[depart.weekday()],
                 "return_date": back,

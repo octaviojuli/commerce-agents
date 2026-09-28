@@ -127,6 +127,7 @@ def run(value: str) -> int:
                     "cloud-warehouse/tests",
                     "examples/tour/api/tests/test_warehouse_connector.py",
                     "examples/tour/api/tests/test_warehouse_legacy.py",
+                    "examples/tour/advisor/tests",
                     "-q",
                     "--tb=short",
                     f"--junitxml={report}",

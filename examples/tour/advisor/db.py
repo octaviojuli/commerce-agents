@@ -24,7 +24,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 metadata = MetaData(schema="advisor")
 J = JSON().with_variant(JSONB(), "postgresql")
 
@@ -226,7 +226,10 @@ confirmations = Table(
     *_owner(),
     Column("deal_id", UUID(as_uuid=True), nullable=False, index=True),
     Column("need_version", Integer, nullable=False),
+    # A sheet is for one route, departure and offer; changing any of them ends it.
+    Column("product_id", String(80), nullable=False, server_default=""),
     Column("departure_id", String(80), nullable=False),
+    Column("offer_id", String(80), nullable=False, server_default=""),
     Column("items", J, nullable=False),
     Column("status", String(20), nullable=False, server_default="open"),
     Column("evidence", Text, nullable=False, server_default=""),
@@ -328,6 +331,16 @@ def migrate(engine):
                 for step in steps:
                     conn.execute(text(step))
                 conn.execute(versions.insert().values(version=version))
+        doubled = conn.execute(
+            text(
+                "SELECT deal_id FROM advisor.ledger WHERE kind = 'sale'"
+                " GROUP BY deal_id HAVING count(*) > 1"
+            )
+        ).scalars()
+        doubled = [str(d) for d in doubled]
+        if doubled:
+            # Money rows are never removed here: someone decides which sale stands.
+            raise RuntimeError("这些客户单有重复成交记录，请先核对再升级：" + "、".join(doubled))
         for statement in INDEXES:
             conn.execute(text(statement))
 
@@ -337,6 +350,14 @@ STEPS = {
         "ALTER TABLE advisor.session ADD COLUMN IF NOT EXISTS checked_at timestamptz"
         " NOT NULL DEFAULT now()",
         "ALTER TABLE advisor.ledger ADD COLUMN IF NOT EXISTS op_key varchar(80)",
+    ],
+    3: [
+        "ALTER TABLE advisor.confirmation ADD COLUMN IF NOT EXISTS product_id varchar(80)"
+        " NOT NULL DEFAULT ''",
+        "ALTER TABLE advisor.confirmation ADD COLUMN IF NOT EXISTS offer_id varchar(80)"
+        " NOT NULL DEFAULT ''",
+        # Sheets made before the binding cannot say which route they were for: they end here.
+        "UPDATE advisor.confirmation SET status = 'void' WHERE product_id = '' AND status <> 'void'",
     ],
 }
 INDEXES = [

@@ -180,38 +180,54 @@ def void_settled(conn, owner, deal_id, reason):
         store.change(conn, owner, db.quotes, row["id"], status="void", void_reason=reason)
 
 
+def settle_route(conn, owner, deal_id, product_id, title):
+    """The one way a deal takes a route, from a button or from the conversation.
+
+    Another route ends the old departure, its confirmations and its prices.
+    """
+    deal = store.deal(conn, owner, deal_id, lock=True)
+    route = {"product_id": product_id, "title": routes.display(title)}
+    if (deal.get("route") or {}).get("product_id") == product_id:
+        return deal, route
+    void_settled(conn, owner, deal_id, "线路已换，需要重新核价")
+    store.update_deal(conn, owner, deal_id, route=route, departure=None, next_step="看团期")
+    return deal, route
+
+
 def choose_route(engine, owner, deal_id, product_id, title):
     with engine.begin() as conn:
-        deal = store.deal(conn, owner, deal_id, lock=True)
-        if (deal.get("route") or {}).get("product_id") != product_id:
-            void_settled(conn, owner, deal_id, "线路已换，需要重新核价")
-        store.update_deal(
-            conn,
-            owner,
-            deal_id,
-            route={"product_id": product_id, "title": routes.display(title)},
-            departure=None,
-            next_step="看团期",
-        )
-        return {
-            "route": {"product_id": product_id, "title": routes.display(title)},
-            "previous": deal.get("route"),
-        }
+        deal, route = settle_route(conn, owner, deal_id, product_id, title)
+        return {"route": route, "previous": deal.get("route")}
 
 
 async def dates(engine, owner, wh, deal_id, compare_ids=()):
     with engine.connect() as conn:
         deal = store.deal(conn, owner, deal_id)
-        quotes = store.rows(conn, owner, db.quotes, deal_id, where=[db.quotes.c.status == "active"])
+        quotes = store.rows(
+            conn,
+            owner,
+            db.quotes,
+            deal_id,
+            where=[db.quotes.c.status == "active"],
+            order=db.quotes.c.created_at.desc(),
+        )
     need = Need.model_validate(deal["need"])
     route = deal.get("route")
     if not route:
         raise store.Conflict("先选定一条线路")
     items = await routes.departures(wh, route["product_id"], need)
+    chosen_departure = deal.get("departure") or {}
     doc = await routes.document(wh, route["product_id"])
     facts = Route(route["product_id"], route["title"], (doc or {}).get("body")).facts()
     formation = next((f for f in facts if f["section"] == "成团规则"), None)
     for item in items:
+        # The offer is the advisor's pick: on the chosen departure, else the last one priced.
+        # The catalog's base offer is not a pick; with several offers pricing asks for one.
+        if chosen_departure.get("departure_id") == item["departure_id"]:
+            item["offer_id"] = chosen_departure.get("offer_id")
+        else:
+            last = next((q for q in quotes if q["departure_id"] == item["departure_id"]), None)
+            item["offer_id"] = last["offer_id"] if last else None
         quote = next(
             (
                 q
@@ -241,6 +257,13 @@ async def price_departure(engine, owner, wh, deal_id, departure_id, offer_id=Non
     with engine.connect() as conn:
         deal = store.deal(conn, owner, deal_id)
     need = Need.model_validate(deal["need"])
+    route = deal.get("route") or {}
+    if not route:
+        raise store.Conflict("先选定一条线路")
+    # A price is stamped with this deal's route, so the departure must be one of its own.
+    own = await routes.departures(wh, route["product_id"], need)
+    if departure_id not in {d["departure_id"] for d in own}:
+        raise store.Conflict("这个团期不属于当前线路，请在团期页重新选择")
     if not offer_id:
         offers = (await wh.offers(departure_id)).get("items", [])
         active = [o for o in offers if o.get("active", True)]
@@ -258,12 +281,7 @@ async def price_departure(engine, owner, wh, deal_id, departure_id, offer_id=Non
         if active:
             offer_id = active[0].get("offer_id") or active[0].get("id")
     snapshot = await pricing.check(wh, need, departure_id, offer_id)
-    route = deal.get("route") or {}
-    snapshot = {
-        **snapshot,
-        "terms": pricing.terms(need),
-        "product_id": route.get("product_id") or snapshot.get("product_id"),
-    }
+    snapshot = {**snapshot, "terms": pricing.terms(need), "product_id": route["product_id"]}
     snapshot["hints"] = await price_hints(wh, snapshot, departure_id)
     valid = snapshot.get("quote_valid_until")
     with engine.begin() as conn:
@@ -432,11 +450,45 @@ def open_confirmation(engine, owner, deal_id):
             db.confirmations,
             deal_id=deal_id,
             need_version=deal["need_version"],
+            product_id=deal["route"]["product_id"],
             departure_id=deal["departure"]["departure_id"],
+            offer_id=deal["departure"].get("offer_id") or "",
             items=items,
             status="open",
         )
         return confirmation_view(row, deal)
+
+
+def current_sheet(row, deal) -> bool:
+    """A sheet stands for the need version, route, departure and offer it was made for."""
+    chosen = deal.get("departure") or {}
+    return (
+        row["status"] != "void"
+        and row["need_version"] == deal["need_version"]
+        and row["product_id"] == (deal.get("route") or {}).get("product_id")
+        and row["departure_id"] == chosen.get("departure_id")
+        and row["offer_id"] == (chosen.get("offer_id") or "")
+    )
+
+
+def confirm_sheet(conn, owner, deal, row, evidence, confirmed=True):
+    """The one way a sheet is confirmed or reopened, from a button or from the customer's reply."""
+    view = confirmation_view(row, deal)
+    if not view["current"]:
+        raise store.Conflict("这张确认单已失效，请按当前线路、团期和套餐重新发确认单")
+    if confirmed and view["missing"]:
+        raise store.Conflict("还差：" + "、".join(view["missing"]))
+    row = store.change(
+        conn,
+        owner,
+        db.confirmations,
+        row["id"],
+        status="confirmed" if confirmed else "open",
+        evidence=evidence[:1000],
+    )
+    if confirmed:
+        store.update_deal(conn, owner, deal["id"], next_step="出正式报价")
+    return confirmation_view(row, deal)
 
 
 def confirmation_view(row, deal):
@@ -448,8 +500,7 @@ def confirmation_view(row, deal):
         "items": items,
         "missing": [i["label"] for i in items if not i["ok"]],
         "evidence": row["evidence"],
-        "current": row["need_version"] == deal["need_version"]
-        and row["departure_id"] == (deal.get("departure") or {}).get("departure_id"),
+        "current": current_sheet(row, deal),
         "draft": "跟您核对一下："
         + "；".join(f"{i['label']}：{i['text']}" for i in items if i["key"] not in ("sign",))
         + "。没问题您回个“确认”，我马上出正式报价～",
@@ -460,22 +511,7 @@ def record_confirmation(engine, owner, deal_id, confirmation_id, evidence, confi
     with engine.begin() as conn:
         deal = store.deal(conn, owner, deal_id, lock=True)
         row = store.one(conn, owner, db.confirmations, confirmation_id, deal_id=deal_id)
-        view = confirmation_view(row, deal)
-        if not view["current"]:
-            raise store.Conflict("需求或团期变了，确认单要重新生成")
-        if confirmed and view["missing"]:
-            raise store.Conflict("还差：" + "、".join(view["missing"]))
-        row = store.change(
-            conn,
-            owner,
-            db.confirmations,
-            confirmation_id,
-            status="confirmed" if confirmed else "open",
-            evidence=evidence[:1000],
-        )
-        if confirmed:
-            store.update_deal(conn, owner, deal_id, next_step="出正式报价")
-        return confirmation_view(row, deal)
+        return confirm_sheet(conn, owner, deal, row, evidence, confirmed)
 
 
 # ---------------------------------------------------------------- formal quote
@@ -490,7 +526,9 @@ async def formal_quote(engine, owner, wh, deal_id):
     current = next((c for c in confirmations if confirmation_view(c, deal)["current"]), None)
     if not current or current["status"] != "confirmed":
         raise store.Conflict("正式报价只能从客人确认过的确认单生成")
-    departure = deal["departure"]
+    departure = deal.get("departure")
+    if not departure:
+        raise store.Conflict("先选定团期")
     view = await price_departure(
         engine,
         owner,
@@ -669,18 +707,39 @@ def sale_key(quote_id):
 
 
 def add_receipt(engine, owner, deal_id, amount, note="收款", received_on=None, key=None):
-    """One receipt per client key: a retried request returns the ledger as it is."""
+    """One receipt per client key: the same request again returns the ledger as it is; the same
+    key with another amount, note or deal is refused, naming what was recorded."""
+    amount = pricing.money(amount)
     with engine.begin() as conn:
         store.deal(conn, owner, deal_id, lock=True)
-        if key and store.rows(conn, owner, db.ledger, deal_id, where=[db.ledger.c.op_key == key]):
-            return after(engine, owner, deal_id, conn=conn)
+        if key:
+            seen = (
+                conn.execute(
+                    db.ledger.select().where(owner.where(db.ledger), db.ledger.c.op_key == key)
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if seen:
+                same = (
+                    seen["deal_id"] == deal_id
+                    and seen["kind"] == "receipt"
+                    and seen["amount"] == amount
+                    and seen["note"] == note
+                )
+                if not same:
+                    raise store.Conflict(
+                        f"这笔已登记为 ¥{seen['amount']:,.2f}（{seen['note']}），"
+                        "金额不同请关掉弹窗重新登记"
+                    )
+                return after(engine, owner, deal_id, conn=conn)
         store.add(
             conn,
             owner,
             db.ledger,
             deal_id=deal_id,
             kind="receipt",
-            amount=Decimal(str(amount)),
+            amount=amount,
             note=note,
             occurred_on=received_on or date.today(),
             op_key=key,

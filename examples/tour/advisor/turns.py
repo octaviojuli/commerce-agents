@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 from cloud_warehouse import destinations
 
-from . import db, grounding, memory, pricing, routes, store
+from . import closing, db, grounding, memory, pricing, routes, store
 from . import need as needs
 from .facts import Route
 from .interpret import changes as read_changes
@@ -382,29 +382,31 @@ class Turns:
             chosen = routes_named(understanding.selection.route, context["visible"])
             if chosen and chosen["product_id"] != (deal.get("route") or {}).get("product_id"):
                 with self.engine.begin() as conn:
-                    store.update_deal(
-                        conn,
-                        owner,
-                        deal_id,
-                        route={"product_id": chosen["product_id"], "title": chosen["title"]},
+                    _, route = closing.settle_route(
+                        conn, owner, deal_id, chosen["product_id"], chosen["title"]
                     )
-                deal["route"] = {"product_id": chosen["product_id"], "title": chosen["title"]}
+                deal["route"], deal["departure"] = route, None
                 result["cards"].append(
                     {"type": "chosen", "title": chosen["title"], "product_id": chosen["product_id"]}
                 )
         if understanding and "confirm" in tags and context.get("confirmation"):
-            status = (
-                "confirmed" if understanding.confirms and not understanding.disputes else "open"
-            )
-            with self.engine.begin() as conn:
-                store.change(
-                    conn,
-                    owner,
-                    db.confirmations,
-                    context["confirmation"]["id"],
-                    status=status,
-                    evidence=text[:1000],
-                )
+            confirmed = understanding.confirms and not understanding.disputes
+            try:
+                with self.engine.begin() as conn:
+                    locked = store.deal(conn, owner, deal_id, lock=True)
+                    sheet = store.one(
+                        conn,
+                        owner,
+                        db.confirmations,
+                        context["confirmation"]["id"],
+                        deal_id=deal_id,
+                    )
+                    status = closing.confirm_sheet(conn, owner, locked, sheet, text, confirmed)[
+                        "status"
+                    ]
+            except store.Conflict as error:
+                status = "stale"
+                result["notes"].append(str(error))
             result["cards"].append(
                 {"type": "confirm_reply", "status": status, "disputes": understanding.disputes}
             )

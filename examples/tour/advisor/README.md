@@ -26,20 +26,27 @@ departures, offers and quotes.
 ## What the program guarantees
 
 - A price belongs to one deal, route, offer and departure, the party and rooms it was asked
-  for, and the need's window; `pricing.validity` is the one rule. Choosing another route voids
-  the deal's confirmations and prices; choosing another departure or offer voids its
-  confirmations. A quote is sent or sold on only when it is formal, current, and on a
+  for, and the need's window; `pricing.validity` is the one rule. Only a departure of the
+  deal's route is priced.
+- A route is taken only through `closing.settle_route` and a sheet confirmed only through
+  `closing.confirm_sheet`, whether from a button or the conversation. Another route voids the
+  deal's departure, confirmations and prices; another departure or offer voids its
+  confirmations. A sheet is bound to its need version, route, departure and offer, and a void
+  sheet stays void. A quote is sent or sold on only when it is formal, current, and on a
   confirmed current sheet.
-- A departure sold as several offers is priced only after the advisor picks one: the price
-  endpoint answers 409 with `offers`.
+- The offer is always the advisor's pick. A departure sold as several offers is priced only
+  after one is picked (the price endpoint answers 409 with `offers`); the date list shows the
+  offer last picked for each departure, never the catalog's default.
 - A deal is sold once (a unique ledger row); repeating the same sale returns it. A receipt with
-  an `Idempotency-Key` header is recorded once.
+  an `Idempotency-Key` header is recorded once, and the same key with another amount or note
+  is refused. An upgrade that finds duplicate sales stops and names the deals; it never
+  removes money rows.
 - A model reading is applied against the need as it is when written; an edit saved meanwhile
   turns the fill into a change sheet. A plan is written only for the need version it was built
   from.
 - The warehouse owns the login: a 401 from it ends the local session, and every five minutes
   the session checks that its organisation still grants the advisor role.
-- The customer's plan page withdraws a price past its validity.
+- The customer's plan page withdraws a price past its validity, and every reason drawn from it.
 
 ## Modules
 
@@ -79,5 +86,6 @@ variables. `tesseract` on the path enables passport recognition.
 ## Test
 
 `tests/` covers the draft check, interpretation, pricing and gates without a database, and the
-storyline through the HTTP API with a stub warehouse and scripted model when
-`WAREHOUSE_TEST_ADMIN_URL` names an isolated `_test` database.
+storyline and the deal contracts (`test_review.py`) through the HTTP API with a stub warehouse
+and scripted model when `WAREHOUSE_TEST_ADMIN_URL` names an isolated `_test` database. Without
+it those skip; `cloud-warehouse/scripts/ci_database.py` runs them with zero skips in CI.

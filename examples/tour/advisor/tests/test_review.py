@@ -3,6 +3,7 @@ deal, one version and one live login."""
 
 import asyncio
 import base64
+import json
 import os
 import secrets
 from datetime import datetime, timedelta
@@ -23,9 +24,17 @@ from tour.advisor.turns import Turns
 from tour.advisor.warehouse import Warehouse
 
 
+def database_url():
+    url = os.environ.get("WAREHOUSE_TEST_ADMIN_URL")
+    if not url:
+        # The database CI job runs these with zero skips; plain unit runs have no database.
+        pytest.skip("An isolated PostgreSQL test database is required")
+    return url
+
+
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    url = os.environ["WAREHOUSE_TEST_ADMIN_URL"]
+    url = database_url()
     assert make_url(url).database.endswith("_test")
     monkeypatch.setenv("ADVISOR_MATERIAL_KEY", base64.b64encode(secrets.token_bytes(32)).decode())
     app = create_app(
@@ -294,7 +303,7 @@ def test_changed_sales_price_keeps_customer_breakdown_consistent(env):
 
 
 def test_revoked_warehouse_session_cannot_keep_reading_private_deals(tmp_path, monkeypatch):
-    url = os.environ["WAREHOUSE_TEST_ADMIN_URL"]
+    url = database_url()
     assert make_url(url).database.endswith("_test")
     monkeypatch.setenv("ADVISOR_MATERIAL_KEY", base64.b64encode(secrets.token_bytes(32)).decode())
     revoked = False
@@ -336,3 +345,240 @@ def test_a_retried_receipt_is_recorded_once_and_a_second_sale_is_refused(env):
     other = client.post(f"/api/deals/{deal}/quotes/formal").json()
     again = client.post(f"/api/deals/{deal}/sale", json={"quote_id": other["id"]})
     assert again.status_code == 409, again.json()
+
+
+def test_conversation_route_change_uses_same_invalidation_as_button(env):
+    client, engine, owner = env
+    deal_id = ready(client)
+    quoted(client, deal_id)
+    deal = UUID(deal_id)
+    with engine.begin() as conn:
+        store.add(
+            conn,
+            owner,
+            db.searches,
+            deal_id=deal,
+            need_version=4,
+            body={
+                "cards": [
+                    {"product_id": CITY, "title": "ACME 城市巡游"},
+                ]
+            },
+        )
+
+    class SelectModel(Scripted):
+        async def call(self, name, payload):
+            if name == "understand":
+                return Understanding.model_validate(
+                    {"kinds": ["decide"], "selection": {"route": "城市巡游"}}
+                )
+            return await super().call(name, payload)
+
+    async def run():
+        wh = Warehouse(
+            "http://warehouse.test",
+            "t",
+            str(owner.org_id),
+            transport=httpx.MockTransport(warehouse),
+        )
+        try:
+            return await Turns(engine, SelectModel()).run(owner, wh, deal, "就选城市巡游那条")
+        finally:
+            await wh.aclose()
+
+    asyncio.run(run())
+    with engine.connect() as conn:
+        current = store.deal(conn, owner, deal)
+        sheets = store.rows(conn, owner, db.confirmations, deal)
+    assert current["route"]["product_id"] == CITY
+    response = client.post(f"/api/deals/{deal}/quotes/formal")
+    sent = None
+    if response.status_code == 201:
+        sent = client.post(f"/api/deals/{deal}/quotes/{response.json()['id']}/send").json()
+    assert (
+        current["departure"] is None
+        and all(s["status"] == "void" for s in sheets)
+        and response.status_code == 409
+    ), (
+        current["route"],
+        current["departure"],
+        [s["status"] for s in sheets],
+        response.status_code,
+        sent,
+    )
+
+
+def test_void_confirmation_cannot_be_revived_after_offer_change(env):
+    client, engine, owner = env
+    deal = ready(client)
+    quoted(client, deal)
+    old = client.get(f"/api/deals/{deal}/confirmation").json()["current"]
+    client.post(
+        f"/api/deals/{deal}/departure",
+        json={
+            "departure_id": DEP,
+            "offer_id": "o2",
+            "date": "2026-12-28",
+            "return_date": "2027-01-08",
+        },
+    ).raise_for_status()
+    with engine.connect() as conn:
+        assert store.one(conn, owner, db.confirmations, UUID(old["id"]))["status"] == "void"
+    late_reply = client.post(
+        f"/api/deals/{deal}/confirmation/{old['id']}",
+        json={"confirmed": True, "evidence": "对原套餐的迟到确认"},
+    )
+    formal = client.post(f"/api/deals/{deal}/quotes/formal")
+    assert late_reply.status_code in (404, 409) and formal.status_code == 409, (
+        late_reply.status_code,
+        late_reply.json(),
+        formal.status_code,
+    )
+
+
+def multi_offer(request, calls):
+    calls.append((request.url.path, request.content.decode() if request.content else ""))
+    if request.url.path == "/v1/advisor/offers":
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {"id": "o1", "code": "base", "name": "ACME 标准", "active": True},
+                    {"id": "o2", "code": "upgrade", "name": "ACME 升级", "active": True},
+                ]
+            },
+        )
+    return warehouse(request)
+
+
+def test_catalog_base_offer_does_not_silently_choose_for_advisor(env):
+    client, engine, owner = env
+    deal = UUID(ready(client))
+    calls = []
+    with engine.begin() as conn:
+        store.update_deal(conn, owner, deal, departure=None)
+
+    async def run():
+        wh = Warehouse(
+            "http://warehouse.test",
+            "t",
+            str(owner.org_id),
+            transport=httpx.MockTransport(lambda r: multi_offer(r, calls)),
+        )
+        try:
+            dates = await closing.dates(engine, owner, wh, deal)
+            item = dates["items"][0]
+            # This is offerOf(d) in DatesPage before any human selection: picked is empty.
+            implicit_offer = {}.get(item["departure_id"], item["offer_id"])
+            return await closing.price_departure(
+                engine, owner, wh, deal, item["departure_id"], implicit_offer
+            )
+        finally:
+            await wh.aclose()
+
+    try:
+        result = asyncio.run(run())
+    except store.OfferChoice:
+        return
+    quoted_calls = [json.loads(body) for path, body in calls if path == "/v1/advisor/quotes"]
+    assert not quoted_calls, (result["valid"], quoted_calls, [p for p, _ in calls])
+
+
+def test_selected_nonbase_offer_survives_dates_reload(env):
+    client, engine, owner = env
+    deal = UUID(ready(client))
+    calls = []
+    with engine.begin() as conn:
+        store.update_deal(conn, owner, deal, departure=None)
+
+    async def run():
+        wh = Warehouse(
+            "http://warehouse.test",
+            "t",
+            str(owner.org_id),
+            transport=httpx.MockTransport(lambda r: multi_offer(r, calls)),
+        )
+        try:
+            check = await closing.price_departure(engine, owner, wh, deal, DEP, "o2")
+            assert check["valid"], check
+            return await closing.dates(engine, owner, wh, deal)
+        finally:
+            await wh.aclose()
+
+    result = asyncio.run(run())
+    item = result["items"][0]
+    assert item["offer_id"] == "o2" and item["price"] is not None, item
+
+
+def test_receipt_key_reuse_with_changed_amount_is_rejected(env):
+    client, _, _ = env
+    deal = ready(client)
+    quote = quoted(client, deal)
+    client.post(f"/api/deals/{deal}/sale", json={"quote_id": quote["id"]}).raise_for_status()
+    headers = {"Idempotency-Key": "ACME-receipt-entry"}
+    client.post(
+        f"/api/deals/{deal}/receipts", json={"amount": 5000}, headers=headers
+    ).raise_for_status()
+    retry = client.post(f"/api/deals/{deal}/receipts", json={"amount": 8000}, headers=headers)
+    assert retry.status_code == 409, (retry.status_code, retry.json()["money"])
+
+
+def test_expired_price_is_also_removed_from_customer_reasons(env, monkeypatch):
+    client, _, _ = env
+    deal = ready(client)
+    client.put(
+        f"/api/deals/{deal}/need/budget", json={"value": {"per_person": 20000}}
+    ).raise_for_status()
+    quote = quoted(client, deal)
+    plan_response = client.post(f"/api/deals/{deal}/plans", json={"product_ids": [SLOW, CITY]})
+    plan_response.raise_for_status()
+    plan = plan_response.json()
+    token = client.post(f"/api/deals/{deal}/plans/{plan['id']}/share").json()["token"]
+    before = client.get(f"/api/public/plans/{token}").json()
+    assert "14,800" in before["routes"][0]["why"], before
+    future = datetime.fromisoformat(quote["valid_until"]) + timedelta(days=1)
+
+    class Later(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return future if tz else future.replace(tzinfo=None)
+
+    monkeypatch.setattr(selling, "datetime", Later)
+    page = client.get(f"/api/public/plans/{token}").json()
+    assert page["routes"][0]["total"] is None
+    assert "14,800" not in page["routes"][0]["why"], page["routes"][0]
+
+
+def test_a_departure_of_another_route_is_not_priced(env):
+    client, _, _ = env
+    deal = ready(client)
+    response = client.post(f"/api/deals/{deal}/dates/WD-not-this-route/price")
+    assert response.status_code == 409, response.json()
+
+
+def test_an_upgrade_stops_on_duplicate_sales_and_keeps_them(env):
+    _, engine, owner = env
+    from sqlalchemy import text
+
+    deal = UUID(int=7)
+    with engine.begin() as conn:
+        conn.execute(text("DROP INDEX IF EXISTS advisor.ledger_one_sale"))
+        for _ in range(2):
+            store.add(
+                conn,
+                owner,
+                db.ledger,
+                deal_id=deal,
+                kind="sale",
+                amount=Decimal(1),
+                occurred_on=datetime.now().date(),
+            )
+    try:
+        with pytest.raises(RuntimeError, match="重复成交"):
+            db.migrate(engine)
+        with engine.connect() as conn:
+            assert len(store.rows(conn, owner, db.ledger, deal)) == 2
+    finally:
+        with engine.begin() as conn:
+            conn.execute(db.ledger.delete().where(db.ledger.c.deal_id == deal))
+        db.migrate(engine)

@@ -466,11 +466,14 @@ def public_route(r):
     until = price and price.get("valid_until")
     expired = bool(until) and datetime.fromisoformat(until) <= datetime.now(UTC)
     shown = price if price and not expired else None
+    # Reasons drawn from the price go with it; route facts stay.
+    reasons = [x for x in r["reasons"] if shown or x["source"] != "报价"]
+    tell = [x for x in r["tell"] if shown or x["source"] != "报价"]
     return {
         "title": r["title"],
         "days": r["days"],
-        "why": "；".join(x["text"] for x in r["reasons"]) or "",
-        "tell": r["tell"][0]["text"] if r["tell"] else "",
+        "why": "；".join(x["text"] for x in reasons) or "",
+        "tell": tell[0]["text"] if tell else "",
         "dates": r["dates"],
         "per_person": shown["per_person"] if shown else None,
         "total": (shown["sales_total"] or shown["market_total"]) if shown else None,

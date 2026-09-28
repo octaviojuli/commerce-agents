@@ -323,10 +323,14 @@ function TurnView({
               case "confirm_reply":
                 return (
                   <div className="card row" key={i}>
-                    <span className={"tag " + (c.status === "confirmed" ? "t-ok" : "t-sun")}>{c.status === "confirmed" ? "客人已确认" : "还有异议"}</span>
-                    <span className="grow">{c.disputes.length ? c.disputes.join("、") : "确认单全部确认"}</span>
+                    <span className={"tag " + (c.status === "confirmed" ? "t-ok" : "t-sun")}>
+                      {c.status === "confirmed" ? "客人已确认" : c.status === "stale" ? "确认单已失效" : "还有异议"}
+                    </span>
+                    <span className="grow">
+                      {c.status === "stale" ? "客人回的是旧确认单，需要按当前线路、团期、套餐重发" : c.disputes.length ? c.disputes.join("、") : "确认单全部确认"}
+                    </span>
                     <Link className="b sm b-br" href={`/deals/${deal.id}/${c.status === "confirmed" ? "quote" : "confirm"}`}>
-                      {c.status === "confirmed" ? "出正式报价" : "改确认单"}
+                      {c.status === "confirmed" ? "出正式报价" : c.status === "stale" ? "重发确认单" : "改确认单"}
                     </Link>
                   </div>
                 );
