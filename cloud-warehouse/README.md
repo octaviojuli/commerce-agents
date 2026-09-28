@@ -153,7 +153,9 @@ HTTP 身份入口使用独立认证角色，在同一条实时查询中检查会
 .venv/bin/python -m cloud_warehouse.cli supplier-short-name --organization <供应组织 ID> --name <简称>
 ```
 
-顾问接口在产品和团期的 `attributes.supplier_name` 返回简称。名称经 `warehouse_supplier_name` 读取，只对供应商本身和持有其有效分销授权的采购组织可见；`organization` 表不对运行角色开放。
+顾问接口在产品和团期的 `attributes.supplier_name` 返回简称。名称经 `warehouse_supplier_name` 读取，对供应商本身及有实时目录权限的顾问可见：平台销售模式支持无分销授权的独立顾问，分销模式仍检查有效授权。供应商、连接及顾问身份失效后，目录读取方也不能继续读名称；`organization` 表不对运行角色开放。
+
+`0047_supplier_name_scope` 更新已部署的名称函数。已执行 `0046` 的环境也须迁移到最新版本；函数保留既有运行角色执行权限，按正常升级流程停止 API 和写入进程、迁移并刷新运行角色授权后再启动服务。
 
 `onboard` 只为当前授权源建立一个供应组织和一个明确授权的内部采购测试组织；不代表其他采购方自动取得相同客户价或授权。`sync` 读取已授权的 `examples/tour/.env`。新供应商必须单独配置组织、连接、凭据绑定和分销授权。
 

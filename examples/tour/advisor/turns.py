@@ -327,6 +327,12 @@ class Turns:
         elif research and not proposals:
             found = await self.search(owner, wh, deal_id)
             result["cards"].append({"type": "routes", "search_id": found["id"], **found["body"]})
+            # This turn's facts and privacy checks must see suppliers found this turn too.
+            context["visible"] = list(
+                {
+                    c["product_id"]: c for c in [*context["visible"], *found["body"]["cards"]]
+                }.values()
+            )
             for c in found["body"]["cards"]:
                 line = f"{c['title']}，{c['days'] or '天数待核实'}天，{c['depart_city'] or '出发地待核实'}出发"
                 facts.append(
@@ -772,8 +778,9 @@ class Turns:
         except ModelUnavailable:
             d = None
         known = known_fields(need)
+        forbidden = supplier_names(context, deal)
         if d is None:
-            text_out = fallback(extra)
+            text_out = fallback(extra, forbidden=forbidden)
             return {
                 "text": text_out,
                 "removed": [],
@@ -789,14 +796,14 @@ class Turns:
             said=[text, needs.summary(need)],
             known=known,
             # Supplier names are the advisor's to know, never the customer's to read.
-            forbidden=supplier_names(context, deal),
+            forbidden=forbidden,
             conflicts=conflicts,
             max_questions=3 if not needs.gates(need)["search"]["ready"] else 2,
         )
         body = salute(checked["text"], mem.get("salutation", ""))
         simplified = bool(checked["removed"])
         if len(body) < 8:
-            body, simplified = fallback(extra), True
+            body, simplified = fallback(extra, forbidden=forbidden), True
         open_questions = [a for a in extra.get("answers", []) if a["kind"] == "unknown"]
         if open_questions and not grounding.VERIFY.search(body):
             # The reply must still say which questions are being checked, in the program's words.
@@ -831,7 +838,7 @@ def pending_line(answers):
     return f"您问的{asked}，资料里没写明，我去跟供应商确认后回您。"
 
 
-def fallback(extra):
+def fallback(extra, *, forbidden=()):
     parts = []
     for a in extra.get("answers", []):
         parts.append(a["a"] if a["kind"] != "unknown" else f"“{a['q']}”我去跟供应商确认一下。")
@@ -839,6 +846,8 @@ def fallback(extra):
         parts.append("先给您挑了几条：" + "；".join(extra["routes"]) + "。")
     if extra.get("ask_next"):
         parts.append(extra["ask_next"])
+    # A source title or repeated question can carry a supplier name even without a model.
+    parts = [part for part in parts if not any(name in part for name in forbidden)]
     return "\n".join(parts) or "收到，我整理一下马上回复您。"
 
 

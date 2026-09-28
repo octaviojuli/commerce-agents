@@ -130,14 +130,23 @@ async def search(wh, need, *, prices=None, cache=None, limit=5, suppliers=(), no
         sid, name = supplier_of(i)
         facet.setdefault(sid, {**suppliers_view(sid, name, notes), "count": 0})["count"] += 1
     fitting = fits
+    selected_suppliers = set(suppliers)
+
+    def supplier_matches(item):
+        return not selected_suppliers or supplier_of(item)[0] in selected_suppliers
+
     if suppliers:
-        fits = [i for i in fits if supplier_of(i)[0] in suppliers]
+        fits = [i for i in fits if supplier_matches(i)]
         names = "、".join(facet[s]["name"] for s in suppliers if s in facet) or "所选供应商"
         steps.append({"label": f"只看 {names}", "count": len(fits)})
     alternatives = []
     if not fits and city:
         # Nothing from the stated city: other cities are shown only as alternatives.
-        others = [i for i in everything if i["product_id"] in in_window_ids or not window]
+        others = [
+            i
+            for i in everything
+            if supplier_matches(i) and (i["product_id"] in in_window_ids or not window)
+        ]
         alternatives = [
             i for i in others if not days or _days(i) is None or days.min <= _days(i) <= days.max
         ][:3]
@@ -199,7 +208,8 @@ async def search(wh, need, *, prices=None, cache=None, limit=5, suppliers=(), no
             wider = [
                 i
                 for i in in_window
-                if _days(i)
+                if supplier_matches(i)
+                and _days(i)
                 and not days.min <= _days(i) <= days.max
                 and abs(_days(i) - (days.min + days.max) / 2) <= 3
             ]
@@ -215,7 +225,9 @@ async def search(wh, need, *, prices=None, cache=None, limit=5, suppliers=(), no
             elsewhere = [
                 i
                 for i in everything
-                if city not in _city(i) and (not window or i["product_id"] in in_window_ids)
+                if supplier_matches(i)
+                and city not in _city(i)
+                and (not window or i["product_id"] in in_window_ids)
             ]
             if elsewhere:
                 relax.append(
@@ -235,7 +247,9 @@ async def search(wh, need, *, prices=None, cache=None, limit=5, suppliers=(), no
             extra = [
                 i
                 for i in wide["items"]
-                if i["product_id"] not in in_window_ids and (not city or city in _city(i))
+                if supplier_matches(i)
+                and i["product_id"] not in in_window_ids
+                and (not city or city in _city(i))
             ]
             if extra:
                 relax.append(

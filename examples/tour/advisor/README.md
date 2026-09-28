@@ -88,6 +88,12 @@ sealed with it, so a new key makes earlier scans unreadable.
 The model is read from `ADVISOR_MODEL` or `TOUR_MODEL` with the Anthropic client's usual
 variables. `tesseract` on the path enables passport recognition.
 
+Production containers and the independent database are configured by
+[`advisor-v4.compose.yaml`](../../../cloud-warehouse/deploy/advisor-v4.compose.yaml).
+See the [deployment procedure](../../../cloud-warehouse/deploy/advisor-v4.md) for backup,
+warehouse migration, gateway cutover and rollback. `/api/health` checks the advisor database;
+it does not certify warehouse access or model availability.
+
 ## Test
 
 `tests/` covers the draft check, interpretation, pricing and gates without a database, and the

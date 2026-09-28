@@ -27,6 +27,7 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 
 from . import closing, db, memory, papers, routes, selling, store, suppliers
 from . import need as needs
@@ -164,6 +165,12 @@ def create_app(settings: Settings, *, model=None, transport=None):
             await model.aclose()
 
     app = FastAPI(title="ACME 顾问搭档", lifespan=lifespan)
+
+    @app.get("/api/health")
+    def health():
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return {"status": "ok"}
 
     def warehouse(session=None):
         token = (

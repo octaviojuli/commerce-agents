@@ -1,0 +1,23 @@
+ARG NODE_IMAGE=node:22-bookworm-slim
+FROM ${NODE_IMAGE} AS builder
+ARG ADVISOR_API_URL=http://advisor-v4-api:8006
+ENV NEXT_TELEMETRY_DISABLED=1 ADVISOR_STANDALONE=1 ADVISOR_API_URL=${ADVISOR_API_URL}
+WORKDIR /source/examples
+COPY examples ./
+RUN npm ci --include=dev \
+    && ./node_modules/.bin/next build tour/advisor-web --webpack \
+    && mkdir -p /out \
+    && cp -a tour/advisor-web/.next/standalone/. /out/ \
+    && mkdir -p /out/tour/advisor-web/.next \
+    && cp -a tour/advisor-web/.next/static /out/tour/advisor-web/.next/static \
+    && if [ -d tour/advisor-web/public ]; then cp -a tour/advisor-web/public /out/tour/advisor-web/public; fi
+
+FROM ${NODE_IMAGE}
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
+COPY --from=builder --chown=node:node /out /app
+USER node
+WORKDIR /app/tour/advisor-web
+EXPOSE 3000
+HEALTHCHECK --interval=15s --timeout=5s --start-period=60s \
+    CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+CMD ["node", "server.js"]
