@@ -38,6 +38,9 @@ def _money(value):
     return f"{symbol}{value['amount']}{unit}"
 
 
+OUTLET = re.compile(r"购物村|奥特莱斯|奥莱|免税店|outlet", re.I)
+
+
 class Route:
     """Normalized published itinerary for one product."""
 
@@ -147,6 +150,15 @@ class Route:
         }
 
     # ------------------------------------------------------------ facts
+
+    def outlets(self, facts=None):
+        """Days that stop at an outlet village: not a listed shop, but the customer will ask."""
+        seen, out = set(), []
+        for f in facts if facts is not None else self.facts():
+            if f["section"] == "行程" and OUTLET.search(f["text"]) and f["day"] not in seen:
+                seen.add(f["day"])
+                out.append(f)
+        return out
 
     def facts(self):
         """Every citable unit. ``section`` says where it came from for the evidence tag."""
@@ -274,6 +286,18 @@ class Route:
                 add(f"{label}：{text}", "行程", day, item["node_id"])
             for note in d["notes"]:
                 add(f"{label}提示：{note}", "注意事项", day)
+        if not b.get("shopping") and self.days:
+            # Derived from the days: the document lists no shop, and where the outlets are.
+            stops = self.outlets(out)
+            add(
+                "购物安排：行程未列购物店"
+                + (
+                    "；" + "、".join(f"第 {f['day']} 天" for f in stops) + "安排购物村自由活动"
+                    if stops
+                    else ""
+                ),
+                "行程概要",
+            )
         seen, unique = set(), []
         for f in out:
             if f["fact_id"] not in seen:
@@ -303,6 +327,7 @@ class Route:
             if v and not re.search(r"自理|敬请自理|不含|自费", v)
         )
         shopping = [f for f in facts if f["section"] == "购物说明"]
+        outlets = self.outlets(facts)
         optional = [f for f in facts if f["section"] == "自费说明"]
         child = find(r"儿童|小孩|占床", section=("儿童政策", "儿童政策"))
         single = find(r"单房差", section=("单房差",))
@@ -315,8 +340,14 @@ class Route:
                 "label": "购物",
                 "value": f"{len(shopping)} 店"
                 if shopping
+                else f"未列购物店 · 含 {len(outlets)} 次购物村"
+                if outlets
                 else ("未列购物店" if self.days else "未写明"),
-                "fact": shopping[0]["fact_id"] if shopping else None,
+                "fact": shopping[0]["fact_id"]
+                if shopping
+                else outlets[0]["fact_id"]
+                if outlets
+                else None,
             },
             {
                 "label": "自费",

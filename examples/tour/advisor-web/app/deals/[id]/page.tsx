@@ -345,7 +345,15 @@ function TurnView({
             <Draft
               text={r.draft.text}
               removed={r.draft.removed}
-              note={r.asked ? "这一轮只问 1 件事" : r.draft.simplified ? "已避开没把握的话" : ""}
+              note={
+                r.draft.claims.some((c) => c.reviewed === false)
+                  ? "引用的资料未人工审核，发前核对"
+                  : r.asked
+                    ? "这一轮只问 1 件事"
+                    : r.draft.simplified
+                      ? "已避开没把握的话"
+                      : ""
+              }
               sent={r.sent}
               onSent={() => api.post(`/deals/${deal.id}/sent`, { seq: turn.seq }).catch(() => {})}
             />

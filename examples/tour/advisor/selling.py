@@ -57,7 +57,7 @@ def _cell(topic, route: Route, card, need: Need, price):
 
     if topic == "行程节奏":
         stays = [d["stay"] for d in route.days if d["stay"]]
-        long = first(r"车程[约]?\s*[5-9]\s*小时|[5-9]\s*小时车程")
+        long = first(r"车程[约]?\s*[5-9]\s*小时|[5-9]\s*小时车程", sections=("行程",))
         if not route.days:
             return "q", "行程未发布，节奏待核实", None
         changes = len(set(stays)) if stays else None
@@ -65,7 +65,7 @@ def _cell(topic, route: Route, card, need: Need, price):
             return "n", long["text"].split("：", 1)[-1][:40], long["fact_id"]
         if changes is not None and changes <= max(2, len(route.days) // 3):
             return "y", f"住 {changes} 个地方，换酒店少", None
-        free = first(r"自由活动|休息|连住")
+        free = first(r"自由活动|休息|连住", sections=("行程",))
         if free:
             return "y", free["text"].split("：", 1)[-1][:40], free["fact_id"]
         return "q", "每天车程没写明", None
@@ -84,6 +84,9 @@ def _cell(topic, route: Route, card, need: Need, price):
         shop = [f for f in facts if f["section"] == "购物说明"]
         if shop:
             return "n", shop[0]["text"].split("：", 1)[-1][:40], shop[0]["fact_id"]
+        outlets = route.outlets(facts)
+        if outlets:
+            return "q", f"未列购物店，含 {len(outlets)} 次购物村自由活动", outlets[0]["fact_id"]
         if route.days:
             return "y", "行程未列购物店", None
         return "q", "购物安排待核实", None

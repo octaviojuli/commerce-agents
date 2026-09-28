@@ -72,3 +72,21 @@ def test_private_terms_codes_promises_and_conflicting_routes_are_cut():
 
 def test_holiday_names_are_not_money():
     assert check("时间改到元旦假期，孩子放假。", [])["removed"] == []
+
+
+def test_saying_what_is_not_known_is_kept_and_a_disguised_claim_is_not():
+    facts = [fact("全程3-4星酒店")]
+    kept = check("购物店资料里没写明，我去跟供应商确认后回您。", facts)
+    assert kept["removed"] == []
+    cut = check("购物店已经安排好了，含3次免费购物。", facts)
+    assert cut["removed"]
+
+
+def test_a_route_without_a_reviewed_document_is_cited_and_marked():
+    unreviewed = {"fact_id": "u", "text": "全程3-4星酒店", "product_id": "p", "reviewed": False}
+    result = check("全程3-4星酒店。", [unreviewed])
+    assert result["removed"] == []
+    assert result["claims"][0]["reviewed"] is False
+    # A route that has reviewed facts is cited only from those.
+    reviewed = {"fact_id": "r", "text": "全程4星酒店", "product_id": "p", "reviewed": True}
+    assert check("全程3-4星酒店。", [unreviewed, reviewed])["removed"]

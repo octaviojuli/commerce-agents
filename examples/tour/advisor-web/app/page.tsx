@@ -34,7 +34,16 @@ export default function TodayPage() {
           <h3>
             {data ? (
               <>
-                先处理这 <em>{data.urgent.length} 件</em>，<br />另有 {data.waiting.length} 位客人等你回复
+                {data.urgent.length > 0 ? (
+                  <>
+                    先处理这 <em>{data.urgent.length} 件</em>，<br />
+                  </>
+                ) : (
+                  <>
+                    没有急事，<br />
+                  </>
+                )}
+                {data.waiting.length > 0 ? `${data.waiting.length} 位客人等你回复` : "客人都回过了"}
               </>
             ) : (
               "今天先做什么"

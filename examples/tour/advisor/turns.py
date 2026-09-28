@@ -5,6 +5,8 @@ saves facts, opens proposals, runs searches, picks the one question worth asking
 the consequences of a change and checks every draft sentence before the advisor sees it.
 """
 
+import json
+import logging
 import re
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -20,8 +22,10 @@ from .need import Need
 from .store import Owner
 
 TZ = ZoneInfo("Asia/Shanghai")
+LOG = logging.getLogger("advisor.turns")
 RESEARCH = re.compile(
     r"重新找|再找找|重新搜|重新检索|换[一]?条|其他线路|别的线路|有哪些.{0,4}线|看看.{0,6}线路|推荐几条|找线"
+    r"|有没有合适|有(?:什么|啥)合适|找找|看看.{0,4}合适"
 )
 NO_RESEARCH = re.compile(r"不(?:用|要|需要|必)(?:再)?重新找")
 RECOMMEND = re.compile(r"你推荐吧|你来推荐|帮我推荐|没想好|随便|都行")
@@ -61,6 +65,24 @@ def known_fields(need: Need) -> set:
         if need.get(field):
             known.add(field)
     return known
+
+
+def chosen_facts(deal) -> list:
+    """The route and departure this deal has settled on, so a reply names them, not the window."""
+    out = []
+    route, departure = deal.get("route"), deal.get("departure")
+    if route:
+        out.append(
+            {"fact_id": "deal:route", "text": f"已选线路：{route['title']}", "section": "已选"}
+        )
+    if departure and departure.get("date"):
+        start = date.fromisoformat(departure["date"])
+        text = f"已选团期：{start.month}月{start.day}日出发"
+        if departure.get("return_date"):
+            end = date.fromisoformat(departure["return_date"])
+            text += f"，{end.month}月{end.day}日回"
+        out.append({"fact_id": "deal:departure", "text": text, "section": "已选"})
+    return out
 
 
 def requirement_facts(need: Need) -> list:
@@ -181,6 +203,20 @@ class Turns:
         result["tags"] = tags
         fills, proposals, rejected = read_changes(need, understanding, text, today(), turn=seq)
         if rejected:
+            LOG.info(
+                json.dumps(
+                    {
+                        "event": "advisor_reading_rejected",
+                        "fields": rejected,
+                        "changes": [
+                            c.model_dump(mode="json")
+                            for c in (understanding.changes if understanding else [])
+                            if c.field in rejected
+                        ],
+                    },
+                    ensure_ascii=False,
+                )
+            )
             result["notes"].append(
                 "没读准："
                 + "、".join(needs.LABELS.get(f, f) for f in rejected)
@@ -234,7 +270,7 @@ class Turns:
         gates = needs.gates(need)
         result["gates"] = gates
         result["clarity"] = needs.clarity(need)
-        facts = requirement_facts(need)
+        facts = requirement_facts(need) + chosen_facts(deal)
         conflicts = []
         draft_extra = {}
         # --- what the program does this turn, in priority order
@@ -323,7 +359,7 @@ class Turns:
         questions = understanding.questions if understanding else []
         price_facts = [f for f in facts if f.get("section") == "报价"]
         answered, used = (
-            (await self.answer(owner, wh, deal, need, context, questions, price_facts))
+            (await self.answer(owner, wh, deal, need, context, questions, price_facts, reason))
             if questions
             else ([], [])
         )
@@ -584,7 +620,7 @@ class Turns:
             )
         return {"id": str(row["id"]), "body": body}
 
-    async def answer(self, owner, wh, deal, need, context, questions, extra=()):
+    async def answer(self, owner, wh, deal, need, context, questions, extra=(), price_gap=""):
         by_route = {}
         for index, q in enumerate(questions):
             target = routes_named(q.route, context["visible"]) if q.route else None
@@ -631,7 +667,10 @@ class Turns:
                     for i, q in group["items"]
                 ],
                 "route": route.title if route else "",
-                "facts": [{"fact_id": f["fact_id"], "text": f["text"]} for f in facts[:120]],
+                "facts": [
+                    {"fact_id": f["fact_id"], "text": f["text"]}
+                    for f in relevant(facts, [q for _, q in group["items"]], 120)
+                ],
             }
             try:
                 result = await self.model.call("answer", payload) if facts else None
@@ -662,6 +701,7 @@ class Turns:
                                     "fact_id": f["fact_id"],
                                     "section": f["section"],
                                     "text": f["text"],
+                                    "reviewed": f["reviewed"],
                                 }
                                 for f in cited
                             ],
@@ -669,6 +709,14 @@ class Turns:
                         used += cited
                 if not facts and not key:
                     item["answer"] = "还没有选定线路，先确定问的是哪一条。"
+                if (
+                    item["kind"] == "unknown"
+                    and price_gap
+                    and (q.topic in PRICE_TOPICS or PRICE_WORDS.search(q.text))
+                    and key == (deal.get("route") or {}).get("product_id")
+                ):
+                    # A price exists but may not be quoted yet; say why, not "资料没写明".
+                    item["answer"] = f"已核价，但还不能报给客人：{price_gap}。"
                 answered.append(item)
         answered.sort(key=lambda a: [q.text for q in questions].index(a["question"]))
         return answered, used
@@ -689,12 +737,13 @@ class Turns:
             "ask_next": extra.get("ask_next", ""),
             "answers": extra.get("answers", []),
             "routes": extra.get("routes", []),
+            "searched": "routes" in extra,
             "directions": extra.get("directions", []),
             "change_pending": pending,
             "conflicts": conflicts,
-            "facts": [f["text"] for f in facts if f.get("section") in ("报价", "目录", "方向")][
-                :20
-            ],
+            "facts": [
+                f["text"] for f in facts if f.get("section") in ("已选", "报价", "目录", "方向")
+            ][:20],
         }
         try:
             d = await self.model.call("draft", payload)
@@ -714,7 +763,8 @@ class Turns:
         checked = grounding.check(
             d.to_customer,
             facts,
-            said=[text],
+            # The saved need is the customer's words too: its numbers may be restated.
+            said=[text, needs.summary(need)],
             known=known,
             conflicts=conflicts,
             max_questions=3 if not needs.gates(need)["search"]["ready"] else 2,
@@ -723,6 +773,10 @@ class Turns:
         simplified = bool(checked["removed"])
         if len(body) < 8:
             body, simplified = fallback(extra), True
+        open_questions = [a for a in extra.get("answers", []) if a["kind"] == "unknown"]
+        if open_questions and not grounding.VERIFY.search(body):
+            # The reply must still say which questions are being checked, in the program's words.
+            body += "\n" + pending_line(open_questions)
         may_ask = [
             q
             for q in d.may_ask
@@ -738,6 +792,11 @@ class Turns:
             "to_advisor": d.to_advisor,
             "may_ask": may_ask,
         }
+
+
+def pending_line(answers):
+    asked = "、".join(re.sub(r"^.{0,16}?那条", "", a["q"]).rstrip("？?") for a in answers[:4])
+    return f"您问的{asked}，资料里没写明，我去跟供应商确认后回您。"
 
 
 def fallback(extra):
@@ -779,6 +838,44 @@ def fits(card, need: Need) -> bool:
         and card.get("price")
         and card["price"]["per_person"] > float(budget.per_person) * 1.2
     )
+
+
+PRICE_TOPICS = {"费用", "价格", "报价"}
+PRICE_WORDS = re.compile(r"价格|多少钱|报价|团费|费用")
+# What a question's topic is usually written as in a document.
+TOPIC_WORDS = {
+    "购物": "购物|奥特莱斯|奥莱|免税",
+    "酒店": "酒店|住宿|星",
+    "餐食": "餐|早|午|晚",
+    "儿童": "儿童|小孩|占床|岁",
+    "老人": "老人|长者|岁以上|健康",
+    "自费": "自费|另付|自愿",
+    "签证": "签证",
+    "节奏": "车程|小时|自由活动",
+}
+
+
+def relevant(facts: list, questions: list, limit: int) -> list:
+    """The facts the model sees, in document order: those that share words with a question first."""
+    if len(facts) <= limit:
+        return facts
+    words = set()
+    pattern = "|".join(
+        TOPIC_WORDS[t] for t in TOPIC_WORDS if any(t in (q.topic or "") + q.text for q in questions)
+    )
+    for q in questions:
+        words |= grounding.bigrams(q.text)
+    scored = sorted(
+        range(len(facts)),
+        key=lambda i: (
+            -(
+                len(words & grounding.bigrams(facts[i]["text"]))
+                + (5 if pattern and re.search(pattern, facts[i]["text"]) else 0)
+            )
+        ),
+    )
+    keep = set(scored[:limit])
+    return [f for i, f in enumerate(facts) if i in keep]
 
 
 def routes_named(name: str, visible: list):
@@ -837,9 +934,26 @@ def chips(deal, need, gates, pending, result):
             {"label": "手动改需求", "action": "edit_need"},
         ]
     out = []
-    if "routes" in types:
+    found = next((c for c in result["cards"] if c["type"] == "routes"), None)
+    if found and found.get("earlier") and deal.get("route"):
+        # An earlier search does not steer a deal that has settled on a route.
+        found = None
+    shown = (found or {}).get("cards", [])
+    if found and len(shown) >= 2:
         out.append({"label": "比较前两条", "action": "compare", "primary": True})
         out.append({"label": "做方案", "action": "plan"})
+    elif found and shown:
+        out.append({"label": "做方案", "action": "plan", "primary": True})
+    elif found:
+        # Nothing fits: the next move is loosening the condition that removed the most.
+        relax = found.get("relax") or []
+        out.append(
+            {
+                "label": relax[0]["text"] if relax else "改需求再找",
+                "action": "edit_need",
+                "primary": True,
+            }
+        )
     elif not deal.get("route"):
         out.append({"label": f"按 v{v} 找线", "action": "search", "primary": True})
     if deal.get("route") and not deal.get("departure"):

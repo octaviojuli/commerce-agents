@@ -23,6 +23,10 @@ def display(title: str) -> str:
 
 
 def _days(item):
+    """The day count the customer sees: the title's "N天" first, else the source field."""
+    title = re.search(r"(\d{1,2})\s*天", item.get("title") or "")
+    if title:
+        return int(title.group(1))
     try:
         return int(item.get("attributes", {}).get("days") or 0) or None
     except ValueError:
@@ -273,7 +277,9 @@ def card(item, route: Route, need, price=None, *, alternative=False):
     prefs = need.get("preferences") or []
     shopping = grid.get("购物", "")
     if "no_shopping" in prefs:
-        if "未列购物店" in shopping:
+        if "购物村" in shopping:
+            unknown.append(shopping)
+        elif "未列购物店" in shopping:
             yes.append("未列购物店")
             score += 10
         elif "店" in shopping:

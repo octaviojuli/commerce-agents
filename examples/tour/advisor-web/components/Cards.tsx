@@ -406,6 +406,7 @@ export function AnswersCard({ deal, items }: { deal: string; items: Answer[] }) 
                 ))}
                 {a.route && <span className="lbl">{a.route}</span>}
                 {a.kind === "advice" && <Tag tone="ai">建议是助手给的</Tag>}
+                {a.facts.some((f) => f.reviewed === false) && <Tag tone="sun">资料未人工审核</Tag>}
               </span>
             ) : (
               <div className="row" style={{ marginTop: 4 }}>

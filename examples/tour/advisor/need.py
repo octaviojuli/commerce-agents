@@ -4,6 +4,7 @@ The model proposes values; this module decides what they mean for the deal. Read
 clarity and the chain of consequences of a change are computed here, never by the model.
 """
 
+import re
 from datetime import date
 from decimal import Decimal
 from typing import Annotated, Any, Literal
@@ -161,7 +162,38 @@ def parse(field, value):
         if field == "preferences":
             items = [v for v in items if v in PREFERENCES]
         return list(dict.fromkeys(items))[:12]
+    if field == "rooms":
+        value = rooms_value(value)
     return kind.model_validate(value)
+
+
+ROOM_WORDS = {"doubles": r"大床", "twins": r"双床|标间|双标", "singles": r"单间|单人间|单住"}
+
+
+def rooms_value(value):
+    """Rooms as the model may write them: text ("一间大床房"), or with a derived total."""
+    if isinstance(value, str):
+        from .grounding import chinese_numbers
+
+        text, out = chinese_numbers(value), {"note": value[:200]}
+        for key, words in ROOM_WORDS.items():
+            m = re.search(rf"(\d+)\s*间\s*(?:{words})|(?:{words})\S{{0,2}}?(\d+)\s*间", text)
+            if m:
+                out[key] = int(m.group(1) or m.group(2))
+        if len(out) == 1:
+            raise ValueError("房间没读出房型")
+        return out
+    if isinstance(value, dict):
+        # A count the customer did not mention is none of that room ({"twins": null} is 0).
+        known = {
+            k: (v if v is not None else (0 if k != "note" else ""))
+            for k, v in value.items()
+            if k in ("doubles", "twins", "singles", "note")
+        }
+        if not any(known.get(k) for k in ("doubles", "twins", "singles")):
+            raise ValueError("房间没读出房型")
+        return known
+    return value
 
 
 class Need(Model):

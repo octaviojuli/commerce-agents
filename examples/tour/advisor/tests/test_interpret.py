@@ -90,3 +90,21 @@ def test_family_travel_is_not_travelling_with_children():
         Need(), reading(change("preferences", ["family"], "带家里人")), "想带家里人出去玩玩", TODAY
     )
     assert "preferences" not in fills
+
+
+def test_a_couple_names_everyone_and_a_family_does_not():
+    party = {"adults": 2, "children": None}
+    fills, _, _ = changes(
+        Need(), reading(change("party", party, "我跟老婆")), "我跟老婆年底想出去", TODAY
+    )
+    assert needs.parse("party", fills["party"]["new"]).children == []
+    fills, _, _ = changes(
+        Need(), reading(change("party", party, "我们夫妻")), "我们夫妻带孩子出去", TODAY
+    )
+    assert needs.parse("party", fills["party"]["new"]).children is None
+
+
+def test_naming_a_place_after_only_a_theme_is_a_fill():
+    need = needs.set_field(Need(), "destinations", {"must": []}, "inferred", "海岛")
+    fills, proposals, _ = changes(need, reading(), "斯里兰卡怎么样", TODAY)
+    assert "destinations" in fills and not proposals

@@ -22,6 +22,40 @@ LINE_LABELS = {
 }
 
 
+MISSING_LABELS = {
+    "fees_not_fully_confirmed": "费用未全部确认",
+    "child_seat_policy_unknown": "儿童占床规则未写明",
+    "child_age_policy_unknown": "儿童年龄规则未写明",
+    "child_ages_required": "缺儿童年龄",
+    "child_age_outside_price_rule": "儿童年龄超出价格规则",
+    "room_type_not_confirmed": "房型未确认",
+    "single_room_unpriced": "单房差未报价",
+    "SOURCE_PRICE_TIMEOUT": "供应商价格超时",
+    "SOURCE_PRICE_UNAVAILABLE": "供应商暂未给价",
+    "INVALID_SOURCE_PRICE": "供应商价格不可用",
+}
+
+
+def missing_text(code: str) -> str:
+    if code in MISSING_LABELS:
+        return MISSING_LABELS[code]
+    parts = code.split(".")
+    if parts[0] in ("market", "settlement") and len(parts) > 2 and parts[1] == "charge":
+        return f"附加费未报价（{parts[2]}）"
+    if parts[0] in ("market", "settlement") and len(parts) > 1:
+        return (
+            ("同行价" if parts[0] == "settlement" else "门市价")
+            + "缺"
+            + LINE_LABELS.get(".".join(parts[1:]), parts[-1])
+        )
+    return "供应商价格待确认"
+
+
+def unpriced_single(line) -> bool:
+    """A single-room line at zero means the source left it blank, not that it is free."""
+    return line.get("code") == "single_room" and line.get("unit_amount") in ("0.00", "0", 0)
+
+
 def money(value) -> Decimal:
     return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
@@ -56,8 +90,8 @@ def warehouse_party(need, bed=None) -> dict:
         "single_rooms": rooms.singles,
         "child_ages": [c.age for c in children],
         "room_type": room_type,
+        # Only the fields every warehouse version accepts; ``total`` is the sum and newer ones derive it.
         "rooms": {
-            "total": rooms.total,
             "doubles": rooms.doubles,
             "twins": rooms.twins,
             "singles": rooms.singles,
@@ -163,11 +197,20 @@ def validity(row, deal, need) -> tuple[bool, str]:
     until = row.get("valid_until")
     if until and until <= datetime.now(UTC):
         return False, "报价已过有效期，需要重新核价"
-    if not row["snapshot"].get("complete"):
-        return False, "价格不完整：" + "、".join(
-            row["snapshot"].get("missing_items", [])[:3]
-        ) or "价格不完整"
+    gaps = missing(row["snapshot"])
+    if gaps:
+        return False, "价格不完整：" + "、".join(gaps[:3])
     return True, ""
+
+
+def missing(snapshot) -> list[str]:
+    """What keeps this price from being final, in the advisor's words, once each."""
+    codes = list(snapshot.get("missing_items", []))
+    if any(unpriced_single(x) for x in snapshot.get("market_lines", [])):
+        codes.append("single_room_unpriced")
+    if not codes and not snapshot.get("complete"):
+        codes.append("fees_not_fully_confirmed")
+    return list(dict.fromkeys(missing_text(c) for c in codes))
 
 
 def lines(snapshot, side="market"):
@@ -177,12 +220,13 @@ def lines(snapshot, side="market"):
             "room."
         ):
             continue
+        blank = unpriced_single(line)
         out.append(
             {
                 "label": line.get("label") or LINE_LABELS.get(line.get("code"), line.get("code")),
                 "quantity": line.get("quantity"),
-                "unit": line.get("unit_amount"),
-                "total": line.get("total"),
+                "unit": None if blank else line.get("unit_amount"),
+                "total": None if blank else line.get("total"),
             }
         )
     return out
@@ -217,8 +261,9 @@ def summary(snapshot, need, sales_total=None):
         "margin": margin,
         "per_person": per_person(snapshot, need),
         "currency": snapshot.get("currency", "CNY"),
-        "complete": bool(snapshot.get("complete")),
-        "missing": snapshot.get("missing_items", []),
+        "complete": bool(snapshot.get("complete")) and not missing(snapshot),
+        "missing": missing(snapshot),
+        "hints": snapshot.get("hints", []),
         "valid_until": snapshot.get("quote_valid_until"),
         "fresh_until": snapshot.get("fresh_until"),
     }

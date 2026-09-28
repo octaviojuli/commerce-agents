@@ -63,6 +63,16 @@ export default function QuotePage() {
           {q && (
             <>
               {!q.valid && <div className="err">{q.reason}</div>}
+              {q.hints && q.hints.length > 0 && (
+                <div className="card" style={{ padding: "10px 14px" }}>
+                  <b style={{ fontSize: 13 }}>线路资料里写的（发前向供应商核对）</b>
+                  {q.hints.map((h) => (
+                    <p key={h.fact_id} style={{ margin: "6px 0 0", fontSize: 13, color: "var(--ink-2)" }}>
+                      <span className="src">{h.topic}</span> {h.text}
+                    </p>
+                  ))}
+                </div>
+              )}
               <div className="card bd2">
                 {q.lines.map((l) => (
                   <div className="l" key={l.label}>
@@ -75,7 +85,7 @@ export default function QuotePage() {
                 <div className="hr" style={{ margin: "6px 0" }} />
                 <div className="l">
                   <span>
-                    <b>团费合计</b>
+                    <b>{q.lines.some((l) => !l.total) || !q.complete ? "已报部分合计" : "团费合计"}</b>
                   </span>
                   <span>
                     <b>{money(q.sales_total ?? q.market_total)}</b>
@@ -112,7 +122,7 @@ export default function QuotePage() {
                 </div>
                 <div className="kv">
                   <span>报价有效</span>
-                  <span>到 {clock(q.valid_until)}</span>
+                  <span>{q.valid_until ? `到 ${clock(q.valid_until)}` : "供应商未给有效期"}</span>
                 </div>
                 <label className="field" style={{ marginTop: 6 }}>
                   销售价（全家，默认用市场价）

@@ -1,5 +1,7 @@
 """Gates, clarity and the spoken summary of a need."""
 
+import pytest
+
 from tour.advisor import need as needs
 from tour.advisor.need import Need
 
@@ -34,3 +36,10 @@ def test_the_need_is_said_back_in_plain_words():
     n = needs.set_field(n, "budget", {"per_person": 15000}, "said")
     n = needs.set_field(n, "preferences", ["slow_pace"], "said")
     assert needs.spoken(n) == "元旦前后出发、2大2小 + 1位长辈、每人1.5万以内、别太累"
+
+
+def test_rooms_are_read_as_the_model_writes_them():
+    assert needs.parse("rooms", {"doubles": 1, "twins": None, "total": 1}).doubles == 1
+    assert needs.parse("rooms", "一间大床房加一间双床房").twins == 1
+    with pytest.raises(ValueError):
+        needs.parse("rooms", {"total": 2})

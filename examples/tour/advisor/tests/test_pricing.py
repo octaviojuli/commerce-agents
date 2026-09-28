@@ -68,3 +68,21 @@ def test_a_price_holds_only_for_its_party_rooms_departure_and_time():
     assert not pricing.validity(
         {**row, "snapshot": {**row["snapshot"], "complete": False}}, deal, n
     )[0]
+
+
+def test_gaps_are_named_in_words_and_a_zero_single_room_is_not_a_price():
+    snapshot = {
+        "complete": False,
+        "missing_items": ["child_seat_policy_unknown", "market.charge.visa"],
+        "market_lines": [
+            {"code": "adult", "quantity": 2, "unit_amount": "8999.00", "total": "17998.00"},
+            {"code": "single_room", "quantity": 1, "unit_amount": "0.00", "total": "0.00"},
+        ],
+    }
+    assert pricing.missing(snapshot) == [
+        "儿童占床规则未写明",
+        "附加费未报价（visa）",
+        "单房差未报价",
+    ]
+    single = next(x for x in pricing.lines(snapshot) if x["label"] == "单房差")
+    assert single["unit"] is None and single["total"] is None

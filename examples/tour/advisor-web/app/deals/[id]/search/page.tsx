@@ -123,18 +123,21 @@ export default function SearchPage() {
                   </div>
                 </div>
               )}
-              <Chips
+              {search.cards.length > 0 && <Chips
                 items={[
-                  { label: picked.length >= 2 ? `比较选中的 ${picked.length} 条` : "比较前两条", primary: true },
-                  { label: "做方案" },
+                  ...(search.cards.length >= 2
+                    ? [{ label: picked.length >= 2 ? `比较选中的 ${picked.length} 条` : "比较前两条", primary: true }]
+                    : []),
+                  { label: "做方案", primary: search.cards.length < 2 },
                   { label: "看第 1 条行程" },
                 ]}
                 onPick={(i) => {
-                  if (i === 0) router.push(`/deals/${id}/compare?ids=${ids.join(",")}`);
-                  if (i === 1) router.push(`/deals/${id}/plan?ids=${ids.join(",")}`);
-                  if (i === 2 && search.cards[0]) router.push(`/routes/${search.cards[0].product_id}?deal=${id}`);
+                  const k = search.cards.length >= 2 ? i : i + 1;
+                  if (k === 0) router.push(`/deals/${id}/compare?ids=${ids.join(",")}`);
+                  if (k === 1) router.push(`/deals/${id}/plan?ids=${ids.join(",")}`);
+                  if (k === 2 && search.cards[0]) router.push(`/routes/${search.cards[0].product_id}?deal=${id}`);
                 }}
-              />
+              />}
             </>
           )}
         </div>

@@ -65,7 +65,7 @@ export type Answer = {
   route: string;
   answer: string;
   kind: "fact" | "advice" | "unknown";
-  facts: { fact_id: string; section: string; text: string }[];
+  facts: { fact_id: string; section: string; text: string; reviewed?: boolean }[];
 };
 
 export type Card =
@@ -94,7 +94,7 @@ export type TurnResult = {
     text: string;
     removed: string[];
     reasons?: string[];
-    claims: { text: string; fact_id: string; section?: string }[];
+    claims: { text: string; fact_id: string; section?: string; reviewed?: boolean }[];
     simplified: boolean;
   };
   to_advisor?: string;
@@ -128,6 +128,7 @@ export type QuoteView = {
   valid_until: string | null;
   fresh_until: string | null;
   created_at: string | null;
+  hints?: { topic: string; text: string; fact_id: string; section: string }[];
 };
 
 export type Confirmation = {

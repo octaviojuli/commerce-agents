@@ -5,6 +5,7 @@ A formal quote can only come from a confirmation sheet the customer confirmed fo
 current need version and departure. Extra payments are listed, never added to the total.
 """
 
+import re
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -240,6 +241,7 @@ async def price_departure(engine, owner, wh, deal_id, departure_id, offer_id=Non
         "terms": pricing.terms(need),
         "product_id": route.get("product_id") or snapshot.get("product_id"),
     }
+    snapshot["hints"] = await price_hints(wh, snapshot, departure_id)
     valid = snapshot.get("quote_valid_until")
     with engine.begin() as conn:
         row = store.add(
@@ -260,6 +262,41 @@ async def price_departure(engine, owner, wh, deal_id, departure_id, offer_id=Non
             valid_until=datetime.fromisoformat(valid) if valid else None,
         )
     return quote_view(row, deal, need)
+
+
+HINTS = {
+    "儿童": r"儿童|占床",
+    "单房差": r"单房差|单人间",
+    "费用": r"费用不含",
+}
+
+
+async def price_hints(wh, snapshot, departure_id):
+    """What the route's document says about each gap in the price, for the advisor to check."""
+    gaps = pricing.missing(snapshot)
+    if not gaps or not snapshot.get("product_id"):
+        return []
+    doc = await routes.document(wh, snapshot["product_id"], departure_id)
+    facts = Route(snapshot["product_id"], "", (doc or {}).get("body")).facts()
+    wanted = [
+        topic
+        for topic, gap in (("儿童", "儿童"), ("单房差", "单房差"), ("费用", "费用"))
+        if any(gap in g for g in gaps)
+    ]
+    out = []
+    for topic in wanted:
+        hits = [
+            f
+            for f in facts
+            if re.search(HINTS[topic], f["text"]) and not re.search(r"之外的任何费用", f["text"])
+        ]
+        # The policy section first, then the shortest unit: the document repeats itself.
+        hits.sort(key=lambda f: (f["section"] not in ("儿童政策", "单房差"), len(f["text"])))
+        out += [
+            {"topic": topic, "text": f["text"], "fact_id": f["fact_id"], "section": f["section"]}
+            for f in hits[: 3 if topic == "费用" else 1]
+        ]
+    return out
 
 
 def choose_departure(engine, owner, deal_id, departure):

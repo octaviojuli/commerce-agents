@@ -15,7 +15,14 @@ PROMISE = re.compile(r"(?<!不)(?<!无法)(?<!不能)(?:保证|一定|肯定|确
 # Clauses that state something checkable. Wishes, questions and connectives do not.
 FACTUAL = re.compile(
     r"\d|[￥¥]|(?<!旦)元(?!旦)|包含|不含|含[早午晚三]?餐|赠送|免费|入住|[1-5一二三四五]星|购物|自费|另付|退改|退款|"
-    r"手续费|签证|保险|占床|自理|已(?:经)?(?:安排|订好|预订|预留|确认)"
+    r"手续费|签证|保险|占床|自理|强制|自愿|天气|气温|雨季|旱季|季节|已(?:经)?(?:安排|订好|预订|预留|确认)"
+)
+# "资料没写明，我去跟供应商确认": saying what is not known is not a claim.
+# Restating the customer's question ("您问的有没有购物店") is not a claim either.
+VERIFY = re.compile(
+    r"没写明|未写明|没有写|没写|不确定|待(?:核实|确认)|(?:还?没|未)(?:完全)?(?:确认|核实)"
+    r"|正在.{0,8}(?:核对|确认|核实)|(?:去|再|帮您|会|跟供应商|向供应商)(?:确认|核实|问)|问清|一并.{0,4}问"
+    r"|您问的|有没有|是否|要不要|能不能"
 )
 # Negations and limits, longest first so "无须" is never read as "须".
 POLAR = (
@@ -281,7 +288,9 @@ def check(
     ``conflicts`` are route names that do not fit the need; they may only appear as an
     alternative that still needs confirming.
     """
-    reviewed = [f for f in facts if f.get("reviewed", True)]
+    # A route with no reviewed document is cited from what it has; each claim says which.
+    checked = {f.get("product_id") for f in facts if f.get("reviewed", True)}
+    reviewed = [f for f in facts if f.get("reviewed", True) or f.get("product_id") not in checked]
     said_numbers = set().union(*(numbers(s) for s in said)) if said else set()
     known = set(known)
     kept, claims, removed, reasons = [], [], [], []
@@ -318,6 +327,11 @@ def check(
                 k += 1
                 if not FACTUAL.search(clause):
                     continue
+                if VERIFY.search(clause) and not PROMISE.search(clause):
+                    allowed = set().union(*(numbers(f["text"]) for f in reviewed)) | said_numbers
+                    if numbers(clause) <= allowed:
+                        found.append({"text": clause, "fact_id": None})
+                        continue
                 fact = _support(clause, reviewed)
                 if fact is None and k < len(parts):
                     # "如果孩子不占床，每位11800元": a condition and its number span two clauses.
@@ -329,6 +343,7 @@ def check(
                                 "text": joined,
                                 "fact_id": fact["fact_id"],
                                 "section": fact.get("section", ""),
+                                "reviewed": fact.get("reviewed", True),
                             }
                         )
                         k += 1
@@ -346,7 +361,12 @@ def check(
                     reason = "unproven"
                     break
                 found.append(
-                    {"text": clause, "fact_id": fact["fact_id"], "section": fact.get("section", "")}
+                    {
+                        "text": clause,
+                        "fact_id": fact["fact_id"],
+                        "section": fact.get("section", ""),
+                        "reviewed": fact.get("reviewed", True),
+                    }
                 )
         if not reason and PROMISE.search(stripped):
             backed = [f for f in reviewed if any(c["fact_id"] == f["fact_id"] for c in found)]

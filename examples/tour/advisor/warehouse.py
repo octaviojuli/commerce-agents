@@ -33,6 +33,16 @@ def _message(response):
     except ValueError:
         return response.text[:200] or "云仓暂时无法访问"
     detail = body.get("message") or body.get("detail") or body
+    if isinstance(detail, list):
+        # A validation error: name the fields, which is what the advisor can act on.
+        fields = [
+            ".".join(str(p) for p in d.get("loc", [])[1:]) for d in detail if isinstance(d, dict)
+        ]
+        return (
+            "云仓拒绝了这次请求：" + "、".join(filter(None, fields))
+            if any(fields)
+            else "云仓拒绝了这次请求"
+        )
     return detail if isinstance(detail, str) else "云仓拒绝了这次请求"
 
 

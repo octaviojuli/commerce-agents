@@ -847,7 +847,9 @@ def detail(conn, owner, deal_id):
         order=db.confirmations.c.created_at.desc(),
         where=[db.confirmations.c.status != "void"],
     )
-    result_stub = {"cards": [{"type": "routes"}] if latest else []}
+    result_stub = {
+        "cards": [{"type": "routes", "earlier": True, **latest[0]["body"]}] if latest else []
+    }
     return {
         "id": str(deal["id"]),
         "title": deal["title"],
