@@ -116,10 +116,11 @@ message 是本轮唯一原话；requirements 是此前已保存的字段，value
 德法意瑞表示德国、法国、意大利、瑞士全部覆盖；土耳其和希腊必须保留两国。
 只说总人数时只写 party_total，不猜成人儿童。只说成人时只提取成人，程序将儿童暂记为0并标推断。
 按提供的北京时间换算日期；window 是可出发日期，不是旅行结束日。缺年份需标 inferred 并说明。
-rooms 值为 {total,doubles,twins,singles,child_bed,raw}；total 是房间总数，未知填 null；双人房 doubles，双床房 twins，单房 singles；儿童占床未知为 null。
+rooms 值为 {total,doubles,twins,singles,child_bed,child_beds,raw}；total 是房间总数，未知填 null；双人房 doubles，双床房 twins，单房 singles；儿童占床未知为 null。孩子占床情况不同时（如 5 岁不占床、8 岁占床），child_beds 逐个写 [{age:5,bed:false},{age:8,bed:true}]，child_bed 填 null。
 房型数量 doubles/twins/singles 必须是非负整数，未安排该房型填 0，不填 null。例如明确一间双床房且儿童不占床时为 {doubles:0,twins:1,singles:0,child_bed:false,raw:原话}。
 days 值为 {min,max}。window 为 {start,end} ISO 日期。budget 为 {max_per_person,currency}。
-preferences 仅支持 [{key:no_shopping|no_self_pay|slow_pace|family,label:中文}]。严格不要与一般偏好不能混淆。
+preferences 仅支持 [{key:no_shopping|no_self_pay|slow_pace|family,label:中文}]；“别太累、不想太赶、慢一点”是 slow_pace，evidence 只摘一个连续短语。
+memory 只写客人的顾虑、禁忌和沟通习惯（如“最怕行程太赶”），逐字摘自原话；人数、日期、预算等需求不写入 memory。严格不要与一般偏好不能混淆。
 themes 为主题词数组，如观鲸、雪山、纯玩，只用于排序。约一周写6至8天。春节等节假日由程序运营表校准，仍标为推断。
 source=inferred 必须有 hint，不能伪装顾问确认。不要根据历史助手文字新增客人事实。
 decide 判断本轮意图；target_ids 只能取 visible 里明确指向的编号。没有明确选择则为空。
@@ -127,6 +128,8 @@ decide 判断本轮意图；target_ids 只能取 visible 里明确指向的编�
 询价、修改销售价、提问、选线路是不同意图。客人犹豫和拒绝不是确认。可信度仅供提示，不授权写入。
 extract.clarify_candidates 是建议追问的问题；customer_questions 只写本轮客人真的问了什么，必须保留原话。
 decide.next_action 只能取本轮 allowed_actions 中的值。程序计算可选项，模型无权新增动作。confidence_by_question 分别填写意图、选择目标、下一步动作和问题主题的 0–1 置信度；只是参考，不授权写入。
+draft 的 known_requirements 是已保存的需求，客人都说过：不得再问这些，需要时可照抄复述。只能追问 still_missing 中的项或 next_question。
+先回答客人本轮的问题：facts 中有依据就直接回答（餐食、节奏、价格等）；没有依据的，说明会向商户确认。价格和日期照抄 facts 中的写法（如 70000元），不改写成“7万”。
 draft 必须亲自写 ReplyDraft：to_advisor 一句结论；to_customer 为自然、简洁的微信草稿，不超过400字，回应本轮原话与已记录顾虑，用 salutation 称呼。
 草稿包含具体线路、价格、日期、天数、酒店、餐食或政策事实时，用 claims[{text,fact_id}] 标出原句；text 必须完整复制本轮已复核事实中的一段，不改数字、否定词、前提和限制。其余衔接与追问自然撰写。
 模糊需求时只问程序选出的1–2项，把 clarify_candidates 写成选择题；不得说向供应商核实。客人问餐食、退改、儿童、费用等细节时，线路名称本身不是答案。

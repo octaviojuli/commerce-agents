@@ -172,8 +172,17 @@ export type Rooms = {
   twins: number;
   singles: number;
   child_bed: boolean | null;
+  child_beds?: { age: number | null; bed: boolean }[] | null;
   raw: string;
 };
+
+export function bedText(rooms: Rooms, unknown: string) {
+  if (rooms.child_beds?.length)
+    return rooms.child_beds
+      .map((c) => `${c.age != null ? `${c.age}岁` : "儿童"}${c.bed ? "占床" : "不占床"}`)
+      .join("、");
+  return rooms.child_bed == null ? unknown : rooms.child_bed ? "儿童占床" : "儿童不占床";
+}
 export type BriefEnvelope = {
   version: number;
   title: string;

@@ -1,5 +1,6 @@
 """Deterministic proposal adoption, downstream invalidation and version-bound confirmations."""
 
+import re
 from zoneinfo import ZoneInfo
 
 from pydantic import Field, ValidationError
@@ -41,7 +42,11 @@ def original_evidence(message, evidence):
     target = "".join(c.translate(punctuation) for c in evidence if not c.isspace())
     offset = "".join(c for c, _ in source).find(target) if target else -1
     if offset < 0:
-        return ""
+        # A model may join separate phrases ("别太累、最怕行程太赶"). Each part
+        # must be in the message; the longest part is kept as the evidence.
+        parts = [p for p in re.split(r"[、，,；;/…]+|\.{2,}", evidence) if len(p.strip()) >= 2]
+        found = [original_evidence(message, p.strip()) for p in parts] if len(parts) > 1 else []
+        return max(found, key=len) if found and all(found) else ""
     return message[source[offset][1] : source[offset + len(target) - 1][1] + 1]
 
 
@@ -112,6 +117,10 @@ def propose(engine, actor, identifier, fields, message, turn_id):
                 value.evidence = original_evidence(message, value.evidence)
                 if not value.evidence or len(value.evidence) > 120 or value.evidence not in message:
                     rejected[name] = "缺少本轮原话依据"
+                    continue
+                if len(message) > 30 and len(value.evidence) >= 0.8 * len(message):
+                    # Citing the whole message is not evidence for one field.
+                    rejected[name] = "原话依据不具体"
                     continue
             elif value.source == Source.inferred:
                 if not value.hint.strip():

@@ -7,12 +7,29 @@ PRIVATE = re.compile(
     r"同[行业]价|结算价|结算总价|毛利|利润率?|(?:余位|剩余名额|库存)[：:\s]*[零一二三四五六七八九十\d]+|\{\s*\""
 )
 PROMISE = re.compile(r"(?<!不)(?<!无法)(?<!不能)(?:保证|一定|肯定|确保|包退)")
+# Only concrete, checkable statements need a fact: numbers, money, inclusions,
+# hotels, shopping, refunds and completed arrangements. Connecting phrases,
+# restated wishes and questions do not.
 FACTUAL = re.compile(
-    r"\d|[￥¥]|元|出发|包含|不含|赠送|安排|入住|全程|酒店|餐食|购物|自费|退改|退款|推荐.*线路|这条.*适合|孩子不累"
+    r"\d|[￥¥]|元|包含|不含|含[早午晚]?餐|赠送|免费|入住|[1-5一二三四五]星|购物|自费|退改|退款"
+    r"|签证|保险|已(?:经)?(?:安排|确认|订好|预订|预留)"
 )
-QUALIFIER = re.compile(
-    r"(?:不能|无法|不予|不含|不保证|需[要由]?|须|仅限|自费|以.{0,20}为准|待确认|最终确认)[^，。；！？\n]{0,60}"
+# Limits a claim may not drop when it restates the clause that carries them.
+LIMIT = re.compile(
+    r"不含|不包含|不占|不保证|不能|无法|自理|自费|另付|需[要由]?|须|仅限|为准|待确认"
 )
+NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+# A customer question about a requirement already on file.
+KNOWN_QUESTIONS = {
+    "party": r"几位|几个人|多少人|几口人|几个大人|几个小孩|几个孩子|人数",
+    "child_ages": r"(?:孩子|小孩|儿童|宝宝).{0,6}(?:几岁|多大|年龄)|几岁",
+    "window": r"什么时候|哪天|几月|出发(?:时间|日期)|日期",
+    "days": r"玩几天|几天|多少天",
+    "depart_city": r"哪里出发|从哪|出发城市|出发地",
+    "destinations": r"想去哪|去哪|目的地|哪个国家",
+    "budget": r"预算",
+    "rooms": r"几间房|房型|占床",
+}
 
 
 def display_name(value):
@@ -59,12 +76,54 @@ def normalized(value):
     return re.sub(r"[\s，。；：、！？,.!?;:（）()【】\[\]“”\"'·]", "", value)
 
 
+def numbers(value):
+    found = set()
+    for item in NUMBER.findall(value):
+        item = item.replace(",", "")
+        found.add(item.split(".")[0] if re.fullmatch(r"\d+\.0+", item) else item)
+    return found
+
+
+SYNONYMS = (("包含", "含"), ("已含", "含"), ("在内", ""), ("都", ""), ("均", ""), ("费用", ""))
+
+
+def bigrams(value):
+    value = normalized(value)
+    for word, replacement in SYNONYMS:
+        value = value.replace(word, replacement)
+    return {value[i : i + 2] for i in range(len(value) - 1)}
+
+
 def supported(claim, fact):
-    """Permit exact cited clauses, preserving every restrictive condition in a fact."""
-    source, target = normalized(fact["text"]), normalized(claim)
-    if not target or target not in source:
+    """A claim may reword a fact but cannot add numbers or drop the fact's limits."""
+    target = normalized(claim)
+    if not target:
         return False
-    return all(normalized(q) in target for q in QUALIFIER.findall(fact["text"]))
+    if target not in normalized(fact["text"]):
+        words = bigrams(claim)
+        if not words or len(words & bigrams(fact["text"])) < 0.5 * len(words):
+            return False
+    if not numbers(claim) <= numbers(fact["text"]):
+        return False
+    words = bigrams(claim)
+    for clause in re.split(r"[，,；;。！？\n]", fact["text"]):
+        limits = LIMIT.findall(clause)
+        shared = words & bigrams(clause)
+        # Restating a limited clause must keep one of its limits.
+        if limits and shared and not any(x in claim for x in limits):
+            return False
+    return True
+
+
+def asks_known(sentence, known):
+    return next(
+        (
+            name
+            for name, pattern in KNOWN_QUESTIONS.items()
+            if name in known and re.search(pattern, sentence)
+        ),
+        None,
+    )
 
 
 def validate(
@@ -78,6 +137,7 @@ def validate(
     metrics=None,
     max_questions=None,
     preserve_requirements=False,
+    known=(),
 ):
     if draft is None:
         return {
@@ -88,6 +148,7 @@ def validate(
             "customer_may_ask": [],
             "simplified": True,
             "violations": [],
+            "validation": {"sentences": 0, "dropped": 0},
         }
     data = draft.model_dump(mode="json") if hasattr(draft, "model_dump") else draft
     by_id = {f["fact_id"]: f for f in facts if f.get("reviewed", True)}
@@ -102,10 +163,18 @@ def validate(
         ):
             claims.append({**claim, "kind": fact["kind"], "scope": fact.get("scope", {})})
         else:
-            violations.append("unproven")
+            # A bad citation alone removes nothing; the sentence is checked below.
+            violations.append("claim_rejected")
     accepted = []
     question_count = 0
-    for sentence in re.findall(r"[^。！？\n]+[。！？]?", data.get("to_customer", "")):
+    sentences = re.findall(r"[^。！？\n]+[。！？]?", data.get("to_customer", ""))
+    # Route names of candidates that conflict with the need, e.g. another departure city.
+    conflicting = [
+        f["text"].split("，")[0]
+        for f in by_id.values()
+        if f.get("conflict") and len(f["text"].split("，")[0]) >= 4
+    ]
+    for sentence in sentences:
         evidence = [c for c in claims if c["text"] in sentence]
         covered = sentence
         for claim in evidence:
@@ -113,11 +182,35 @@ def validate(
         # These phrases express uncertainty, not an additional route fact.
         covered = re.sub(r"需要确认(?:出发地|出发时间|团期|是否适合孩子)", "", covered)
         reason = ""
-        if sentence.endswith(("？", "?")):
+        question = sentence.rstrip().endswith(("？", "?"))
+        if question:
             question_count += 1
             if max_questions is not None and question_count > max_questions:
                 violations.append("excess_questions")
                 continue
+            if asks_known(sentence, known):
+                # The requirement is on file; asking again reads as not listening.
+                violations.append("asks_known")
+                continue
+        found = []
+        if not question:
+            for clause in re.split(r"[，,；;：:]", covered):
+                clause = clause.strip(" 。！？")
+                if not FACTUAL.search(clause):
+                    continue
+                fact = next((f for f in by_id.values() if supported(clause, f)), None)
+                if fact is None:
+                    reason = "unproven"
+                    break
+                found.append(
+                    {
+                        "text": clause,
+                        "fact_id": fact["fact_id"],
+                        "kind": fact["kind"],
+                        "scope": fact.get("scope", {}),
+                    }
+                )
+        cited = evidence + found
         if (
             INTERNAL.search(sentence)
             or PRIVATE.search(sentence)
@@ -125,19 +218,19 @@ def validate(
         ):
             reason = "private"
         elif PROMISE.search(sentence) and not any(
-            PROMISE.search(by_id[c["fact_id"]]["text"]) for c in evidence
+            PROMISE.search(by_id[c["fact_id"]]["text"]) for c in cited
         ):
             reason = "promise"
-        elif any(by_id[c["fact_id"]].get("conflict") for c in evidence) and not all(
-            term in sentence for term in ("备选", "需要确认")
-        ):
+        elif (
+            any(by_id[c["fact_id"]].get("conflict") for c in cited)
+            or any(name in sentence for name in conflicting)
+        ) and not all(term in sentence for term in ("备选", "需要确认")):
             reason = "conflict"
-        elif FACTUAL.search(covered) and not sentence.endswith(("？", "?")):
-            reason = "unproven"
         if reason:
             violations.append(reason)
         else:
             accepted.append(sentence.strip())
+            claims.extend(found)
     customer = "\n".join(accepted).strip()
     if len(customer) > 400:
         violations.append("length")
@@ -148,7 +241,11 @@ def validate(
     claims = [c for c in claims if c["text"] in customer]
     # Validation must not erase the customer's priorities while removing an
     # unsupported promise. Restore only the exact current requirement evidence.
-    requirements = [f for f in by_id.values() if f["kind"] == "requirement"]
+    requirements = [
+        f
+        for f in by_id.values()
+        if f["kind"] == "requirement" and f.get("scope", {}).get("field") in (None, "concern")
+    ]
     if (
         preserve_requirements
         and requirements
@@ -199,6 +296,12 @@ def validate(
         "claims": claims,
         "chips": chips[:3],
         "customer_may_ask": questions,
-        "simplified": bool(violations) or fallback_used,
+        "simplified": fallback_used
+        or len(accepted) < len(sentences)
+        or "lost_requirement" in violations,
         "violations": violations,
+        "validation": {
+            "sentences": len(sentences),
+            "dropped": len(sentences) - len(accepted),
+        },
     }

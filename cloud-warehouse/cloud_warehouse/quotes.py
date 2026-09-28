@@ -25,6 +25,14 @@ Connectors = dict[UUID, Callable[[], AbstractAsyncContextManager[PriceConnector]
 SOURCE_PRICE_BUDGET_SECONDS = 8.0
 
 
+class ChildBed(BaseModel):
+    """One child's bed arrangement; siblings in one party often differ."""
+
+    model_config = ConfigDict(extra="forbid")
+    age: int | None = Field(default=None, ge=0, le=17, strict=True)
+    bed: bool
+
+
 class RoomAllocation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     total: int | None = Field(default=None, ge=0, le=100, strict=True)
@@ -32,7 +40,29 @@ class RoomAllocation(BaseModel):
     twins: int = Field(default=0, ge=0, le=100, strict=True)
     singles: int = Field(default=0, ge=0, le=100, strict=True)
     child_bed: bool | None = None
+    child_beds: list[ChildBed] | None = Field(default=None, max_length=100)
     raw: str = Field(default="", max_length=300)
+
+
+def child_bed_counts(rooms, children: int) -> dict[str, int] | None:
+    """Occupied and unoccupied child counts, or None while any child is unknown."""
+    if not rooms or not children:
+        return None
+
+    def get(obj, key):
+        return obj.get(key) if isinstance(obj, dict) else getattr(obj, key, None)
+
+    beds, uniform = get(rooms, "child_beds"), get(rooms, "child_bed")
+    if beds and len(beds) == children:
+        occupied = sum(1 for b in beds if get(b, "bed"))
+        return {"occupied": occupied, "unoccupied": children - occupied}
+    if uniform is None:
+        return None
+    return (
+        {"occupied": children, "unoccupied": 0}
+        if uniform
+        else {"occupied": 0, "unoccupied": children}
+    )
 
 
 class Party(BaseModel):
@@ -88,11 +118,39 @@ def calculate(schedule: PriceSchedule, party: Party) -> dict:
             if not quantity:
                 continue
             value = getattr(prices, field)
-            if field == "child" and party.rooms and party.rooms.child_bed is not None:
-                bed = schedule.child_bed_prices.get(
-                    "occupied" if party.rooms.child_bed else "unoccupied"
-                )
-                value = getattr(bed, side) if bed else None
+            counts = child_bed_counts(party.rooms, quantity) if field == "child" else None
+            if counts:
+                # Each child is priced by their own bed arrangement.
+                for kind, count in counts.items():
+                    if not count:
+                        continue
+                    bed = schedule.child_bed_prices.get(kind)
+                    amount = getattr(bed, side) if bed else None
+                    label = "儿童占床" if kind == "occupied" else "儿童不占床"
+                    if amount is None:
+                        missing.append(side + ".child." + kind)
+                        lines.append(
+                            {
+                                "code": "child." + kind,
+                                "label": label,
+                                "quantity": count,
+                                "unit_amount": None,
+                                "total": None,
+                            }
+                        )
+                        continue
+                    totals[side] += amount * count
+                    known_counts[side] += 1
+                    lines.append(
+                        {
+                            "code": "child." + kind,
+                            "label": label,
+                            "quantity": count,
+                            "unit_amount": _money(amount),
+                            "total": _money(amount * count),
+                        }
+                    )
+                continue
             if value is None:
                 missing.append(side + "." + field)
                 lines.append(

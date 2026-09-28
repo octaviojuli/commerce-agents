@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { amount, cardStyle, stamp, type Quote } from "@/lib/warehouse";
+import { amount, bedText, cardStyle, stamp, type Quote } from "@/lib/warehouse";
 
 const names: Record<string, string> = {
   adult: "成人",
@@ -97,12 +97,7 @@ export function QuoteCard({
         <p className="text-sm text-(--ink-soft)">
           房型：双人房 {quote.party.rooms.doubles} 间 / 双床房{" "}
           {quote.party.rooms.twins} 间 / 单人房 {quote.party.rooms.singles} 间 ·
-          儿童
-          {quote.party.rooms.child_bed == null
-            ? "占床不适用或待确认"
-            : quote.party.rooms.child_bed
-              ? "占床"
-              : "不占床"}
+          {bedText(quote.party.rooms, "儿童占床不适用或待确认")}
         </p>
       )}
       {stale && (

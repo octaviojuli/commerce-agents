@@ -15,21 +15,39 @@ GEO_FIELDS = {
 }
 
 
-def _field(values, message):
+def _field(values, evidence):
     return {
         "value": list(dict.fromkeys(values)),
         "source": "said",
-        "evidence": message[:120],
+        "evidence": evidence[:120],
         "hint": "",
     }
 
 
-def location_intent(message):
+ROUTE_REFERENCE = re.compile(r"[这那哪]一?[条个款](?:线路|线|团|行程)?|这个团|这团|该线路")
+ASKING = re.compile(r"[？?]|吗|会不会|有没有|能不能|是不是|怎么|多少|几")
+CHANGING = re.compile(r"改成|改去|换成|只去|想去|要去|再加|加上|不去|去掉|也去|还去")
+
+
+def route_question(message):
+    """A question about a shown route names its places; it does not restate the need."""
+    return bool(
+        ROUTE_REFERENCE.search(message) and ASKING.search(message) and not CHANGING.search(message)
+    )
+
+
+def _span(message, clauses):
+    return "，".join(dict.fromkeys(clauses)) or message
+
+
+def location_intent(message, spans=None):
     required, examples, excluded, regions = [], [], [], []
     for clause in re.split(r"[，,；;。！？!?]|但是|不过|但", message):
         example = re.search(r"比如|例如|譬如|举例|像|之类|等(?:国家|地|都|也|均|的|，|$)", clause)
         force = re.search(r"必须|一定|必去|都要|都去|全部|均需", clause)
         for match, kind, key in geo.mentions(clause):
+            if spans is not None:
+                spans.append(clause.strip())
             before, after = clause[: match.start()], clause[match.end() :]
             negative = re.search(r"不去|不要去|排除|不含|不包括|避开", before) or re.match(
                 r"(?:都)?(?:不去|不要去|排除|不包括)", after
@@ -63,8 +81,14 @@ def location_intent(message):
 
 def normalize(fields, message, brief, today: date):
     result = dict(fields)
-    if GEO_FIELDS.intersection(fields):
-        required, examples, excluded, regions = location_intent(message)
+    if GEO_FIELDS.intersection(fields) and route_question(message):
+        # "那条德法瑞意会不会很赶" asks about a route; the destinations stay as saved.
+        for name in GEO_FIELDS:
+            result.pop(name, None)
+    elif GEO_FIELDS.intersection(fields):
+        spans = []
+        required, examples, excluded, regions = location_intent(message, spans)
+        evidence = _span(message, spans)
         if required or examples or excluded or regions:
             # Explicit corrections operate on the durable requirements. A new
             # destination statement replaces them; a negation alone does not.
@@ -88,14 +112,17 @@ def normalize(fields, message, brief, today: date):
                 # Named examples without a region do not manufacture a search
                 # universe; preserve an already established region if available.
                 needed = brief.destinations.value or []
-            result.update(
-                {
-                    "destinations": _field(needed, message),
-                    "destination_regions": _field(regions, message),
-                    "destination_examples": _field(examples, message),
-                    "excluded_destinations": _field(excluded, message),
-                }
-            )
+            for name, values in (
+                ("destinations", needed),
+                ("destination_regions", regions),
+                ("destination_examples", examples),
+                ("excluded_destinations", excluded),
+            ):
+                # An empty category is written only to clear a saved value.
+                if values or getattr(brief, name).value:
+                    result[name] = _field(values, evidence)
+                else:
+                    result.pop(name, None)
     if "window" in result and result["window"].get("value"):
         value = dict(result["window"])
         years = re.findall(r"(?<!\d)(20\d{2})(?:年|[-/])", message)
@@ -142,7 +169,7 @@ def normalize(fields, message, brief, today: date):
                     "start": f"{year}-{month:02d}-01",
                     "end": f"{year}-{month:02d}-{calendar.monthrange(year, month)[1]:02d}",
                 }
-                value["evidence"] = message[:120]
+                value["evidence"] = match[0]
                 if not years:
                     value["hint"] = f"原话只说{month}月，按业务日期推断为{year}年{month}月；待确认"
         result["window"] = value
@@ -157,11 +184,12 @@ def normalize(fields, message, brief, today: date):
                 "evidence": "春节",
                 "hint": "运营表尚未配置这个年份的春节出发窗口，请确认具体日期",
             }
-    if "days" in result and re.search(r"一周|一个星期|1周|1个星期|七天左右|7天左右", message):
+    week = re.search(r"一周|一个星期|1周|1个星期|七天左右|7天左右", message)
+    if "days" in result and week:
         result["days"] = {
             "value": {"min": 6, "max": 8},
             "source": "inferred",
-            "evidence": message[:120],
+            "evidence": week[0],
             "hint": "约一周按 6–8 天匹配，待确认",
         }
     if (

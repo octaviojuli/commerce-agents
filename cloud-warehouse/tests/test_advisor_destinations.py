@@ -48,7 +48,7 @@ def test_explicit_countries_remain_required(message):
         {"destinations": {}}, message, trip_brief.TripBrief(), date(2026, 9, 27)
     )
     assert set(values["destinations"]["value"]) == FOUR
-    assert values["destination_examples"]["value"] == []
+    assert values.get("destination_examples", {}).get("value", []) == []
 
 
 @pytest.mark.parametrize(

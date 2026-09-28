@@ -14,7 +14,7 @@ from . import conversations, travel_requirements
 from .changes import Conflict
 from .integrations import canonical
 from .persistence import Forbidden, transaction
-from .quotes import Party
+from .quotes import ChildBed, Party, child_bed_counts
 
 T = TypeVar("T")
 Count = Annotated[int, Field(ge=0, le=100, strict=True)]
@@ -66,6 +66,7 @@ class Rooms(Model):
     twins: Count = 0
     singles: Count = 0
     child_bed: bool | None = None
+    child_beds: list[ChildBed] | None = Field(default=None, max_length=100)
     raw: str = Field(default="", max_length=300)
 
     @model_validator(mode="after")
@@ -73,6 +74,10 @@ class Rooms(Model):
         known = self.doubles + self.twins + self.singles
         if self.total is not None and known > self.total:
             raise ValueError("已分配房型数不能超过房间总数")
+        if self.child_beds:
+            beds = {b.bed for b in self.child_beds}
+            # A uniform arrangement is also stated as child_bed; a mixed one is not.
+            self.child_bed = beds.pop() if len(beds) == 1 else None
         return self
 
 
@@ -198,7 +203,7 @@ def readiness(brief: TripBrief) -> dict:
         and rooms.total != rooms.doubles + rooms.twins + rooms.singles
     ):
         missing.append("rooms")
-    if children and (not rooms or rooms.child_bed is None):
+    if children and child_bed_counts(rooms, children) is None:
         missing.append("rooms.child_bed")
     if brief.adults.value is not None and children is not None:
         total = brief.adults.value + children + (brief.seniors.value or 0)

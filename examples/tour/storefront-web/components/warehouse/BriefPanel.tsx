@@ -1,7 +1,7 @@
 "use client";
 import { useState, type FormEvent } from "react";
 import { Sheet } from "./mobile";
-import type { BriefEnvelope, BriefField } from "@/lib/warehouse";
+import { bedText, type BriefEnvelope, type BriefField } from "@/lib/warehouse";
 
 export const fieldNames: Record<string, string> = {
   themes: "旅行主题",
@@ -40,11 +40,7 @@ export function fieldText(key: string, value: any): string {
       value.doubles ? `双人房 ${value.doubles} 间` : "",
       value.twins ? `双床房 ${value.twins} 间` : "",
       value.singles ? `单人房 ${value.singles} 间` : "",
-      value.child_bed == null
-        ? "儿童占床未定"
-        : value.child_bed
-          ? "儿童占床"
-          : "儿童不占床",
+      bedText(value, "儿童占床未定"),
     ]
       .filter(Boolean)
       .join(" · ");

@@ -3,6 +3,7 @@
 import re
 import time
 from datetime import datetime
+from decimal import Decimal
 from uuid import NAMESPACE_URL, UUID, uuid5
 from zoneinfo import ZoneInfo
 
@@ -148,6 +149,196 @@ def question(brief):
     )
 
 
+LABELS_ZH = {
+    "destinations": "目的地",
+    "destination_regions": "目的地区域",
+    "destination_examples": "举例目的地",
+    "excluded_destinations": "不去的目的地",
+    "window": "出发时间",
+    "days": "天数",
+    "depart_city": "出发地",
+    "party_total": "总人数",
+    "adults": "成人",
+    "children": "儿童",
+    "seniors": "长者",
+    "child_ages": "儿童年龄",
+    "rooms": "房型",
+    "preferences": "偏好",
+    "budget": "预算",
+    "themes": "主题",
+}
+FIELD_LABELS = {
+    "party": "人数",
+    "child_ages": "儿童年龄",
+    "window": "出发时间",
+    "days": "天数",
+    "depart_city": "出发地",
+    "destinations": "目的地",
+    "budget": "预算",
+    "rooms": "房型与占床",
+    "preferences": "偏好",
+}
+LINE_LABELS = {
+    "adult": "成人",
+    "child": "儿童",
+    "senior": "长者",
+    "child.occupied": "儿童占床",
+    "child.unoccupied": "儿童不占床",
+    "single_room": "单房差",
+}
+CONCERN = re.compile(r"怕|担心|在意|顾虑|别太|不要|不想|希望|最好|讨厌|受不了|晕车|第一次")
+
+
+def _num(value):
+    amount = Decimal(str(value))
+    return str(amount.quantize(Decimal(1))) if amount == amount.to_integral() else str(amount)
+
+
+def _day(value):
+    return f"{value.month}月{value.day}日"
+
+
+def requirement_facts(brief, scope):
+    """The saved requirements as citable facts, and which ones are on file."""
+    facts, known = [], set()
+
+    def add(field, text_value):
+        known.add(field)
+        facts.append(copilot_facts.fact(text_value, "requirement", {**scope, "field": field}))
+
+    adults, children, seniors = brief.adults.value, brief.children.value, brief.seniors.value
+    if adults is not None or brief.party_total.value:
+        parts = []
+        if adults:
+            parts.append(f"{adults}位成人")
+        if children:
+            ages = brief.child_ages.value or []
+            parts.append(
+                f"{children}位儿童" + (f"（{'、'.join(f'{a}岁' for a in ages)}）" if ages else "")
+            )
+        if seniors:
+            parts.append(f"{seniors}位长者")
+        add("party", "、".join(parts) or f"共{brief.party_total.value}人")
+    if brief.child_ages.value and children and len(brief.child_ages.value) == children:
+        known.add("child_ages")
+    if brief.window.value:
+        add("window", f"{_day(brief.window.value.start)}至{_day(brief.window.value.end)}之间出发")
+    if brief.days.value:
+        days = brief.days.value
+        add("days", f"{days.min}天" if days.min == days.max else f"{days.min}至{days.max}天")
+    if brief.depart_city.value:
+        add("depart_city", f"{brief.depart_city.value}出发")
+    places = brief.destinations.value or brief.destination_regions.value
+    if places:
+        add("destinations", "目的地：" + "、".join(places))
+    if brief.budget.value:
+        add("budget", f"预算每人{_num(brief.budget.value.max_per_person)}元以内")
+    rooms = brief.rooms.value
+    if rooms and rooms.doubles + rooms.twins + rooms.singles:
+        kinds = [
+            f"{label}{n}间"
+            for label, n in (
+                ("双人房", rooms.doubles),
+                ("双床房", rooms.twins),
+                ("单人房", rooms.singles),
+            )
+            if n
+        ]
+        beds = (
+            "、".join(
+                f"{b.age}岁{'占床' if b.bed else '不占床'}"
+                for b in rooms.child_beds
+                if b.age is not None
+            )
+            if rooms.child_beds
+            else ""
+        )
+        add("rooms", "、".join(kinds) + (f"；{beds}" if beds else ""))
+    for preference in brief.preferences.value or []:
+        known.add("preferences")
+        facts.append(
+            copilot_facts.fact(
+                "您希望" + preference.label, "requirement", {**scope, "field": "concern"}
+            )
+        )
+    if children:
+        facts.append(
+            copilot_facts.fact("这次有孩子同行", "requirement", {**scope, "field": "concern"})
+        )
+    missing = trip_brief.readiness(brief)["quote"]["missing"]
+    return facts, known, [FIELD_LABELS.get(k.split(".")[0], k) for k in missing]
+
+
+def offer_facts(brief, scope):
+    """The chosen departure and its current customer price; never the settlement side."""
+    facts = []
+    if brief.route_id and brief.route_title:
+        name = copilot_reply.display_name(brief.route_title)
+        date = (brief.quote or {}).get("departure_date") or ""
+        facts.append(
+            copilot_facts.fact(
+                name + (f"，{date}出发" if date else ""), "catalog", {**scope, "field": "route"}
+            )
+        )
+    quote = brief.quote or {}
+    valid = quote.get("quote_valid_until")
+    if (
+        quote.get("complete")
+        and quote.get("market_total")
+        and valid
+        and datetime.fromisoformat(valid) > datetime.now(ZoneInfo("UTC"))
+    ):
+        currency = quote.get("currency", "CNY")
+        currency = "元" if currency == "CNY" else " " + currency
+        facts.append(
+            copilot_facts.fact(
+                f"全家合计{_num(quote['market_total'])}{currency}",
+                "price",
+                {**scope, "quote_id": quote.get("quote_id")},
+            )
+        )
+        for line in quote.get("market_lines", []):
+            label = LINE_LABELS.get(line.get("code"))
+            if label and line.get("unit_amount"):
+                facts.append(
+                    copilot_facts.fact(
+                        f"{label}每位{_num(line['unit_amount'])}{currency}",
+                        "price",
+                        {**scope, "quote_id": quote.get("quote_id")},
+                    )
+                )
+    return facts
+
+
+def grounded_memory(items, message):
+    """Keep concerns in the customer's own words: model items are mapped to a clause."""
+    clauses = [c.strip() for c in re.split(r"[，,。！？!?；;]", message) if len(c.strip()) >= 3]
+    kept = [c for c in clauses if CONCERN.search(c)]
+    for item in items:
+        if item in message:
+            kept.append(item)
+            continue
+        words = copilot_reply.bigrams(item)
+        best = max(clauses, key=lambda c: len(words & copilot_reply.bigrams(c)), default="")
+        if (
+            best
+            and words
+            and len(words & copilot_reply.bigrams(best)) >= 0.5 * len(copilot_reply.bigrams(best))
+        ):
+            kept.append(best)
+    return list(dict.fromkeys(kept))[:3]
+
+
+def salute(text_value, salutation):
+    """Put the saved salutation back; never "您您好"."""
+    name = salutation or ""
+    text_value = re.sub(
+        r"\[客人称呼\]\s*[，,]?\s*(?=您好)", (name + "，") if name else "", text_value
+    )
+    text_value = text_value.replace("[客人称呼]", name or "您")
+    return re.sub(r"您[，,\s]*您好", "您好", text_value)
+
+
 class CopilotAgent:
     def __init__(self, backend, *, client=None):
         self.backend = backend
@@ -210,6 +401,7 @@ class CopilotAgent:
         extraction = await self.models.call("extract", redact(current, meta["names"]))
         decision = None
         degraded = []
+        unread = []
         proposal = None
         if extraction:
             fields = {
@@ -241,7 +433,8 @@ class CopilotAgent:
                 brief = trip_brief.TripBrief.model_validate(proposal["brief"]["body"])
                 version = proposal["brief"]["version"]
                 if proposal.get("rejected"):
-                    degraded.append("部分字段尚未理解，可在需求卡补充；有效字段已保留。")
+                    # One unreadable field is a note for the advisor, not a failed turn.
+                    unread.extend(proposal["rejected"])
                 if proposal["status"] == "pending":
                     yield AgentEvent.ui("copilot_proposal", {**proposal, "brief_version": version})
             except ValueError:
@@ -280,7 +473,7 @@ class CopilotAgent:
         else:
             degraded.append("本轮自动理解暂不可用，已保留原话，可在需求卡补充。")
         if extraction and extraction.rejected_fields:
-            degraded.append("部分字段格式未通过校验，其他有效字段已保留；请在需求卡核对。")
+            unread.extend(extraction.rejected_fields)
         policy = copilot_policy.derive(
             brief,
             visible=visible,
@@ -370,7 +563,18 @@ class CopilotAgent:
             for item in result["items"]:
                 facts.append(
                     copilot_facts.fact(
-                        f"{item['name']}，{item['days_min']}至{item['days_max']}天，客人价待核实",
+                        f"{item['name']}，"
+                        + (
+                            f"{item['days_min']}天"
+                            if item["days_min"] == item["days_max"]
+                            else f"{item['days_min']}至{item['days_max']}天"
+                        )
+                        + f"，{item['count']}条线路在售"
+                        + (
+                            f"，客人价{item['price_range']}"
+                            if item.get("price_range")
+                            else "，价格选团期后核实"
+                        ),
                         "direction",
                         {"direction_id": item["id"]},
                     )
@@ -525,36 +729,22 @@ class CopilotAgent:
             conclusion = "可以登记线下收款、核对旅客材料并安排出发前待办。"
         else:
             conclusion = question(brief) or "可以继续查看行程、比较线路，或在确认后核价。"
-        if extraction:
-            remembered = [x for x in extraction.memory if x and x in message]
-            if remembered:
-                await run_in_threadpool(
-                    copilot_facts.save_output,
-                    self.backend.engine,
-                    self.backend.actor,
-                    identifier,
-                    turn_id,
-                    "memory",
-                    {"text": "；".join(remembered), "source": "said", "source_turn": str(turn_id)},
-                    version,
-                )
+        remembered = grounded_memory(extraction.memory if extraction else [], message)
+        if remembered:
+            await run_in_threadpool(
+                copilot_facts.save_output,
+                self.backend.engine,
+                self.backend.actor,
+                identifier,
+                turn_id,
+                "memory",
+                {"text": "；".join(remembered), "source": "said", "source_turn": str(turn_id)},
+                version,
+            )
         yield AgentEvent(type="progress", data={"message": "正在整理可发给客人的回复…"})
-        for preference in brief.preferences.value or []:
-            facts.append(
-                copilot_facts.fact(
-                    "您希望" + preference.label,
-                    "requirement",
-                    {"deal_id": str(identifier), "version": version},
-                )
-            )
-        if brief.children.value:
-            facts.append(
-                copilot_facts.fact(
-                    "这次有孩子同行",
-                    "requirement",
-                    {"deal_id": str(identifier), "version": version},
-                )
-            )
+        scope = {"deal_id": str(identifier), "version": version}
+        saved_facts, known, still_missing = requirement_facts(brief, scope)
+        facts.extend(saved_facts + offer_facts(brief, scope))
         # Priorities are questions to ask, not questions already asked by the customer.
         next_question = question(brief)
         drafted = await self.models.call(
@@ -581,7 +771,9 @@ class CopilotAgent:
                             )
                         )
                     ][:2],
-                    "memory": memory,
+                    "known_requirements": [f["text"] for f in saved_facts],
+                    "still_missing": still_missing,
+                    "memory": memory + [{"text": x} for x in remembered],
                     "salutation": meta["salutation"],
                     "pending": pending,
                     "degraded": bool(degraded),
@@ -612,8 +804,9 @@ class CopilotAgent:
             metrics=self.models.metrics,
             max_questions=2 if policy["stage"] == "explore" and action == "ask_clarify" else None,
             preserve_requirements=action == "search_routes" and not pending and not degraded,
+            known=known,
         )
-        customer = validated["to_customer"].replace("[客人称呼]", meta["salutation"] or "您")
+        customer = salute(validated["to_customer"], meta["salutation"])
         chosen = validated["claims"]
         if degraded:
             customer = fallback
@@ -659,6 +852,13 @@ class CopilotAgent:
                 "plan",
                 with_version,
                 version,
+            )
+        if unread:
+            fields = list(dict.fromkeys(unread))
+            conclusion += (
+                "（未能记录："
+                + "、".join(LABELS_ZH.get(k, k) for k in fields)
+                + "，请在需求卡核对）"
             )
         payload = {
             **validated,
