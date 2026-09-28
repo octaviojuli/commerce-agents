@@ -6,7 +6,7 @@ WORKDIR /source/examples
 COPY examples ./
 RUN case "$TOUR_WEB_APP" in storefront-web|merchant-web) ;; *) exit 1 ;; esac \
     && npm ci --include=dev \
-    && TOUR_STANDALONE=1 ./node_modules/.bin/next build "tour/$TOUR_WEB_APP" \
+    && TOUR_STANDALONE=1 ./node_modules/.bin/next build "tour/$TOUR_WEB_APP" --webpack \
     && mkdir -p /out \
     && cp -a "tour/$TOUR_WEB_APP/.next/standalone/." /out/ \
     && mkdir -p "/out/tour/$TOUR_WEB_APP/.next" \
