@@ -285,7 +285,7 @@ def overview(engine, owner, deal_id):
 
 def confirm(engine, owner, deal_id, document_id, traveler=None):
     with engine.begin() as conn:
-        row = store.one(conn, owner, db.documents, document_id)
+        row = store.one(conn, owner, db.documents, document_id, deal_id=deal_id)
         if row["deal_id"] != deal_id:
             raise store.NotFound("证件不存在")
         values = {"status": "confirmed"}

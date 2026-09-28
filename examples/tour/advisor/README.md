@@ -23,6 +23,24 @@ departures, offers and quotes.
 5. `grounding.check` keeps a factual clause only when a fact supports it with the same
    numbers, negations, limits and conditions; questions about saved fields are removed.
 
+## What the program guarantees
+
+- A price belongs to one deal, route, offer and departure, the party and rooms it was asked
+  for, and the need's window; `pricing.validity` is the one rule. Choosing another route voids
+  the deal's confirmations and prices; choosing another departure or offer voids its
+  confirmations. A quote is sent or sold on only when it is formal, current, and on a
+  confirmed current sheet.
+- A departure sold as several offers is priced only after the advisor picks one: the price
+  endpoint answers 409 with `offers`.
+- A deal is sold once (a unique ledger row); repeating the same sale returns it. A receipt with
+  an `Idempotency-Key` header is recorded once.
+- A model reading is applied against the need as it is when written; an edit saved meanwhile
+  turns the fill into a change sheet. A plan is written only for the need version it was built
+  from.
+- The warehouse owns the login: a 401 from it ends the local session, and every five minutes
+  the session checks that its organisation still grants the advisor role.
+- The customer's plan page withdraws a price past its validity.
+
 ## Modules
 
 | Module | What it owns |
@@ -48,9 +66,12 @@ departures, offers and quotes.
 cd examples
 ADVISOR_DATABASE_URL=postgresql+psycopg://…/advisor \
 WAREHOUSE_URL=http://127.0.0.1:8010 \
-ADVISOR_MATERIAL_KEY=$(python -c "import base64,os;print(base64.b64encode(os.urandom(32)).decode())") \
+ADVISOR_MATERIAL_KEY=… \
 python -m tour.advisor.serve          # http://127.0.0.1:8006
 ```
+
+`ADVISOR_MATERIAL_KEY` is a base64 32-byte key kept as a deployment secret; document scans are
+sealed with it, so a new key makes earlier scans unreadable.
 
 The model is read from `ADVISOR_MODEL` or `TOUR_MODEL` with the Anthropic client's usual
 variables. `tesseract` on the path enables passport recognition.

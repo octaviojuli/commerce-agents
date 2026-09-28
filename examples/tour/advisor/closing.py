@@ -29,7 +29,7 @@ def adopt(engine, owner, deal_id, proposal_id, fields=None, keep=False):
     """Adopt (or keep the old value of) some or all items of a proposal."""
     with engine.begin() as conn:
         deal = store.deal(conn, owner, deal_id, lock=True)
-        proposal = store.one(conn, owner, db.proposals, proposal_id)
+        proposal = store.one(conn, owner, db.proposals, proposal_id, deal_id=deal_id)
         if proposal["deal_id"] != deal_id:
             raise store.NotFound("变更单不存在")
         items = [dict(i) for i in proposal["items"]]
@@ -170,9 +170,21 @@ def edit_need(engine, owner, deal_id, field, value):
 # ---------------------------------------------------------------- route and dates
 
 
+def void_settled(conn, owner, deal_id, reason):
+    """A new route or departure ends every confirmation and price made for the old one."""
+    for row in store.rows(
+        conn, owner, db.confirmations, deal_id, where=[db.confirmations.c.status != "void"]
+    ):
+        store.change(conn, owner, db.confirmations, row["id"], status="void")
+    for row in store.rows(conn, owner, db.quotes, deal_id, where=[db.quotes.c.status == "active"]):
+        store.change(conn, owner, db.quotes, row["id"], status="void", void_reason=reason)
+
+
 def choose_route(engine, owner, deal_id, product_id, title):
     with engine.begin() as conn:
         deal = store.deal(conn, owner, deal_id, lock=True)
+        if (deal.get("route") or {}).get("product_id") != product_id:
+            void_settled(conn, owner, deal_id, "线路已换，需要重新核价")
         store.update_deal(
             conn,
             owner,
@@ -232,6 +244,17 @@ async def price_departure(engine, owner, wh, deal_id, departure_id, offer_id=Non
     if not offer_id:
         offers = (await wh.offers(departure_id)).get("items", [])
         active = [o for o in offers if o.get("active", True)]
+        if len(active) > 1:
+            raise store.OfferChoice(
+                [
+                    {
+                        "offer_id": o.get("offer_id") or o.get("id"),
+                        "name": o.get("name") or o.get("code") or "套餐",
+                        "text": o.get("service_description") or "",
+                    }
+                    for o in active
+                ]
+            )
         if active:
             offer_id = active[0].get("offer_id") or active[0].get("id")
     snapshot = await pricing.check(wh, need, departure_id, offer_id)
@@ -301,9 +324,35 @@ async def price_hints(wh, snapshot, departure_id):
 
 def choose_departure(engine, owner, deal_id, departure):
     with engine.begin() as conn:
-        store.deal(conn, owner, deal_id, lock=True)
+        deal = store.deal(conn, owner, deal_id, lock=True)
+        old = deal.get("departure") or {}
+        if old and (
+            old.get("departure_id") != departure.get("departure_id")
+            or (old.get("offer_id") or None) != (departure.get("offer_id") or None)
+        ):
+            # Only the confirmations go: a price checked on the new departure may already exist.
+            for row in store.rows(
+                conn, owner, db.confirmations, deal_id, where=[db.confirmations.c.status != "void"]
+            ):
+                store.change(conn, owner, db.confirmations, row["id"], status="void")
         store.update_deal(conn, owner, deal_id, departure=departure, next_step="发确认单")
     return departure
+
+
+def sendable(conn, owner, row, deal, need):
+    """A quote the customer may be sent, or sold on: formal, current, and on a confirmed sheet."""
+    ok, reason = pricing.validity(row, deal, need)
+    if not ok:
+        raise store.Conflict(reason)
+    if row["kind"] != "formal":
+        raise store.Conflict("先从确认单生成正式报价")
+    if row["departure_id"] != (deal.get("departure") or {}).get("departure_id"):
+        raise store.Conflict("团期已换，需要重新出正式报价")
+    sheets = store.rows(
+        conn, owner, db.confirmations, deal["id"], where=[db.confirmations.c.status == "confirmed"]
+    )
+    if not any(confirmation_view(c, deal)["current"] for c in sheets):
+        raise store.Conflict("确认单已失效，客人需要重新确认")
 
 
 # ---------------------------------------------------------------- confirmation
@@ -410,7 +459,7 @@ def confirmation_view(row, deal):
 def record_confirmation(engine, owner, deal_id, confirmation_id, evidence, confirmed=True):
     with engine.begin() as conn:
         deal = store.deal(conn, owner, deal_id, lock=True)
-        row = store.one(conn, owner, db.confirmations, confirmation_id)
+        row = store.one(conn, owner, db.confirmations, confirmation_id, deal_id=deal_id)
         view = confirmation_view(row, deal)
         if not view["current"]:
             raise store.Conflict("需求或团期变了，确认单要重新生成")
@@ -470,7 +519,7 @@ async def formal_quote(engine, owner, wh, deal_id):
 def set_sales_total(engine, owner, deal_id, quote_id, total):
     with engine.begin() as conn:
         deal = store.deal(conn, owner, deal_id)
-        row = store.one(conn, owner, db.quotes, quote_id)
+        row = store.one(conn, owner, db.quotes, quote_id, deal_id=deal_id)
         total = Decimal(str(total))
         if total <= 0:
             raise ValueError("销售价必须大于 0")
@@ -489,7 +538,7 @@ def quote_view(row, deal, need):
         "reason": reason,
         "departure_id": row["departure_id"],
         "date": row["snapshot"].get("departure_date"),
-        "lines": pricing.lines(row["snapshot"]),
+        "lines": pricing.lines(row["snapshot"], sales_total=row["sales_total"]),
         "extras": row["extras"],
         "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
         **summary,
@@ -499,19 +548,14 @@ def quote_view(row, deal, need):
 def send_quote(engine, owner, deal_id, quote_id):
     with engine.begin() as conn:
         deal = store.deal(conn, owner, deal_id)
-        row = store.one(conn, owner, db.quotes, quote_id)
-        ok, reason = pricing.validity(row, deal, Need.model_validate(deal["need"]))
-        if not ok:
-            raise store.Conflict(reason)
-        if row["kind"] != "formal":
-            raise store.Conflict("先从确认单生成正式报价")
-        store.change(conn, owner, db.quotes, quote_id, status="active")
+        row = store.one(conn, owner, db.quotes, quote_id, deal_id=deal_id)
         need = Need.model_validate(deal["need"])
+        sendable(conn, owner, row, deal, need)
         s = pricing.summary(row["snapshot"], need, row["sales_total"])
         total = s["sales_total"] or s["market_total"]
         lines = "；".join(
             f"{line['label']} ¥{line['unit']} × {line['quantity']}"
-            for line in pricing.lines(row["snapshot"])
+            for line in pricing.lines(row["snapshot"], sales_total=row["sales_total"])
             if line["unit"]
         )
         extra = "、".join(e["text"] for e in row["extras"])
@@ -529,8 +573,15 @@ def send_quote(engine, owner, deal_id, quote_id):
 def record_sale(engine, owner, deal_id, quote_id, deposit=None, received_on=None):
     with engine.begin() as conn:
         deal = store.deal(conn, owner, deal_id, lock=True)
-        row = store.one(conn, owner, db.quotes, quote_id)
+        row = store.one(conn, owner, db.quotes, quote_id, deal_id=deal_id)
+        sold = store.rows(conn, owner, db.ledger, deal_id, where=[db.ledger.c.kind == "sale"])
+        if sold:
+            # A retried or repeated click finds the sale it already made.
+            if sold[0]["op_key"] == sale_key(quote_id):
+                return after(engine, owner, deal_id, conn=conn)
+            raise store.Conflict("这单已登记成交；金额变动请走调整")
         need = Need.model_validate(deal["need"])
+        sendable(conn, owner, row, deal, need)
         s = pricing.summary(row["snapshot"], need, row["sales_total"])
         total = Decimal(s["sales_total"] or s["market_total"])
         store.add(
@@ -542,6 +593,7 @@ def record_sale(engine, owner, deal_id, quote_id, deposit=None, received_on=None
             amount=total,
             currency=s["currency"],
             note="线下成交",
+            op_key=sale_key(quote_id),
             occurred_on=received_on or date.today(),
         )
         if s["settlement_total"]:
@@ -612,9 +664,16 @@ def record_sale(engine, owner, deal_id, quote_id, deposit=None, received_on=None
     return after(engine, owner, deal_id)
 
 
-def add_receipt(engine, owner, deal_id, amount, note="收款", received_on=None):
+def sale_key(quote_id):
+    return f"sale:{quote_id}"
+
+
+def add_receipt(engine, owner, deal_id, amount, note="收款", received_on=None, key=None):
+    """One receipt per client key: a retried request returns the ledger as it is."""
     with engine.begin() as conn:
-        store.deal(conn, owner, deal_id)
+        store.deal(conn, owner, deal_id, lock=True)
+        if key and store.rows(conn, owner, db.ledger, deal_id, where=[db.ledger.c.op_key == key]):
+            return after(engine, owner, deal_id, conn=conn)
         store.add(
             conn,
             owner,
@@ -624,15 +683,18 @@ def add_receipt(engine, owner, deal_id, amount, note="收款", received_on=None)
             amount=Decimal(str(amount)),
             note=note,
             occurred_on=received_on or date.today(),
+            op_key=key,
         )
     return after(engine, owner, deal_id)
 
 
-def after(engine, owner, deal_id):
-    with engine.connect() as conn:
-        deal = store.deal(conn, owner, deal_id)
-        entries = store.rows(conn, owner, db.ledger, deal_id, order=db.ledger.c.occurred_on)
-        tasks = store.rows(conn, owner, db.tasks, deal_id, order=db.tasks.c.due_at)
+def after(engine, owner, deal_id, conn=None):
+    if conn is None:
+        with engine.connect() as fresh:
+            return after(engine, owner, deal_id, conn=fresh)
+    deal = store.deal(conn, owner, deal_id)
+    entries = store.rows(conn, owner, db.ledger, deal_id, order=db.ledger.c.occurred_on)
+    tasks = store.rows(conn, owner, db.tasks, deal_id, order=db.tasks.c.due_at)
     total = sum((e["amount"] for e in entries if e["kind"] == "sale"), Decimal(0))
     received = sum((e["amount"] for e in entries if e["kind"] == "receipt"), Decimal(0))
     payable = sum((e["amount"] for e in entries if e["kind"] == "payable"), Decimal(0))

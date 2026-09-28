@@ -113,6 +113,13 @@ class Warehouse:
             org_name=buyer.get("name", ""),
         )
 
+    async def still_advisor(self) -> bool:
+        """Whether this token still reaches this organisation with the advisor role."""
+        orgs = (await self._get("/v1/me/organizations"))["items"]
+        return any(
+            str(o.get("id")) == str(self.org_id) and "advisor" in o.get("roles", []) for o in orgs
+        )
+
     async def products(
         self, query="", *, start: date | None = None, end: date | None = None, limit=50, after=None
     ):

@@ -201,7 +201,7 @@ class Turns:
             result["degraded"] = "本轮没能读懂，原话已保存，可以重试或手动改需求单。"
         tags = self._tags(understanding, text)
         result["tags"] = tags
-        fills, proposals, rejected = read_changes(need, understanding, text, today(), turn=seq)
+        _, _, rejected = read_changes(need, understanding, text, today(), turn=seq)
         if rejected:
             LOG.info(
                 json.dumps(
@@ -225,6 +225,9 @@ class Turns:
         with self.engine.begin() as conn:
             deal = store.deal(conn, owner, deal_id, lock=True)
             need = Need.model_validate(deal["need"])
+            # Decided again on the need as it is now: an edit saved while the model was reading
+            # turns a fill into a proposal instead of being overwritten.
+            fills, proposals, _ = read_changes(need, understanding, text, today(), turn=seq)
             if fills:
                 for field, item in fills.items():
                     need = needs.set_field(
@@ -331,7 +334,11 @@ class Turns:
                         "section": "报价",
                     }
                 )
-                for line in pricing.lines(quote["snapshot"]):
+                adjusted = (
+                    s["sales_total"] != s["market_total"] and quote["sales_total"] is not None
+                )
+                # A changed sales price is quoted as a total; list prices per person would not add up.
+                for line in [] if adjusted else pricing.lines(quote["snapshot"]):
                     if line["unit"]:
                         facts.append(
                             {
@@ -342,7 +349,7 @@ class Turns:
                         )
                 units = {
                     line["label"]: float(line["unit"])
-                    for line in pricing.lines(quote["snapshot"])
+                    for line in ([] if adjusted else pricing.lines(quote["snapshot"]))
                     if line["unit"]
                 }
                 if "儿童占床" in units and "儿童不占床" in units:

@@ -18,6 +18,14 @@ class Conflict(Exception):
     pass
 
 
+class OfferChoice(Conflict):
+    """A departure sold as several offers: the advisor picks one before any price is asked."""
+
+    def __init__(self, offers):
+        super().__init__(f"这个团期有 {len(offers)} 个套餐，先选一个再核价")
+        self.offers = offers
+
+
 @dataclass(frozen=True)
 class Owner:
     org_id: UUID
@@ -178,12 +186,12 @@ def rows(conn, owner: Owner, table, deal_id=None, *, order=None, where=()):
     return [dict(r) for r in conn.execute(query).mappings()]
 
 
-def one(conn, owner: Owner, table, row_id):
-    row = (
-        conn.execute(select(table).where(owner.where(table), table.c.id == row_id))
-        .mappings()
-        .one_or_none()
-    )
+def one(conn, owner: Owner, table, row_id, *, deal_id=None):
+    """One row of this advisor's; with ``deal_id``, only if it belongs to that deal."""
+    where = [owner.where(table), table.c.id == row_id]
+    if deal_id is not None:
+        where.append(table.c.deal_id == deal_id)
+    row = conn.execute(select(table).where(*where)).mappings().one_or_none()
     if not row:
         raise NotFound("记录不存在")
     return dict(row)

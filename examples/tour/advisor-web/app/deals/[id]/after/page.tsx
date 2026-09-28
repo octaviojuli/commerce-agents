@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ErrorBox, Loading, Sheet, Top, Track, WxIcon, useToast } from "@/components/ui";
 import { api, copy, money } from "@/lib/api";
 import type { Deal } from "@/lib/types";
@@ -28,6 +28,7 @@ export default function AfterPage() {
   const [error, setError] = useState("");
   const [pay, setPay] = useState(false);
   const [amount, setAmount] = useState("");
+  const payKey = useRef(crypto.randomUUID());
   const load = () =>
     Promise.all([api.get<Deal>(`/deals/${id}`).then(setDeal), api.get<After>(`/deals/${id}/after`).then(setData)]).catch((e) => setError(e.message));
   useEffect(() => {
@@ -157,7 +158,9 @@ export default function AfterPage() {
           className="b b-br"
           disabled={!amount}
           onClick={async () => {
-            await api.post(`/deals/${id}/receipts`, { amount: Number(amount), note: "收款" });
+            // One key per entry: a retried save finds the receipt it already made.
+            await api.post(`/deals/${id}/receipts`, { amount: Number(amount), note: "收款" }, { "Idempotency-Key": payKey.current });
+            payKey.current = crypto.randomUUID();
             setPay(false);
             setAmount("");
             load();

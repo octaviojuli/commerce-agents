@@ -24,7 +24,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 metadata = MetaData(schema="advisor")
 J = JSON().with_variant(JSONB(), "postgresql")
 
@@ -64,6 +64,8 @@ sessions = Table(
     Column("org_name", String(200), nullable=False, server_default=""),
     Column("warehouse_token", Text, nullable=False),
     Column("expires_at", DateTime(timezone=True), nullable=False),
+    # When the warehouse last confirmed this login and its advisor role.
+    Column("checked_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
     Column("created_at", DateTime(timezone=True), server_default=func.now(), nullable=False),
 )
 
@@ -264,6 +266,8 @@ ledger = Table(
     Column("currency", String(3), nullable=False, server_default="CNY"),
     Column("note", String(300), nullable=False, server_default=""),
     Column("occurred_on", Date, nullable=False),
+    # The client's key for one money entry: a retried request finds the entry it already made.
+    Column("op_key", String(80)),
     *_stamps(),
 )
 
@@ -318,3 +322,27 @@ def migrate(engine):
         current = conn.execute(text("SELECT max(version) FROM advisor.schema_version")).scalar()
         if current is None:
             conn.execute(versions.insert().values(version=SCHEMA_VERSION))
+            current = SCHEMA_VERSION
+        for version, steps in STEPS.items():
+            if current < version:
+                for step in steps:
+                    conn.execute(text(step))
+                conn.execute(versions.insert().values(version=version))
+        for statement in INDEXES:
+            conn.execute(text(statement))
+
+
+STEPS = {
+    2: [
+        "ALTER TABLE advisor.session ADD COLUMN IF NOT EXISTS checked_at timestamptz"
+        " NOT NULL DEFAULT now()",
+        "ALTER TABLE advisor.ledger ADD COLUMN IF NOT EXISTS op_key varchar(80)",
+    ],
+}
+INDEXES = [
+    # A deal is sold once; later changes are adjustments, not a second sale.
+    "CREATE UNIQUE INDEX IF NOT EXISTS ledger_one_sale ON advisor.ledger (deal_id)"
+    " WHERE kind = 'sale'",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ledger_op_key ON advisor.ledger (org_id, user_id, op_key)"
+    " WHERE op_key IS NOT NULL",
+]

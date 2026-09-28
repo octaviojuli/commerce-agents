@@ -2,8 +2,8 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Draft, ErrorBox, Loading, Top, Track, useToast } from "@/components/ui";
-import { api, money } from "@/lib/api";
+import { Draft, ErrorBox, Loading, Sheet, Top, Track, useToast } from "@/components/ui";
+import { ApiError, api, money } from "@/lib/api";
 import type { QuoteView } from "@/lib/types";
 
 type Dep = {
@@ -29,6 +29,10 @@ export default function DatesPage() {
   const [chosen, setChosen] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [pricing, setPricing] = useState("");
+  // A departure sold as several offers: the advisor picks one, and that pick goes with it.
+  const [offers, setOffers] = useState<{ dep: Dep; items: { offer_id: string; name: string; text: string }[] } | null>(null);
+  const [picked, setPicked] = useState<Record<string, string>>({});
+  const offerOf = (d: Dep) => picked[d.departure_id] ?? d.offer_id;
   const load = async (ids: string[] = chosen) => {
     try {
       const d = await api.get<Dates>(`/deals/${id}/dates${ids.length ? "?compare=" + ids.join(",") : ""}`);
@@ -44,13 +48,14 @@ export default function DatesPage() {
   }, [id]);
   const compare = (data?.items ?? []).filter((d) => chosen.includes(d.departure_id)).slice(0, 2);
   const pick = compare[compare.length - 1];
-  async function price(d: Dep) {
+  async function price(d: Dep, offer: string | null = offerOf(d)) {
     setPricing(d.departure_id);
     try {
-      await api.post(`/deals/${id}/dates/${d.departure_id}/price${d.offer_id ? `?offer_id=${d.offer_id}` : ""}`);
+      await api.post(`/deals/${id}/dates/${d.departure_id}/price${offer ? `?offer_id=${encodeURIComponent(offer)}` : ""}`);
       await load(chosen);
     } catch (e) {
-      toast((e as Error).message);
+      if (e instanceof ApiError && e.data?.offers) setOffers({ dep: d, items: e.data.offers });
+      else toast((e as Error).message);
     } finally {
       setPricing("");
     }
@@ -163,7 +168,7 @@ export default function DatesPage() {
             <button
               className="b b-br"
               onClick={async () => {
-                await api.post(`/deals/${id}/departure`, { departure_id: pick.departure_id, offer_id: pick.offer_id, date: pick.date, return_date: pick.return_date });
+                await api.post(`/deals/${id}/departure`, { departure_id: pick.departure_id, offer_id: offerOf(pick), date: pick.date, return_date: pick.return_date });
                 router.push(`/deals/${id}/confirm`);
               }}
             >
@@ -172,6 +177,25 @@ export default function DatesPage() {
           </div>
         </div>
       )}
+      <Sheet open={!!offers} onClose={() => setOffers(null)} title="这个团期有几个套餐">
+        {offers?.items.map((o) => (
+          <button
+            key={o.offer_id}
+            className="b b-soft"
+            style={{ display: "block", width: "100%", textAlign: "left", marginBottom: 8 }}
+            onClick={() => {
+              const dep = offers.dep;
+              setPicked((p) => ({ ...p, [dep.departure_id]: o.offer_id }));
+              setOffers(null);
+              price(dep, o.offer_id);
+            }}
+          >
+            <b>{o.name}</b>
+            {o.text && <small style={{ display: "block" }}>{o.text}</small>}
+          </button>
+        ))}
+        <span className="lbl">按客人要的套餐核价；换套餐要重新核价。</span>
+      </Sheet>
     </div>
   );
 }

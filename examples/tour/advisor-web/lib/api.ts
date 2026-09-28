@@ -4,14 +4,16 @@
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  data: any;
+  constructor(status: number, message: string, data: any = null) {
     super(message);
     this.status = status;
+    this.data = data;
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const init: RequestInit = { method, credentials: "same-origin", headers: {} };
+async function request<T>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
+  const init: RequestInit = { method, credentials: "same-origin", headers: { ...headers } };
   if (body instanceof FormData) init.body = body;
   else if (body !== undefined) {
     init.body = JSON.stringify(body);
@@ -29,13 +31,13 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   } catch {
     data = { message: response.ok ? "返回格式不对" : "服务暂时出错，请稍后重试" };
   }
-  if (!response.ok) throw new ApiError(response.status, data?.message ?? data?.detail ?? "请求没有完成");
+  if (!response.ok) throw new ApiError(response.status, data?.message ?? data?.detail ?? "请求没有完成", data);
   return data as T;
 }
 
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
-  post: <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {}),
+  post: <T>(path: string, body?: unknown, headers?: Record<string, string>) => request<T>("POST", path, body ?? {}, headers),
   put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body ?? {}),
   patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body ?? {}),
   del: <T>(path: string) => request<T>("DELETE", path),

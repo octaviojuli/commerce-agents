@@ -5,7 +5,7 @@ composing the child lines, so the rule holds on any warehouse version. A price i
 for the party, rooms and departure it was asked for, and only until the warehouse says.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from uuid import uuid4
 
@@ -183,15 +183,33 @@ def compose(occupied, unoccupied, party):
     return out
 
 
+# Departures this many days either side of the window still fit it, as the date list shows them.
+WINDOW_SLACK = 7
+
+
 def validity(row, deal, need) -> tuple[bool, str]:
     """The single rule every screen and every draft uses for a stored price."""
     if row is None:
         return False, "还没有核价"
     if row["status"] != "active":
         return False, row.get("void_reason") or "报价已作废"
-    departure = (deal.get("departure") or {}).get("departure_id")
-    if departure and row["departure_id"] != departure:
+    route = (deal.get("route") or {}).get("product_id")
+    if not route or row["snapshot"].get("product_id") != route:
+        return False, "线路已换，需要重新核价"
+    chosen = deal.get("departure") or {}
+    if chosen.get("departure_id") and row["departure_id"] != chosen["departure_id"]:
         return False, "团期已换，需要重新核价"
+    if chosen.get("offer_id") and row.get("offer_id") and row["offer_id"] != chosen["offer_id"]:
+        return False, "套餐已换，需要重新核价"
+    window, day = need.get("window"), row["snapshot"].get("departure_date")
+    if window and day:
+        start = date.fromisoformat(str(day)[:10])
+        if (
+            not window.start - timedelta(days=WINDOW_SLACK)
+            <= start
+            <= window.end + timedelta(days=WINDOW_SLACK)
+        ):
+            return False, "团期不在当前出行时间内，需要重新核价"
     if row["snapshot"].get("terms") != terms(need):
         return False, "人数或房间已变，需要重新核价"
     until = row.get("valid_until")
@@ -213,7 +231,8 @@ def missing(snapshot) -> list[str]:
     return list(dict.fromkeys(missing_text(c) for c in codes))
 
 
-def lines(snapshot, side="market"):
+def lines(snapshot, side="market", sales_total=None):
+    """The breakdown the customer sees; a sales price unlike the list price adds one adjustment."""
     out = []
     for line in snapshot.get(side + "_lines", []):
         if line.get("total") in (None, "0.00", "0") and str(line.get("code", "")).startswith(
@@ -229,11 +248,23 @@ def lines(snapshot, side="market"):
                 "total": None if blank else line.get("total"),
             }
         )
+    market = snapshot.get("market_total")
+    if side == "market" and sales_total is not None and market:
+        diff = money(sales_total) - money(market)
+        if diff:
+            out.append(
+                {
+                    "label": "价格调整" if diff > 0 else "优惠",
+                    "quantity": 1,
+                    "unit": str(diff),
+                    "total": str(diff),
+                }
+            )
     return out
 
 
-def per_person(snapshot, need) -> float | None:
-    total = snapshot.get("market_total")
+def per_person(snapshot, need, sales_total=None) -> float | None:
+    total = sales_total if sales_total is not None else snapshot.get("market_total")
     party = need.get("party")
     if not total or not party or not party.total:
         return None
@@ -259,7 +290,7 @@ def summary(snapshot, need, sales_total=None):
         "sales_total": str(money(sales)) if sales is not None else None,
         "profit": str(profit) if profit is not None else None,
         "margin": margin,
-        "per_person": per_person(snapshot, need),
+        "per_person": per_person(snapshot, need, sales),
         "currency": snapshot.get("currency", "CNY"),
         "complete": bool(snapshot.get("complete")) and not missing(snapshot),
         "missing": missing(snapshot),

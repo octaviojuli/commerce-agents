@@ -50,18 +50,31 @@ def test_each_child_is_priced_by_their_own_bed_on_any_warehouse():
     assert out["market_total"] == "69000.00" and out["complete"]
 
 
-def test_a_price_holds_only_for_its_party_rooms_departure_and_time():
-    n = need()
+def test_a_price_holds_only_for_its_route_offer_party_rooms_departure_window_and_time():
+    n = needs.set_field(need(), "window", {"start": "2026-12-01", "end": "2026-12-31"}, "said")
     row = {
         "status": "active",
         "departure_id": "WD-1",
-        "snapshot": {"terms": pricing.terms(n), "complete": True},
+        "offer_id": "o1",
+        "snapshot": {
+            "terms": pricing.terms(n),
+            "complete": True,
+            "product_id": "P-1",
+            "departure_date": "2026-12-28",
+        },
         "valid_until": datetime.now(UTC) + timedelta(hours=1),
     }
-    deal = {"departure": {"departure_id": "WD-1"}}
+    deal = {"route": {"product_id": "P-1"}, "departure": {"departure_id": "WD-1", "offer_id": "o1"}}
     assert pricing.validity(row, deal, n) == (True, "")
-    assert not pricing.validity(row, {"departure": {"departure_id": "WD-2"}}, n)[0]
-    assert not pricing.validity(row, deal, need(beds=(True, True)))[0]
+    assert not pricing.validity(row, {**deal, "route": {"product_id": "P-2"}}, n)[0]
+    assert not pricing.validity(row, {**deal, "route": None}, n)[0]
+    assert not pricing.validity(row, {**deal, "departure": {"departure_id": "WD-2"}}, n)[0]
+    assert not pricing.validity(
+        row, {**deal, "departure": {"departure_id": "WD-1", "offer_id": "o2"}}, n
+    )[0]
+    april = needs.set_field(n, "window", {"start": "2027-04-01", "end": "2027-04-30"}, "said")
+    assert not pricing.validity(row, deal, april)[0]
+    assert not pricing.validity(row, deal, needs.set_field(n, "party", {"adults": 3}, "said"))[0]
     assert not pricing.validity(
         {**row, "valid_until": datetime.now(UTC) - timedelta(minutes=1)}, deal, n
     )[0]

@@ -12,12 +12,14 @@ from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
 
+import httpx
 from fastapi import (
     Cookie,
     Depends,
     FastAPI,
     File,
     Form,
+    Header,
     HTTPException,
     Request,
     Response,
@@ -36,6 +38,7 @@ from .turns import Turns, chips, requirement_facts, stage
 from .warehouse import Warehouse, WarehouseError
 
 COOKIE = "advisor_session"
+CHECK_EVERY = timedelta(minutes=5)
 
 
 class Settings(BaseModel):
@@ -160,7 +163,11 @@ def create_app(settings: Settings, *, model=None, transport=None):
             verify=settings.warehouse_verify,
         )
 
-    def current(advisor_session: Annotated[str | None, Cookie()] = None):
+    def revoke(session_id):
+        with engine.begin() as conn:
+            conn.execute(db.sessions.delete().where(db.sessions.c.id == session_id))
+
+    async def current(advisor_session: Annotated[str | None, Cookie()] = None):
         if not advisor_session:
             raise HTTPException(401, "请先登录")
         with engine.connect() as conn:
@@ -171,6 +178,26 @@ def create_app(settings: Settings, *, model=None, transport=None):
             )
         if not row or row["expires_at"] <= datetime.now(UTC):
             raise HTTPException(401, "登录已过期，请重新登录")
+        if row["checked_at"] <= datetime.now(UTC) - CHECK_EVERY:
+            # The warehouse owns the login: a revoked token or a lost advisor role ends this one.
+            wh = warehouse(row)
+            try:
+                alive = await wh.still_advisor()
+            except WarehouseError as error:
+                alive = error.status not in (401, 403)
+            except httpx.HTTPError:
+                alive = True  # a network failure is not a revocation
+            finally:
+                await wh.aclose()
+            if not alive:
+                revoke(advisor_session)
+                raise HTTPException(401, "登录已失效，请重新登录")
+            with engine.begin() as conn:
+                conn.execute(
+                    db.sessions.update()
+                    .where(db.sessions.c.id == advisor_session)
+                    .values(checked_at=datetime.now(UTC))
+                )
         return dict(row)
 
     Session = Annotated[dict, Depends(current)]
@@ -184,6 +211,10 @@ def create_app(settings: Settings, *, model=None, transport=None):
     async def not_found(request: Request, error: store.NotFound):
         return JSONResponse({"message": str(error)}, status_code=404)
 
+    @app.exception_handler(store.OfferChoice)
+    async def offer_choice(request: Request, error: store.OfferChoice):
+        return JSONResponse({"message": str(error), "offers": error.offers}, status_code=409)
+
     @app.exception_handler(store.Conflict)
     async def conflict(request: Request, error: store.Conflict):
         return JSONResponse({"message": str(error)}, status_code=409)
@@ -194,6 +225,9 @@ def create_app(settings: Settings, *, model=None, transport=None):
 
     @app.exception_handler(WarehouseError)
     async def upstream(request: Request, error: WarehouseError):
+        if error.status == 401 and request.cookies.get(COOKIE):
+            # The warehouse refused this login outright: nothing local stays readable with it.
+            revoke(request.cookies[COOKIE])
         status = 401 if error.status == 401 else 502 if error.status >= 500 else 409
         return JSONResponse({"message": "云仓：" + error.message}, status_code=status)
 
@@ -626,8 +660,15 @@ def create_app(settings: Settings, *, model=None, transport=None):
         return closing.record_sale(engine, owner_of(session), deal_id, body.quote_id, body.deposit)
 
     @app.post("/api/deals/{deal_id}/receipts")
-    def receipt(deal_id: UUID, body: Receipt, session: Session):
-        return closing.add_receipt(engine, owner_of(session), deal_id, body.amount, body.note)
+    def receipt(
+        deal_id: UUID,
+        body: Receipt,
+        session: Session,
+        idempotency_key: Annotated[str | None, Header(max_length=80)] = None,
+    ):
+        return closing.add_receipt(
+            engine, owner_of(session), deal_id, body.amount, body.note, key=idempotency_key
+        )
 
     @app.get("/api/deals/{deal_id}/after")
     def after(deal_id: UUID, session: Session):

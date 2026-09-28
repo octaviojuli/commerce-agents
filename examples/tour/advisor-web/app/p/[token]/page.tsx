@@ -11,7 +11,7 @@ type Public = {
   org: string;
   version: number;
   hello: string;
-  routes: { title: string; days: string | null; why: string; tell: string; dates: string[]; per_person: number | null; total: string | null; valid_until: string | null; includes: string }[];
+  routes: { title: string; days: string | null; why: string; tell: string; dates: string[]; per_person: number | null; total: string | null; valid_until: string | null; price_note?: string; includes: string }[];
   notice: string;
 };
 
@@ -91,10 +91,13 @@ export default function CustomerPlan() {
                         <b>{money(r.per_person)}</b>
                         <small> /人起</small>
                       </span>
-                      <small>全家约 {money(r.total)}</small>
+                      <small>
+                        全家约 {money(r.total)}
+                        {r.valid_until && ` · ${new Date(r.valid_until).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })} 前有效`}
+                      </small>
                     </div>
                   ) : (
-                    <span className="lbl">价格由顾问确认后告诉您</span>
+                    <span className="lbl">{r.price_note || "价格由顾问确认后告诉您"}</span>
                   )}
                   {r.includes && <span className="lbl">{r.includes}</span>}
                   {r.tell && <span className="lbl">要提前知道：{r.tell}</span>}

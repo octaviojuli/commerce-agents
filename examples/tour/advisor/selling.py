@@ -204,13 +204,30 @@ async def compare(engine, owner, wh, deal_id, product_ids):
     }
 
 
+class _Rebuild(Exception):
+    pass
+
+
 async def build_plan(engine, owner, wh, deal_id, product_ids):
+    """A plan is written only for the need it was built from; a change meanwhile rebuilds it once."""
+    for _ in range(2):
+        try:
+            return await _build(engine, owner, wh, deal_id, product_ids)
+        except _Rebuild:
+            continue
+    raise store.Conflict("需求一直在改，方案没有生成；请稍后再做方案")
+
+
+async def _build(engine, owner, wh, deal_id, product_ids):
+    with engine.connect() as conn:
+        basis = store.deal(conn, owner, deal_id)["need_version"]
     comparison = (
         await compare(engine, owner, wh, deal_id, product_ids) if len(product_ids) > 1 else None
     )
     with engine.connect() as conn:
         deal = store.deal(conn, owner, deal_id)
         need = Need.model_validate(deal["need"])
+        need_version_read = deal["need_version"]
         quotes = store.rows(conn, owner, db.quotes, deal_id, where=[db.quotes.c.status == "active"])
     plan_routes = []
     for index, pid in enumerate(product_ids):
@@ -254,7 +271,10 @@ async def build_plan(engine, owner, wh, deal_id, product_ids):
                 q
                 for q in quotes
                 if q["snapshot"].get("product_id") == pid
-                and pricing.validity(q, {**deal, "departure": None}, need)[0]
+                # Each plan route is priced on its own route, whichever the deal has chosen.
+                and pricing.validity(
+                    q, {**deal, "route": {"product_id": pid}, "departure": None}, need
+                )[0]
             ),
             None,
         )
@@ -288,6 +308,8 @@ async def build_plan(engine, owner, wh, deal_id, product_ids):
     with engine.begin() as conn:
         # The version is decided under the deal lock, so two requests never share one.
         deal = store.deal(conn, owner, deal_id, lock=True)
+        if deal["need_version"] != basis or need_version_read != basis:
+            raise _Rebuild
         existing = store.rows(conn, owner, db.plans, deal_id, order=db.plans.c.version.desc())
         for old in existing:
             if old["status"] in ("draft", "sent"):
@@ -350,7 +372,7 @@ def plans(conn, owner, deal_id):
 def share(engine, owner, deal_id, plan_id):
     token = secrets.token_urlsafe(24)
     with engine.begin() as conn:
-        plan = store.one(conn, owner, db.plans, plan_id)
+        plan = store.one(conn, owner, db.plans, plan_id, deal_id=deal_id)
         if plan["deal_id"] != deal_id or plan["status"] == "void":
             raise store.Conflict("这版方案已作废，请按当前需求重新做方案")
         store.change(
@@ -433,23 +455,32 @@ def public(engine, token, signal=None, route=0):
         "org": (session or {}).get("org_name") or "",
         "version": plan["version"],
         "hello": f"{hello_name + '，' if hello_name else ''}按您说的{body['need']}，我挑了这 {len(body['routes'])} 条：",
-        "routes": [
-            {
-                "title": r["title"],
-                "days": r["days"],
-                "why": "；".join(x["text"] for x in r["reasons"]) or "",
-                "tell": r["tell"][0]["text"] if r["tell"] else "",
-                "dates": r["dates"],
-                "per_person": r["price"]["per_person"] if r.get("price") else None,
-                "total": r["price"]["sales_total"] or r["price"]["market_total"]
-                if r.get("price")
-                else None,
-                "valid_until": r["price"]["valid_until"] if r.get("price") else None,
-                "includes": r["includes"],
-            }
-            for r in body["routes"]
-        ],
+        "routes": [public_route(r) for r in body["routes"]],
         "notice": "价格以顾问最终确认为准；选择方案只通知顾问，不构成预订",
+    }
+
+
+def public_route(r):
+    """One route as the customer sees it; a price past its validity is withdrawn, not shown."""
+    price = r.get("price")
+    until = price and price.get("valid_until")
+    expired = bool(until) and datetime.fromisoformat(until) <= datetime.now(UTC)
+    shown = price if price and not expired else None
+    return {
+        "title": r["title"],
+        "days": r["days"],
+        "why": "；".join(x["text"] for x in r["reasons"]) or "",
+        "tell": r["tell"][0]["text"] if r["tell"] else "",
+        "dates": r["dates"],
+        "per_person": shown["per_person"] if shown else None,
+        "total": (shown["sales_total"] or shown["market_total"]) if shown else None,
+        "valid_until": until if shown else None,
+        "price_note": "价格已过期，顾问会重新核价"
+        if expired
+        else ""
+        if shown
+        else "价格待顾问核价",
+        "includes": r["includes"],
     }
 
 
