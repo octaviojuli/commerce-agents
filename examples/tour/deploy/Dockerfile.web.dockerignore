@@ -1,6 +1,12 @@
 **/node_modules
 **/.next
+**/.next-warehouse
 **/__pycache__
 **/.venv
 **/data/.state
+**/.env
+**/.env.*
+!**/.env.example
 .git
+.warehouse
+**/.warehouse

@@ -1,0 +1,56 @@
+{
+  "environment": "local PostgreSQL / actual authorized B2B API; not ECS",
+  "started_at": "2026-09-23 16:27:53.593852+00:00",
+  "finished_at": "2026-09-23 16:33:39.501348+00:00",
+  "samples": 70,
+  "interval_seconds": 180,
+  "configuration_version": 2,
+  "inventory_freshness_seconds": 300,
+  "successful_observed_runs": [
+    {
+      "started_at": "2026-09-23 09:29:31.264024-07:00",
+      "completed_at": "2026-09-23 09:29:59.568914-07:00",
+      "product_count": 287,
+      "departure_count": 635,
+      "source_departure_count": 677,
+      "quarantined_count": 42,
+      "current_future": 595,
+      "current_expired": 0
+    },
+    {
+      "started_at": "2026-09-23 09:33:05.086363-07:00",
+      "completed_at": "2026-09-23 09:33:33.748458-07:00",
+      "product_count": 287,
+      "departure_count": 635,
+      "source_departure_count": 677,
+      "quarantined_count": 42,
+      "current_future": 595,
+      "current_expired": 0
+    }
+  ],
+  "one_observed_transition_overlap_seconds": 61.287,
+  "max_current_expired_after_first_new_run": 0,
+  "estimated_refresh_headroom_seconds": 57.68,
+  "current_catalog_verification": {
+    "verified": true,
+    "products": 287,
+    "published_departures": 635,
+    "quarantined_departures": 42,
+    "all_source_departures": 677,
+    "stable_source_id_sets": true,
+    "changed_source_records": 2
+  },
+  "remaining_issues": [
+    "SOURCE_QUARANTINED",
+    "INVENTORY_SNAPSHOTS_EXPIRED",
+    "DOCUMENT_PROCESSING_FAILED"
+  ],
+  "historical_expired_future_departures": 15,
+  "historical_expired_absent_from_current_source": 15,
+  "limits": [
+    "Two completed scans and one intervening refresh only; not long-term availability proof.",
+    "No upstream snapshot token; page consistency checks cannot prove one upstream point in time.",
+    "Historical missing departures remain expired; quarantined source records are not published.",
+    "Local commissioning configuration changed explicitly with a private maintenance journal; other persisted schedules remain unchanged."
+  ]
+}

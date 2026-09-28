@@ -23,7 +23,7 @@ import {
   display,
 } from "./shared";
 
-const RECOMMENDED_LABEL = "Recommended";
+const RECOMMENDED_LABEL = "推荐";
 
 function TermRow({ kind, text }: { kind: "pro" | "con"; text?: string }) {
   if (!text) return <div aria-hidden />;
@@ -58,18 +58,18 @@ const MATRIX_HIDDEN = new Set([
 ]);
 
 const MATRIX_LABELS: Record<string, string> = {
-  refundable: "Refundable",
-  room_type: "Room",
-  breakfast_included: "Breakfast",
-  neighborhood: "Neighborhood",
-  city: "City",
-  origin_city: "From",
-  destination_city: "To",
-  cabin: "Cabin",
-  departure_time_local: "Departure",
-  duration: "Duration",
-  duration_hours: "Duration",
-  group_size_max: "Group size",
+  refundable: "可退款",
+  room_type: "房型",
+  breakfast_included: "早餐",
+  neighborhood: "街区",
+  city: "城市",
+  origin_city: "出发地",
+  destination_city: "目的地",
+  cabin: "舱位",
+  departure_time_local: "出发时间",
+  duration: "时长",
+  duration_hours: "时长",
+  group_size_max: "团体人数",
 };
 
 // Refundability leads (it's the travel decision), places close.
@@ -106,11 +106,11 @@ function matrixCell(product: Product, key: string): MatrixCell {
   if (key === "refundable") {
     if (!/^(yes|true)$/i.test(raw)) return { kind: "no" };
     const until = shortDate(product.attributes?.free_cancellation_until);
-    return { kind: "yes", detail: until ? `until ${until}` : undefined };
+    return { kind: "yes", detail: until ? `至 ${until}` : undefined };
   }
   if (/^(yes|true)$/i.test(raw)) return { kind: "yes" };
   if (/^(no|false|none)$/i.test(raw)) return { kind: "no" };
-  if (key === "duration_hours") return { kind: "value", text: `${raw} hrs` };
+  if (key === "duration_hours") return { kind: "value", text: `${raw} 小时` };
   return { kind: "value", text: raw };
 }
 
@@ -164,7 +164,7 @@ function deltaBuys(high: Product, low: Product, keys: string[]): string[] {
     const highCell = matrixCell(high, key);
     const lowCell = matrixCell(low, key);
     if (highCell.kind === "yes" && lowCell.kind === "no") {
-      buys.push(key === "refundable" ? "full refundability" : matrixLabel(key).toLowerCase());
+      buys.push(key === "refundable" ? "全额可退" : matrixLabel(key));
     } else if (
       highCell.kind === "value" &&
       (lowCell.kind !== "value" || lowCell.text !== highCell.text)
@@ -293,8 +293,7 @@ export default function ComparisonSpread({
                 <p
                   style={{
                     fontFamily: DISPLAY,
-                    fontStyle: "italic",
-                    fontWeight: 300,
+                    fontWeight: 400,
                     fontSize: 14.5,
                     lineHeight: 1.45,
                     color: "var(--ink)",
@@ -341,7 +340,7 @@ export default function ComparisonSpread({
         >
           <span style={{ fontWeight: 700, color: "var(--accent)" }}>
             +{formatPrice(delta.amount)}
-            {deltaUnit ? ` ${deltaUnit}` : ""} buys:
+            {deltaUnit ? ` ${deltaUnit}` : ""} 换来：
           </span>{" "}
           {buys.join(" · ")}
         </p>
@@ -349,7 +348,7 @@ export default function ComparisonSpread({
 
       {payload.dimensions?.length ? (
         <p className="mt-4" style={{ ...META, fontSize: 12 }}>
-          Compared on: {payload.dimensions.join(" · ")}
+          比较维度：{payload.dimensions.join(" · ")}
         </p>
       ) : null}
     </section>

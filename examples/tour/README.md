@@ -1,5 +1,19 @@
 # ACME 旅行社 (tour)
 
+`api/warehouse_legacy.py` exports an explicitly mapped historical advisor case from a
+read-only SQLite snapshot. It preserves text and plan versions without exporting
+executable agent state or cleartext share tokens. The cloud warehouse's offline import
+and ownership checks are described in the [migration runbook](../../docs/cloud-warehouse/legacy-case-migration.md).
+
+The separate [cloud warehouse backend](../../cloud-warehouse/README.md) uses
+`api/warehouse_connector.py` to compose this example's authenticated B2B transport
+with complete catalog synchronization. The advisor application below has not yet
+been switched in production. Its [cloud mode](storefront-web/README.md), selected by
+`TOUR_BACKEND_MODE=warehouse`, uses platform login, buyer-scoped catalog and quotes,
+with transactions disabled. The [warehouse business portal](merchant-web/README.md)
+serves suppliers and buyer administrators. The description below covers legacy ERP
+mode; its transaction behavior remains separate.
+
 The tour example runs the shopping agent for a travel agency's store advisor (顾问), who
 sells 散拼团 to the customer sitting in front of them: the advisor states the need in
 Chinese, the agent searches 线路 (routes), opens a 线路's dated 团期 (departures) priced for
@@ -760,3 +774,9 @@ belongs behind the company's own network.
 architecture, the two-layer route-then-departure sequence, the order / 候补 / share-back
 sequence, the ERP-record to `Product` mapping, the order state machine, and the
 `ErpClient`-to-HTTP contract table. Open it in a browser; it has no build step.
+
+云仓文档复用原线路规则解析器，`api/warehouse_documents.py` 提供独立进程桥接；结构化模型移至 `cloud_warehouse.route_doc`，原导入路径保持兼容。配置和版本发布接口见 [云仓文档说明](../../cloud-warehouse/README.md#线路文档)。
+
+`api/warehouse_documents.py` 复用原生 DOCX 与 Poppler 解析；`api/route_fields.py` 保存带原文依据的 RouteDoc 3.0 字段。`api/route_document_workflow.py` 与 [线路清洗 Skill](skills/route-document-cleaning/SKILL.md) 共用同一能力。图片页明确待人工核对；可选模型抽取逐字段验证源行，规则值优先，机器结果不自动发布。详见 [解析流程](../../docs/cloud-warehouse/mineru-skill.md)。
+
+逐日内容模型整理使用 `api/route_editor_model.py`；Skill 与云仓后台复用同一套事实约束和输出字段，见[内容整理说明](../../docs/cloud-warehouse/daily-content-editing.md)。

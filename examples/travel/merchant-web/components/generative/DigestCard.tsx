@@ -1,7 +1,9 @@
 // Copyright 2026 Anthropic PBC
 // SPDX-License-Identifier: Apache-2.0
 
-import { CHANGE_STATUS, DigestList, DigestRow, formatMoney, formatNumber, GenCard, GenCardHeader, type IconName, plural, type Tone } from "web-shared";
+"use client";
+
+import { DigestList, DigestRow, formatMoney, formatNumber, GenCard, GenCardHeader, type IconName, type Tone, useCopy } from "web-shared";
 import { INVENTORY_KINDS, inventoryPrompt } from "@/lib/kinds";
 import type { DigestEntry, DigestPayload } from "@/lib/types";
 
@@ -19,33 +21,34 @@ function triagePrompt(item: DigestEntry): { label: string; prompt: string } | nu
   const ref = item.listing ? `${item.listing.title} (${item.listing.listing_id})` : item.ref_id;
   switch (item.kind) {
     case "low_stock":
-      return ref ? { label: "Ask", prompt: inventoryPrompt("low_stock", ref) } : null;
+      return ref ? { label: "问一问", prompt: inventoryPrompt("low_stock", ref) } : null;
     case "slow_mover":
-      return ref ? { label: "Plan rates", prompt: inventoryPrompt("slow_mover", ref) } : null;
+      return ref ? { label: "规划房价", prompt: inventoryPrompt("slow_mover", ref) } : null;
     case "order_issue":
       return {
-        label: "Draft reply",
-        prompt: item.ref_id ? `Help me handle booking ${item.ref_id}. ${item.headline}.` : `Help me handle this booking issue. ${item.headline}.`,
+        label: "起草回复",
+        prompt: item.ref_id ? `帮我处理预订 ${item.ref_id}。${item.headline}。` : `帮我处理这个预订问题。${item.headline}。`,
       };
     case "metric":
-      return { label: "Ask why", prompt: `What's driving this: ${item.headline}?` };
+      return { label: "问原因", prompt: `这背后的原因是什么：${item.headline}？` };
     default:
       return null;
   }
 }
 
-function context(item: DigestEntry) {
+function Context({ item }: { item: DigestEntry }) {
+  const copy = useCopy();
   if (item.listing) {
     return (
       <span>
-        {item.listing.listing_id} · {formatNumber(item.listing.stock)} available · {formatMoney(item.listing.price, "USD", { whole: true })}
+        {item.listing.listing_id} · {formatNumber(item.listing.stock)} 间可售 · {formatMoney(item.listing.price, "USD", { whole: true })}
       </span>
     );
   }
   if (item.change) {
     return (
       <span>
-        {item.change.change_id} · {CHANGE_STATUS[item.change.status].label.toLowerCase()}
+        {item.change.change_id} · {copy.changeStatus[item.change.status]}
       </span>
     );
   }
@@ -56,7 +59,7 @@ export default function DigestCard({ payload, onPrefill }: { payload: DigestPayl
   const items = payload.items ?? [];
   return (
     <GenCard>
-      <GenCardHeader title={payload.title ?? "Needs attention"} aside={plural(items.length, "item")} />
+      <GenCardHeader title={payload.title ?? "需要关注"} aside={`${items.length} 项`} />
       <DigestList>
         {items.map((item, index) => {
           const triage = onPrefill ? triagePrompt(item) : null;
@@ -68,7 +71,7 @@ export default function DigestCard({ payload, onPrefill }: { payload: DigestPayl
               tone={style.tone}
               headline={item.headline}
               why={item.why_it_matters}
-              context={context(item)}
+              context={<Context item={item} />}
               action={triage ? { label: triage.label, onClick: () => onPrefill?.(triage.prompt) } : null}
             />
           );

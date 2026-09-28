@@ -575,6 +575,7 @@ def check_verification_wiring() -> None:
 
 
 PACKAGE_DIRS = (
+    "cloud-warehouse",
     "commerce-common",
     "shopping-agent/core",
     "shopping-agent/runtime-messages-api",

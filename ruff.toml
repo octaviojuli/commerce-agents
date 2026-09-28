@@ -4,6 +4,7 @@ target-version = "py311"
 # Markdown code blocks are written for reading (aligned comments); ruff 0.16+ would reformat them.
 exclude = ["*.md"]
 src = [
+    "cloud-warehouse",
     "commerce-common",
     "shopping-agent/core",
     "shopping-agent/runtime-messages-api",

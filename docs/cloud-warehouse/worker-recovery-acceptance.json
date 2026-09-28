@@ -1,0 +1,55 @@
+{
+  "cleanup_complete": true,
+  "application_credentials": false,
+  "host_ports": 0,
+  "live_containers_unchanged": true,
+  "image": "sha256:9ddb075c2f2eb9f493ea7c9d2cb3e5bda617efb0198191c2d5fabd952664ed04",
+  "runtime_source_sha256": {
+    "jobs.py": "384e3d687bc9f03341093471fd6af7e7d65eb0147292bca3bdf1ec001dc65df5",
+    "catalog.py": "ec3d5bce1c715240685fc7e1b714bf29dbb4e93ab5b77683eb674eb350ed12b9"
+  },
+  "probe": {
+    "lease_seconds": 60,
+    "natural_expiry_wait_seconds": 60.17,
+    "sigkill_before_commit_rolled_back": true,
+    "restart_before_expiry_did_not_claim": true,
+    "restart_after_expiry_published": true,
+    "sigkill_after_commit_did_not_republish": true,
+    "stable_ids_single_version_increment": true,
+    "interrupted_run_retained": true,
+    "audit_and_outbox_atomic": true,
+    "old_lease_refused": true,
+    "buyer_reads_recovered_catalog": true,
+    "child_processes_reaped": true
+  },
+  "live_api_healthy": true,
+  "scope": "ECS linux/amd64 current API image; real OS worker subprocesses, isolated fictional PostgreSQL, default lease duration, no live service interruption",
+  "test_file": "cloud-warehouse/tests/test_worker_recovery.py",
+  "test_sha256": "694835f348578a045b6a96f331f25ce9dca029e45c8d02bbbd9205b48b7f937d",
+  "local": {
+    "focused_passed": 1,
+    "natural_expiry_wait_seconds": 60.259,
+    "full_suite_passed": 506,
+    "skipped": 0,
+    "full_suite_seconds": 113.05,
+    "disposable_database_and_roles_cleaned": true
+  },
+  "not_verified": [
+    "Host reboot or Docker automatic restart",
+    "PostgreSQL restart or network partition",
+    "Real upstream failures or supplier booking",
+    "Production RPO/RTO",
+    "Webhook delivery and ordering"
+  ],
+  "live_b2b_read_observation": {
+    "revision": "0032_source_cooldowns",
+    "status": "published",
+    "started_at": "2026-09-24 21:17:34.920879+00:00",
+    "completed_at": "2026-09-24 21:18:04.760783+00:00",
+    "product_count": 284,
+    "departure_count": 625,
+    "source_departure_count": 668,
+    "quarantined_count": 43,
+    "error_code": null
+  }
+}

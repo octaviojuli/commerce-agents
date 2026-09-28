@@ -25,12 +25,13 @@ class Product(BaseModel):
     in ``variant_of``; the cart takes its id like any product's. Only the variants listed
     exist. A price computed per request (dates, party size) goes in
     ``SearchFilters.attributes``; ``docs/backends.md`` has the mapping from common catalog
-    models, the family size limit, and what else is not a variant."""
+    models, the family size limit, and what else is not a variant. An explicitly unknown
+    price or stock state is None, never a zero amount or an out-of-stock claim."""
 
     product_id: str
     title: str
     brand: str | None = None
-    price: float
+    price: float | None = None
     currency: str = "USD"
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = None
@@ -38,7 +39,7 @@ class Product(BaseModel):
     category: str | None = None
     labels: list[str] = Field(default_factory=list)
     attributes: dict[str, str] = Field(default_factory=dict)
-    in_stock: bool = True
+    in_stock: bool | None = True
     short_description: str | None = None
     options: dict[str, list[str]] = Field(default_factory=dict)
     option_values: dict[str, str] = Field(default_factory=dict)

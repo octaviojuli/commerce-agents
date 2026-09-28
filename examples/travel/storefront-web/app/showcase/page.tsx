@@ -3,12 +3,13 @@
 
 "use client";
 
-/** Renders from fixtures; no API needed. */
+/** Renders from fixtures; no API needed. The chrome's copy is provided here, as the shell would. */
 
-import type { ReactNode } from "react";
-import type { UISlotStatus } from "web-shared";
+import { type ReactNode, useMemo } from "react";
+import { CopyProvider, mergeCopy, type UISlotStatus } from "web-shared";
 import TripPanel from "@/components/TripPanel";
 import GenerativeBlock from "@/components/generative";
+import { TRAVEL_COPY } from "@/lib/copy";
 import { SHOWCASE, SHOWCASE_PRODUCT_INDEX } from "@/lib/showcase-fixtures";
 import type { CartPayload } from "@/lib/types";
 
@@ -44,10 +45,12 @@ function Section({ name, children }: { name: string; children: ReactNode }) {
 }
 
 export default function ShowcasePage() {
+  const copy = useMemo(() => mergeCopy(TRAVEL_COPY), []);
   return (
+    <CopyProvider value={copy}>
     <main className="relative z-[2] mx-auto max-w-3xl px-6 py-14">
       <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-(--ink-soft)">
-        ACME Travel component showcase (fixture data)
+        ACME Travel 组件展示（示例数据）
       </p>
       {SECTIONS.map(({ component, id = component, payload, status = "final" }) => (
         <Section key={id} name={id}>
@@ -60,5 +63,6 @@ export default function ShowcasePage() {
         </div>
       </Section>
     </main>
+    </CopyProvider>
   );
 }

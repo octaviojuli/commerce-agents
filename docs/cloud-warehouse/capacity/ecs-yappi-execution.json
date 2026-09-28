@@ -1,0 +1,37 @@
+{
+  "diagnostic_tool": "yappi-1.7.6",
+  "diagnostic_wheel_sha256": "5a88615e2b9817887f6d1addfd12466a8529f25acc58b656205ae3f641cd725b",
+  "resource_owner": "84db7a021cd24ca7870928fd04873c0f",
+  "api_image": "local/warehouse-api:20260924-13",
+  "postgres_image": "postgres:16-bookworm",
+  "limits": {
+    "database_cpu": 2,
+    "database_memory_mib": 1024,
+    "client_and_server_shared_cpu": 2,
+    "client_and_server_memory_mib": 1536
+  },
+  "external_network": false,
+  "application_credentials": false,
+  "reports": {
+    "smoke": {
+      "exit_code": 0,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-84db7a021cd24ca7870928fd04873c0f/smoke.json",
+      "passed": true
+    },
+    "baseline": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-84db7a021cd24ca7870928fd04873c0f/baseline.json",
+      "passed": false
+    }
+  },
+  "cleanup_complete": true,
+  "web_before": {
+    "18085": 200,
+    "18105": 200
+  },
+  "profile_workers": 44,
+  "web_after": {
+    "18085": 200,
+    "18105": 200
+  }
+}

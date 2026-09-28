@@ -17,7 +17,7 @@ WORKDIR /app/examples
 # The workbench is one workspace of examples/ and web-shared is another, so the workspace
 # installs whole: its lock file describes every member, and npm ci holds to it.
 COPY examples ./
-RUN npm ci
+RUN npm ci --include=dev
 
 RUN npm run build --workspace acme-tour-storefront-web
 

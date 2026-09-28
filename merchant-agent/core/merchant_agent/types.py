@@ -29,14 +29,15 @@ class Listing(BaseModel):
     family's ``ListingDetails.variants`` with its own id, price, stock, and status, its
     ``option_values``, and the family's id in ``variant_of``. Price and stock are read and
     written per variant, so a variant's id goes wherever a ``listing_id`` goes; the write
-    rules are on ``MerchantBackend`` and the mapping guide is ``docs/backends.md``."""
+    rules are on ``MerchantBackend`` and the mapping guide is ``docs/backends.md``.
+    Unknown price or stock is None; zero means a known zero, never unavailable data."""
 
     listing_id: str
     title: str
     status: Literal["active", "paused", "draft", "out_of_stock"] = "active"
-    price: float
+    price: float | None = None
     currency: str = "USD"
-    stock: int = 0
+    stock: int | None = None
     category: str | None = None
     content_quality: Literal["good", "needs_work", "poor"] | None = None
     attributes: dict[str, str] = Field(default_factory=dict)
@@ -91,8 +92,8 @@ class BusinessSnapshot(BaseModel):
 
     period: str
     compare_to: str | None = None
-    sales: float
-    orders: int
+    sales: float | None = None
+    orders: int | None = None
     traffic: int | None = None
     conversion_rate: float | None = None
     average_order_value: float | None = None
@@ -274,7 +275,7 @@ class PricingContext(BaseModel):
     ``variants`` carries one context per variant."""
 
     listing_id: str
-    current_price: float
+    current_price: float | None = None
     currency: str = "USD"
     unit_cost: float | None = None
     margin_pct: float | None = None

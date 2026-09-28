@@ -29,8 +29,7 @@ export default function PlanChecklist({
           className="mt-1"
           style={{
             fontFamily: DISPLAY,
-            fontStyle: "italic",
-            fontWeight: 300,
+            fontWeight: 400,
             fontSize: 15,
             lineHeight: 1.5,
             color: "var(--ink-soft)",
@@ -106,7 +105,7 @@ export default function PlanChecklist({
 
       {!partial && steps.length ? (
         <p style={{ ...META, fontSize: 11, marginTop: 4 }}>
-          {steps.length} {steps.length === 1 ? "step" : "steps"} to ready
+          共 {steps.length} 步
         </p>
       ) : null}
     </section>

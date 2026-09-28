@@ -14,23 +14,21 @@ import {
   Notice,
   PageHeader,
   Panel,
-  plural,
   QuotedAsData,
   RecordList,
-  runwayLabel,
   Skeleton,
   useResource,
 } from "web-shared";
 import { fetchAlerts } from "@/lib/api";
-import { BOOKING_STATUS, INVENTORY_KINDS, inventoryPrompt, ISSUE_KINDS } from "@/lib/kinds";
+import { BOOKING_STATUS, INVENTORY_KINDS, inventoryPrompt, ISSUE_KINDS, runwayText } from "@/lib/kinds";
 import type { InventoryAlert, OrderIssue, RecentOrder } from "@/lib/types";
 
 export function issuePrompt(issue: OrderIssue): string {
-  return `What are my options for booking ${issue.order_id}? ${issue.summary}.`;
+  return `预订 ${issue.order_id} 我有哪些处理选项？${issue.summary}。`;
 }
 
 export function runway(alert: InventoryAlert): string | null {
-  return alert.days_of_cover == null || alert.stock === 0 ? null : runwayLabel(alert.days_of_cover);
+  return alert.days_of_cover == null || alert.stock === 0 ? null : runwayText(alert.days_of_cover);
 }
 
 export function bookingRows(bookings: RecentOrder[]) {
@@ -51,16 +49,16 @@ function IssueCard({ issue, onAskAssistant }: { issue: OrderIssue; onAskAssistan
           <div className="min-w-0 flex-1">
             <div className="text-[14px] font-medium leading-snug text-(--ink)">{issue.summary}</div>
             <div className="mt-0.5 text-[12.5px] tabular-nums text-(--ink-soft)">
-              {[style.label, `Booking ${issue.order_id}`, issue.listing_id, issue.opened_at ? `opened ${formatDayMonth(issue.opened_at)}` : ""].filter(Boolean).join(" · ")}
+              {[style.label, `预订 ${issue.order_id}`, issue.listing_id, issue.opened_at ? `提交于 ${formatDayMonth(issue.opened_at)}` : ""].filter(Boolean).join(" · ")}
             </div>
           </div>
-          <AskButton label={issue.kind === "buyer_message" ? "Draft reply" : "Ask"} onClick={() => onAskAssistant(issuePrompt(issue))} />
+          <AskButton label={issue.kind === "buyer_message" ? "起草回复" : "问一问"} onClick={() => onAskAssistant(issuePrompt(issue))} />
         </div>
         {issue.buyer_message_excerpt ? (
           <div className="mt-2 rounded-[10px] bg-(--ground) px-3 py-2">
             <blockquote className="text-[13px] leading-snug text-(--ink-2)">&ldquo;{issue.buyer_message_excerpt}&rdquo;</blockquote>
             {/* Some fixture excerpts are injection attempts, so the note sits beside the quote. */}
-            <QuotedAsData subject="Guest message" className="mt-1.5" />
+            <QuotedAsData subject="客人留言" className="mt-1.5" />
           </div>
         ) : null}
       </div>
@@ -78,13 +76,13 @@ function AlertRow({ alert, onAskAssistant }: { alert: InventoryAlert; onAskAssis
       title={alert.title}
       meta={
         <>
-          <span className={tight ? "font-semibold text-(--warn)" : ""}>{formatNumber(alert.stock)} room-nights available</span>
-          {["", tight ? runway(alert) : null, alert.sales_last_30d != null ? `${formatNumber(alert.sales_last_30d)} booked in 30 days` : "", alert.listing_id]
+          <span className={tight ? "font-semibold text-(--warn)" : ""}>{formatNumber(alert.stock)} 个房晚可售</span>
+          {["", tight ? runway(alert) : null, alert.sales_last_30d != null ? `30 天内订出 ${formatNumber(alert.sales_last_30d)}` : "", alert.listing_id]
             .filter((part, index) => index === 0 || part)
             .join(" · ")}
         </>
       }
-      action={{ label: tight ? "Ask" : "Plan rates", onClick: () => onAskAssistant(inventoryPrompt(alert.kind, `${alert.title} (${alert.listing_id})`)) }}
+      action={{ label: tight ? "问一问" : "规划房价", onClick: () => onAskAssistant(inventoryPrompt(alert.kind, `${alert.title} (${alert.listing_id})`)) }}
     />
   );
 }
@@ -108,11 +106,11 @@ export default function BookingsView({
   return (
     <div className="ac-reveal @container flex flex-col gap-4">
       <PageHeader
-        title="Bookings"
-        subtitle={data ? `${plural(issues.length, "open issue")} · ${formatNumber(tight.length)} tight on availability · ${formatNumber(soft.length)} pacing soft` : undefined}
+        title="预订"
+        subtitle={data ? `${formatNumber(issues.length)} 个待处理问题 · ${formatNumber(tight.length)} 个房源房量紧张 · ${formatNumber(soft.length)} 个房源进度偏慢` : undefined}
       />
       {failed && !data ? (
-        <Notice>The travel API isn&apos;t reachable, so booking and pacing alerts can&apos;t load.</Notice>
+        <Notice>无法连接 travel API，预订与进度提醒无法加载。</Notice>
       ) : !data ? (
         <div className="grid gap-4 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)]">
           <Skeleton className="h-96" />
@@ -121,9 +119,9 @@ export default function BookingsView({
       ) : (
         <div className="grid items-start gap-4 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)]">
           <div className="flex flex-col gap-4">
-            <Panel title="Open issues" subtitle={issues.length ? formatNumber(issues.length) : undefined}>
+            <Panel title="待处理问题" subtitle={issues.length ? formatNumber(issues.length) : undefined}>
               {issues.length === 0 ? (
-                <p className="px-[18px] pb-4 text-[13.5px] text-(--ink-soft)">No open booking issues.</p>
+                <p className="px-[18px] pb-4 text-[13.5px] text-(--ink-soft)">没有待处理的预订问题。</p>
               ) : (
                 <ul className="divide-y divide-(--line)">
                   {issues.map((issue) => (
@@ -132,20 +130,20 @@ export default function BookingsView({
                 </ul>
               )}
             </Panel>
-            <Panel title="Recent bookings">
+            <Panel title="最近预订">
               {!recentBookings ? (
                 <Skeleton className="mx-[18px] mb-4 h-40" />
               ) : recentBookings.length === 0 ? (
-                <p className="px-[18px] pb-4 text-[13px] text-(--ink-soft)">No bookings yet.</p>
+                <p className="px-[18px] pb-4 text-[13px] text-(--ink-soft)">还没有预订。</p>
               ) : (
                 <RecordList rows={bookingRows(recentBookings)} />
               )}
             </Panel>
           </div>
           <div className="flex flex-col gap-4">
-            <Panel title="Tight availability" subtitle="soonest to sell out first">
+            <Panel title="房量紧张" subtitle="最快售罄的排在前面">
               {tight.length === 0 ? (
-                <p className="px-[18px] pb-4 text-[13.5px] text-(--ink-soft)">Every property has dates to sell.</p>
+                <p className="px-[18px] pb-4 text-[13.5px] text-(--ink-soft)">每个房源都还有可售日期。</p>
               ) : (
                 <AttentionList>
                   {tight.map((alert) => (
@@ -154,9 +152,9 @@ export default function BookingsView({
                 </AttentionList>
               )}
             </Panel>
-            <Panel title="Soft pacing" subtitle="midweek occupancy under 55% in the coming weeks">
+            <Panel title="进度偏慢" subtitle="未来几周平日入住率低于 55%">
               {soft.length === 0 ? (
-                <p className="px-[18px] pb-4 text-[13.5px] text-(--ink-soft)">Nothing is pacing soft.</p>
+                <p className="px-[18px] pb-4 text-[13.5px] text-(--ink-soft)">没有房源进度偏慢。</p>
               ) : (
                 <AttentionList>
                   {soft.map((alert) => (

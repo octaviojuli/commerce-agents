@@ -1,0 +1,62 @@
+{
+  "resource_owner": "2c87cc8d0f8b4097b9ee44fdfe9ac4dd",
+  "api_image": "local/warehouse-api:20260924-12",
+  "postgres_image": "postgres:16-bookworm",
+  "limits": {
+    "database_cpu": 2,
+    "database_memory_mib": 1024,
+    "client_and_server_shared_cpu": 2,
+    "client_and_server_memory_mib": 1536
+  },
+  "external_network": false,
+  "application_credentials": false,
+  "reports": {
+    "1-smoke": {
+      "exit_code": 0,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-2c87cc8d0f8b4097b9ee44fdfe9ac4dd/1-smoke.json",
+      "passed": true,
+      "requests_by_process": {
+        "0": 40
+      }
+    },
+    "2-smoke": {
+      "exit_code": 0,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-2c87cc8d0f8b4097b9ee44fdfe9ac4dd/2-smoke.json",
+      "passed": true,
+      "requests_by_process": {
+        "0": 5,
+        "1": 35
+      }
+    },
+    "1-extended": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-2c87cc8d0f8b4097b9ee44fdfe9ac4dd/1-extended.json",
+      "passed": false,
+      "requests_by_process": {
+        "0": 20000
+      }
+    },
+    "2-extended": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-2c87cc8d0f8b4097b9ee44fdfe9ac4dd/2-extended.json",
+      "passed": false,
+      "requests_by_process": {
+        "0": 9988,
+        "1": 10012
+      }
+    }
+  },
+  "cleanup_complete": true,
+  "mounted_script_sha256": {
+    "capacity-multiprocess.py": "cfa2b60b5931fb4075464b7ff430a4277433da0c509f50997790e0e88df581e0",
+    "capacity-http-multiprocess.py": "8a1fb442e1d135893dcad920b6e0ca28d09ce157ba175f575c058d4502c6f09a"
+  },
+  "web_before": {
+    "18085": 200,
+    "18105": 200
+  },
+  "web_after": {
+    "18085": 200,
+    "18105": 200
+  }
+}

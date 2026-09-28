@@ -1,0 +1,18 @@
+FROM docker.m.daocloud.io/library/python@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+RUN sed -i 's|http://deb.debian.org/debian-security|https://mirrors.aliyun.com/debian-security|g; s|http://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update \
+    && apt-get install -y --no-install-recommends poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY src/requirements.txt ./
+COPY src/commerce-common ./commerce-common
+COPY src/cloud-warehouse ./cloud-warehouse
+COPY src/shopping-agent ./shopping-agent
+COPY src/merchant-agent ./merchant-agent
+ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+RUN pip install -r requirements.txt
+COPY src/examples/tour/api ./examples/tour/api
+COPY src/examples/tour/data ./examples/tour/data
+COPY src/examples/demo_common ./examples/demo_common
+CMD ["uvicorn", "tour.api.main:app", "--app-dir", "examples", "--host", "127.0.0.1", "--port", "18004"]

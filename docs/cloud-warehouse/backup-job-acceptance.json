@@ -1,0 +1,24 @@
+{
+  "application_credentials": false,
+  "public_ports": 0,
+  "cleanup_complete": true,
+  "cycle": {
+    "verified": true,
+    "tables": 44,
+    "objects": 0,
+    "revision": "0032_source_cooldowns"
+  },
+  "cli_cycle_and_credential_free_status_verified": true,
+  "object_collection_excluded": true,
+  "prior_success_preserved": true,
+  "killed_process_detected": true,
+  "systemd_templates_verified": true,
+  "source_sha256": {
+    "backup_jobs.py": "cad3cfd192d3544ce7bbe1161ad62de762f109435c80a8ffdb14be7add70347f",
+    "recovery.py": "057e92098580b8f6caba720bac8e83d6fb5702994d290d4ab1f0cc8f9eb4e349",
+    "cli.py": "42f86c90ee3472838793ec57ddce3985b1f03ee99a52119d70f1b20bc914b628"
+  },
+  "live_api_unchanged": true,
+  "live_api_healthy": true,
+  "real_backup_units_installed": false
+}

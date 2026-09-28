@@ -47,7 +47,7 @@
 }
 
 body {
-  font-family: var(--font-body), "Archivo", ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-body), "Archivo", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", ui-sans-serif, system-ui, sans-serif;
   font-size: 14px;
   line-height: 1.4;
 }
@@ -55,5 +55,5 @@ body {
 /* Display face: the wordmark and view titles. Data and tables stay in the body face. */
 .page-title,
 .al-display {
-  font-family: var(--font-display), "Fraunces", Georgia, serif;
+  font-family: var(--font-display), "Fraunces", "Songti SC", "Noto Serif CJK SC", "SimSun", Georgia, serif;
 }

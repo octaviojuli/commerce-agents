@@ -10,6 +10,14 @@ The workbench is the agency's internal tool and this deployment treats it as one
 one host name over TLS, and nothing in it is meant for the open internet. Put it behind the
 company's own network, an IP allow list, or a VPN.
 
+For an internal trial on a server whose ports 80 and 443 are already occupied, see
+[`internal/README.md`](internal/README.md). That variant binds only loopback addresses and
+uses an SSH tunnel for encrypted access, with a locally built frontend and resource limits.
+
+For the ECS employee portal reached directly at `https://8.130.118.212`, see
+[`public/README.md`](public/README.md). It uses a trusted IP certificate and ERP login;
+employees do not need an SSH tunnel.
+
 ## What the deployment holds
 
 | | Where | Note |

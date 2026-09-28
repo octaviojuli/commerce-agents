@@ -6,7 +6,8 @@
 /** The blocks every portal's home page shares; a vertical supplies its nouns and rows. */
 
 import type { ReactNode } from "react";
-import { describeProposer, describeResolver, formatDayMonth, plural } from "../format";
+import { useCopy } from "../copy";
+import { formatDayMonth } from "../format";
 import { Icon, type IconName } from "../icons";
 import { AskButton, Button, KindIcon, Panel, Pill, type Tone } from "../ui";
 import { CHANGE_STATUS } from "./cards";
@@ -26,16 +27,17 @@ export function ratioChangePct(numeratorPct: number | null | undefined, denomina
 
 /** Approval itself happens on the change card; this banner hands off to the assistant. */
 export function ApprovalsBanner({ changes, onReview }: { changes: { change_id: string; summary: string }[]; onReview: () => void }) {
+  const copy = useCopy();
   if (changes.length === 0) return null;
   return (
     <section className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-(--violet)/20 bg-(--violet-soft) px-[18px] py-3">
       <KindIcon icon="edit" tone="violet" size={32} />
       <div className="min-w-0 flex-1">
-        <div className="text-[14px] font-semibold text-(--ink)">{plural(changes.length, "change")} awaiting approval</div>
+        <div className="text-[14px] font-semibold text-(--ink)">{copy.awaitingApproval(changes.length)}</div>
         <div className="mt-0.5 truncate text-[12.5px] text-(--ink-soft)">{changes.map((change) => change.summary).join(" · ")}</div>
       </div>
       <Button variant="primary" size="sm" onClick={onReview}>
-        Review
+        {copy.review}
       </Button>
     </section>
   );
@@ -77,10 +79,11 @@ export function AttentionList({ children }: { children: ReactNode }) {
 
 /** The footer under a capped queue; the link goes to the view that lists the hidden rows, if one does. */
 export function QueueOverflow({ hidden, link }: { hidden: number; link?: { label: string; onClick: () => void } }) {
+  const copy = useCopy();
   if (hidden <= 0) return null;
   return (
     <div className="flex items-center gap-2 border-t border-(--line) px-[18px] py-2.5 text-[12.5px] text-(--ink-soft)">
-      <span>{plural(hidden, "more item")} in the queue</span>
+      <span>{copy.moreInQueue(hidden)}</span>
       {link ? <ViewLink label={link.label} onClick={link.onClick} className="ml-auto" /> : null}
     </div>
   );
@@ -141,9 +144,10 @@ interface ChangeSummary {
 
 /** The last few resolved changes, newest first. */
 export function RecentChanges({ changes, limit = 4 }: { changes: ChangeSummary[]; limit?: number }) {
+  const copy = useCopy();
   if (changes.length === 0) return null;
   return (
-    <Panel title="Recent changes">
+    <Panel title={copy.recentChanges}>
       <ul className="divide-y divide-(--line) px-[18px] pb-2">
         {changes.slice(0, limit).map((change) => {
           const status = CHANGE_STATUS[change.status];
@@ -155,11 +159,11 @@ export function RecentChanges({ changes, limit = 4 }: { changes: ChangeSummary[]
                   {change.summary}
                 </div>
                 <Pill tone={status.tone} dot>
-                  {status.label}
+                  {copy.changeStatus[change.status]}
                 </Pill>
               </div>
               <div className="mt-0.5 text-[12px] text-(--ink-soft)">
-                {describeResolver(change) ?? describeProposer(change)}
+                {copy.describeResolver(change) ?? copy.describeProposer(change)}
                 {actedAt ? ` · ${formatDayMonth(actedAt)}` : ""}
               </div>
             </li>

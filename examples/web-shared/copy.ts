@@ -4,19 +4,18 @@
 "use client";
 
 /**
- * Every English string the shared storefront chrome renders — the store shell, the transcript, and
- * the inspector — in one place. `DEFAULT_COPY` is what a vertical gets when it passes nothing, so a
- * storefront that says nothing renders exactly as before; a vertical in another language passes a
- * `Partial<Copy>` to `StoreShell`, and `mergeCopy` lays it over the default. Components read the
- * result through `useCopy`.
- *
- * The merchant portal's chrome (`portal/`) and the orders view (`storefront/orders.tsx`) are not
- * here: they are English only and keep their own labels, the orders view in its `OrderNouns`.
+ * Every English string the shared chrome renders — the store shell, the orders view, the merchant
+ * portal's frame and cards, the transcript, and the inspector — in one place. `DEFAULT_COPY` is
+ * what a vertical gets when it passes nothing, so an app that says nothing renders exactly as
+ * before; a vertical in another language passes a `Partial<Copy>` to `StoreShell` or
+ * `PortalShell`, and `mergeCopy` lays it over the default. Components read the result through
+ * `useCopy`. Dates are formatted by `format.ts`, whose locale a vertical sets with
+ * `setDateLocale`; the words around them are here.
  */
 
 import { createContext, useContext } from "react";
 
-import { formatDayMonth } from "./format";
+import { describeProposer, describeResolver, formatDate, formatDayMonth, greeting, humanizeField } from "./format";
 
 /** Copy that is composed rather than fixed takes what it composes around as arguments. */
 export interface Copy {
@@ -141,6 +140,87 @@ export interface Copy {
   unknownBlock: (component: string) => string;
   /** The label under quoted third-party text. */
   quotedAsData: (subject: string) => string;
+
+  // The orders view and the home's card of what is coming (`storefront/orders.tsx`). The nouns
+  // themselves ("trip", "Trips") come from the vertical's `OrderNouns`.
+  /** The shared statuses; a vertical's `OrderNouns.statusLabels` wins over these. */
+  orderStatuses: Record<string, string>;
+  /** The first filter, before the vertical's own. */
+  all: string;
+  /** Before a delayed order's revised date. */
+  expected: string;
+  /** The date line of an order with no estimate; takes the formatted date. */
+  placedOn: (date: string) => string;
+  /** "Widget + 2 more": the first item's title, then how many more. */
+  moreItems: (first: string, count: number) => string;
+  /** The filter group's label; takes the view's title. */
+  filterList: (title: string) => string;
+  /** The home card when the list failed to load. */
+  loadFailed: (title: string) => string;
+  /** The view when the list failed to load. */
+  loadFailedAssistant: (title: string) => string;
+  /** The view when the filter matches nothing. */
+  noneHere: (title: string) => string;
+  /** The home card's link to the view. */
+  allOf: (title: string) => string;
+
+  // The merchant portal's frame (`portal/Shell.tsx`, `portal/AssistantPanel.tsx`, `portal/AssistantRail.tsx`).
+  portalViews: string;
+  assistant: string;
+  showAssistant: string;
+  hideAssistant: string;
+  /** Under the assistant's name in the rail. */
+  approveEveryChange: string;
+  fullScreen: string;
+  exitFullScreen: string;
+  resizeAssistant: string;
+
+  // The portal's home blocks and figures (`portal/home.tsx`, `ui.tsx`).
+  /** The greeting for the hour; takes the clock. */
+  greeting: (now: Date) => string;
+  /** The hover hint on a KPI tile. */
+  askWhy: string;
+  /** A sparkline's label; takes the figure's label. */
+  overPeriod: (label: string) => string;
+  awaitingApproval: (count: number) => string;
+  review: string;
+  moreInQueue: (count: number) => string;
+  recentChanges: string;
+  /** Who staged or proposed a change. */
+  describeProposer: (change: { created_by: string; created_by_kind?: "operator" | "agent" }) => string;
+  /** Who approved or dismissed it; null while it is staged. */
+  describeResolver: (change: {
+    status: string;
+    applied_by?: string | null;
+    discarded_by?: string | null;
+    discarded_by_kind?: "operator" | "agent" | null;
+  }) => string | null;
+
+  // The portal's change cards (`portal/cards.tsx`).
+  changeStatus: Record<"staged" | "applied" | "discarded", string>;
+  approve: string;
+  approving: string;
+  dismiss: string;
+  dismissing: string;
+  nothingUntilApproved: string;
+  /** After approval: who, and the formatted date. */
+  approvedLine: (by: string | null | undefined, date: string | null | undefined) => string;
+  /** After dismissal: who, and whether their assistant did it. */
+  dismissedLine: (by: string | null | undefined, byAssistant: boolean) => string;
+  actionFailed: string;
+  /** A diff field's label ("nightly_rate" → "Nightly rate"). */
+  fieldLabel: (field: string) => string;
+  before: string;
+  after: string;
+  /** The margin bar's reading; takes formatted money. */
+  headroom: (amount: string) => string;
+  marginPoints: (delta: number) => string;
+  marginBarLabel: (after: string, before: string, costLabel: string, cost: string) => string;
+  /** The price band's three marks; take formatted money. */
+  priceNow: (value: string) => string;
+  priceFloor: (value: string) => string;
+  priceCeiling: (value: string) => string;
+  priceBandLabel: (current: string, floor: string, ceiling: string) => string;
 }
 
 export const DEFAULT_COPY: Copy = {
@@ -257,9 +337,68 @@ export const DEFAULT_COPY: Copy = {
 
   unknownBlock: (component) => `This page has no view for “${component}” yet.`,
   quotedAsData: (subject) => `${subject}, shown as written.`,
+
+  orderStatuses: {
+    processing: "Processing",
+    shipped: "Shipped",
+    out_for_delivery: "Out for delivery",
+    delayed: "Delayed",
+    delivered: "Delivered",
+    cancelled: "Cancelled",
+    return_initiated: "Return requested",
+    refunded: "Refunded",
+  },
+  all: "All",
+  expected: "Expected",
+  placedOn: (date) => `Placed ${date}`,
+  moreItems: (first, count) => `${first} + ${count} more`,
+  filterList: (title) => `Filter ${title.toLowerCase()}`,
+  loadFailed: (title) => `Couldn't load your ${title.toLowerCase()}.`,
+  loadFailedAssistant: (title) => `Couldn't load your ${title.toLowerCase()}. The assistant can still look them up.`,
+  noneHere: (title) => `No ${title.toLowerCase()} here.`,
+  allOf: (title) => `All ${title.toLowerCase()}`,
+
+  portalViews: "Portal views",
+  assistant: "Assistant",
+  showAssistant: "Show assistant",
+  hideAssistant: "Hide assistant",
+  approveEveryChange: "You approve every change",
+  fullScreen: "Full screen",
+  exitFullScreen: "Exit full screen",
+  resizeAssistant: "Resize assistant panel",
+
+  greeting,
+  askWhy: "Ask why",
+  overPeriod: (label) => `${label} over the period`,
+  awaitingApproval: (count) => `${count} change${count === 1 ? "" : "s"} awaiting approval`,
+  review: "Review",
+  moreInQueue: (count) => `${count} more item${count === 1 ? "" : "s"} in the queue`,
+  recentChanges: "Recent changes",
+  describeProposer,
+  describeResolver,
+
+  changeStatus: { staged: "Awaiting approval", applied: "Approved", discarded: "Dismissed" },
+  approve: "Approve",
+  approving: "Applying…",
+  dismiss: "Dismiss",
+  dismissing: "Dismissing…",
+  nothingUntilApproved: "Nothing applies until you approve.",
+  approvedLine: (by, date) => `Approved${by ? ` by ${by}` : ""}${date ? ` on ${formatDate(date)}` : ""}.`,
+  dismissedLine: (by, byAssistant) => `Dismissed${by ? ` by ${by}${byAssistant ? "'s assistant" : ""}` : ""}. Nothing was changed.`,
+  actionFailed: "That action did not go through. Check the API and try again.",
+  fieldLabel: humanizeField,
+  before: "Before",
+  after: "After",
+  headroom: (amount) => `${amount} headroom`,
+  marginPoints: (delta) => `${delta >= 0 ? "+" : ""}${delta.toFixed(1)} margin pts`,
+  marginBarLabel: (after, before, costLabel, cost) => `New price ${after}, previous ${before}, ${costLabel.toLowerCase()} ${cost}`,
+  priceNow: (value) => `${value} now`,
+  priceFloor: (value) => `floor ${value}`,
+  priceCeiling: (value) => `ceiling ${value}`,
+  priceBandLabel: (current, floor, ceiling) => `${current} now, floor ${floor}, ceiling ${ceiling}`,
 };
 
-/** A vertical's copy over the default; `tools`, `gates`, and `categories` merge key by key. */
+/** A vertical's copy over the default; the keyed records merge key by key. */
 export function mergeCopy(copy?: Partial<Copy>): Copy {
   if (!copy) return DEFAULT_COPY;
   return {
@@ -268,6 +407,8 @@ export function mergeCopy(copy?: Partial<Copy>): Copy {
     tools: { ...DEFAULT_COPY.tools, ...copy.tools },
     gates: { ...DEFAULT_COPY.gates, ...copy.gates },
     categories: { ...DEFAULT_COPY.categories, ...copy.categories },
+    orderStatuses: { ...DEFAULT_COPY.orderStatuses, ...copy.orderStatuses },
+    changeStatus: { ...DEFAULT_COPY.changeStatus, ...copy.changeStatus },
   };
 }
 

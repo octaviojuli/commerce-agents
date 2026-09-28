@@ -1,0 +1,232 @@
+name: tour-warehouse
+
+x-logging: &logging
+  driver: json-file
+  options: {max-size: 10m, max-file: "3"}
+x-python: &python
+  image: ${WAREHOUSE_API_IMAGE:?Specify a prebuilt API image}
+  restart: unless-stopped
+  init: true
+  read_only: true
+  user: "10001:10001"
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: ["/tmp:uid=10001,gid=10001,mode=0700,size=256m"]
+  logging: *logging
+  networks: [database, outbound]
+
+services:
+  # Optional for a dedicated host; omit this profile when using a separate database.
+  database:
+    profiles: [bundled-db]
+    image: ${WAREHOUSE_POSTGRES_IMAGE:?Specify a tested PostgreSQL 16 image}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: warehouse_admin
+      POSTGRES_DB: warehouse
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes:
+      - ${WAREHOUSE_DATA_DIR:?Specify persistent data directory}/postgres:/var/lib/postgresql/data
+    networks: [database]
+    shm_size: 128m
+    mem_limit: 1g
+    cpus: ${WAREHOUSE_DATABASE_CPUS:-1.0}
+    command: [postgres, -c, shared_buffers=128MB, -c, max_connections=100]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U warehouse_admin -d warehouse]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+  api:
+    <<: *python
+    env_file:
+      - path: ${WAREHOUSE_CONFIG_DIR:?Specify private configuration directory}/api.env
+        format: raw
+    environment:
+      WAREHOUSE_OBJECT_ROOT: /objects
+      WAREHOUSE_CONNECTORS_CONFIG: /config/connections.json
+    volumes:
+      - ${WAREHOUSE_CONFIG_DIR}/connections.json:/config/connections.json:ro
+      - ${WAREHOUSE_DATA_DIR}/objects:/objects
+    networks: [database, outbound, frontend, monitoring]
+    mem_limit: 768m
+    cpus: 1.0
+
+  catalog-worker:
+    <<: *python
+    profiles: [workers]
+    env_file:
+      - path: ${WAREHOUSE_CONFIG_DIR}/catalog.env
+        format: raw
+    environment:
+      WAREHOUSE_CONNECTORS_CONFIG: /config/connections.json
+    volumes:
+      - ${WAREHOUSE_CONFIG_DIR}/connections.json:/config/connections.json:ro
+    command: [warehouse, worker, --connection, "${WAREHOUSE_CONNECTION_ID:?Specify source UUID}", --organization, "${WAREHOUSE_SUPPLIER_ID:?Specify supplier UUID}", --user, "${WAREHOUSE_WORKER_ID:?Specify worker UUID}"]
+    healthcheck: {disable: true}
+    mem_limit: 384m
+    cpus: 0.5
+
+  outbox-worker:
+    <<: *python
+    profiles: [workers]
+    env_file:
+      - path: ${WAREHOUSE_CONFIG_DIR}/outbox.env
+        format: raw
+    command: [warehouse, outbox-worker, --organization, "${WAREHOUSE_SUPPLIER_ID}", --user, "${WAREHOUSE_WORKER_ID}"]
+    networks: [database]
+    healthcheck: {disable: true}
+    mem_limit: 256m
+    cpus: 0.5
+
+  attachment-worker:
+    <<: *python
+    profiles: [workers]
+    env_file:
+      - path: ${WAREHOUSE_CONFIG_DIR}/attachment.env
+        format: raw
+    environment: {WAREHOUSE_OBJECT_ROOT: /objects}
+    volumes: ["${WAREHOUSE_DATA_DIR}/objects:/objects"]
+    command: [warehouse, attachment-worker, --connection, "${WAREHOUSE_CONNECTION_ID}", --organization, "${WAREHOUSE_SUPPLIER_ID}", --user, "${WAREHOUSE_WORKER_ID}"]
+    healthcheck: {disable: true}
+    mem_limit: 512m
+    cpus: 0.5
+
+  document-worker:
+    <<: *python
+    profiles: [workers]
+    env_file:
+      - path: ${WAREHOUSE_CONFIG_DIR}/document.env
+        format: raw
+    environment: {WAREHOUSE_OBJECT_ROOT: /objects}
+    volumes: ["${WAREHOUSE_DATA_DIR}/objects:/objects", "route-kit-cache:/route-kit-cache"]
+    command: [warehouse, document-worker, --organization, "${WAREHOUSE_SUPPLIER_ID}", --user, "${WAREHOUSE_WORKER_ID}"]
+    healthcheck: {disable: true}
+    mem_limit: 1536m
+    cpus: 1.0
+
+  route-content-worker:
+    <<: *python
+    profiles: [content-editing]
+    env_file:
+      - path: ${WAREHOUSE_CONFIG_DIR}/content.env
+        format: raw
+    command: [warehouse, route-content-worker, --organization, "${WAREHOUSE_SUPPLIER_ID}", --user, "${WAREHOUSE_WORKER_ID}"]
+    healthcheck: {disable: true}
+    mem_limit: 384m
+    cpus: 0.5
+
+  route-test-publisher:
+    <<: *python
+    profiles: [test-publication]
+    env_file:
+      - path: ${WAREHOUSE_CONFIG_DIR}/route-test.env
+        format: raw
+    command: [warehouse, route-test-publish, --connection, "${WAREHOUSE_CONNECTION_ID}", --organization, "${WAREHOUSE_SUPPLIER_ID}", --user, "${WAREHOUSE_ROUTE_TEST_USER_ID:-00000000-0000-0000-0000-000000000000}"]
+    networks: [database]
+    healthcheck: {disable: true}
+    mem_limit: 384m
+    cpus: 0.5
+
+  advisor:
+    image: ${WAREHOUSE_ADVISOR_IMAGE:?Specify a prebuilt advisor image}
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      TOUR_BACKEND_MODE: warehouse
+      WAREHOUSE_API_INTERNAL_URL: http://api:8005
+      NODE_OPTIONS: --max-old-space-size=192
+    tmpfs: ["/tmp:uid=1000,gid=1000,mode=0700,size=32m", "/app/tour/storefront-web/.next/cache:uid=1000,gid=1000,mode=0700,size=32m"]
+    ports: ["127.0.0.1:${WAREHOUSE_ADVISOR_PORT:-18085}:3000"]
+    networks: [frontend, gateway]
+    mem_limit: 384m
+    cpus: 0.5
+    logging: *logging
+
+  merchant:
+    image: ${WAREHOUSE_MERCHANT_IMAGE:?Specify a prebuilt merchant image}
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      WAREHOUSE_API_INTERNAL_URL: http://api:8005
+      NODE_OPTIONS: --max-old-space-size=192
+    tmpfs: ["/tmp:uid=1000,gid=1000,mode=0700,size=32m", "/app/tour/merchant-web/.next/cache:uid=1000,gid=1000,mode=0700,size=32m"]
+    ports: ["127.0.0.1:${WAREHOUSE_MERCHANT_PORT:-18105}:3000"]
+    networks: [frontend, gateway]
+    mem_limit: 384m
+    cpus: 0.5
+    logging: *logging
+
+  prometheus:
+    profiles: [observability]
+    image: ${WAREHOUSE_PROMETHEUS_IMAGE:-prom/prometheus:v3.14.0}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:uid=10001,gid=10001,mode=0700,size=32m"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=2GB
+      - --web.listen-address=0.0.0.0:9090
+      - --query.max-concurrency=4
+      - --query.timeout=15s
+      - --query.max-samples=500000
+    environment: {GOMEMLIMIT: 384MiB}
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./warehouse-rules.yml:/etc/prometheus/warehouse-rules.yml:ro
+      - ${WAREHOUSE_CONFIG_DIR}/metrics-token:/run/secrets/warehouse_metrics_token:ro
+      - ${WAREHOUSE_DATA_DIR}/metrics:/prometheus
+    networks: [monitoring]
+    mem_limit: 512m
+    cpus: 0.5
+    healthcheck:
+      test: [CMD, /bin/promtool, check, ready, --url=http://127.0.0.1:9090]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+    logging: *logging
+
+  admin:
+    <<: *python
+    profiles: [ops]
+    restart: "no"
+    env_file:
+      - path: ${WAREHOUSE_CONFIG_DIR}/admin.env
+        format: raw
+    command: [warehouse, migrate]
+    healthcheck: {disable: true}
+    mem_limit: 512m
+    cpus: 1.0
+    networks: [database, outbound]
+
+networks:
+  database: {internal: true}
+  frontend: {internal: true}
+  monitoring: {internal: true}
+  # Docker does not publish host ports for containers on internal-only networks.
+  # Only the two web apps join this bridge; their ports remain loopback-bound.
+  gateway: {}
+  outbound: {}
+secrets:
+  postgres_password:
+    file: ${WAREHOUSE_CONFIG_DIR}/postgres-password
+
+volumes:
+  route-kit-cache:

@@ -103,8 +103,15 @@ and elsewhere it is decoration and goes; a page-edge 出发日期 stamp printed 
 column, a cell that does not close with ；or 。 being the row above wrapping. pdftotext reads
 a page in two orders, `-layout` (columns kept) and default (text blocks in sequence); the
 parser reads each .pdf both ways and keeps the more complete document, and `source.parser`
-says which (`docx-rules-4/pdf-layout`).
-A .pdf with fewer than 300 Chinese characters of text is a scan and is refused. The .pdf
+says which (`docx-rules-5/pdf-layout`). `source.page_locations` records physical PDF
+pages for the original cover, each parsed itinerary day, and the terms. Page evidence
+travels with normalized lines through merges, splits, and reordered headers; it is not
+reconstructed by matching repeated text. Blank pages retain their position in the file.
+These block locators do not prove every derived field or subsequent human revision.
+DOCX and historical parses without page evidence use an empty list. Source metadata
+remains immutable during warehouse review; old publications are not rewritten.
+A .pdf with fewer than 300 text letters is refused as insufficient text; this does not
+by itself prove it is a scan. The .pdf
 attachments' own labels — `餐食：早午晚`, `酒店：…`, `餐：/ 住：飞机上 行：无` — are read by
 `itinerary_source.split_days` cell by cell.
 

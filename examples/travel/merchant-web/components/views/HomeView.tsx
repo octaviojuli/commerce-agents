@@ -6,7 +6,6 @@
 import { useMemo, useState } from "react";
 import {
   ApprovalsBanner,
-  askWhy,
   AttentionList,
   AttentionRow,
   formatChangePct,
@@ -16,11 +15,9 @@ import {
   formatNumber,
   formatPeriodLabel,
   formatRate,
-  greeting,
   Notice,
   PageHeader,
   Panel,
-  plural,
   QueueOverflow,
   ratioChangePct,
   RecentChanges,
@@ -29,6 +26,7 @@ import {
   Skeleton,
   StatStrip,
   StatTile,
+  useCopy,
   ViewLink,
 } from "web-shared";
 import { INVENTORY_KINDS, inventoryPrompt, ISSUE_KINDS } from "@/lib/kinds";
@@ -40,19 +38,28 @@ type QueueRow = { kind: "issue"; issue: OrderIssue } | { kind: "inventory"; aler
 
 const ROW_CAP = 6;
 
+/** The comparison window's words, for the week panel and the questions the tiles prefill. */
+const COMPARISON = { week: "上周", period: "上一周期" };
+
+/** The question a KPI tile prefills: why the figure moved against the comparison window. */
+function askWhy(label: string, changePct: number | null | undefined, comparison: string): string {
+  if (changePct == null) return `${label}的走势如何，背后是什么原因？`;
+  return `为什么${label}对比${comparison || COMPARISON.period}${changePct >= 0 ? "上升" : "下降"}了 ${Math.abs(changePct).toFixed(1)}%？`;
+}
+
 /** One sentence from the overview: the revenue move and what needs the operator. */
 function briefing(data: OverviewResponse): string {
   const { snapshot, needs_attention } = data;
   const parts: string[] = [];
   if (snapshot.sales_change_pct != null) {
-    const direction = snapshot.sales_change_pct >= 0 ? "up" : "down";
-    parts.push(`Revenue is ${direction} ${formatChangePct(Math.abs(snapshot.sales_change_pct)).replace("+", "")} on the week.`);
+    const direction = snapshot.sales_change_pct >= 0 ? "上升" : "下降";
+    parts.push(`本周营收${direction} ${formatChangePct(Math.abs(snapshot.sales_change_pct)).replace("+", "")}。`);
   }
   const bookings = needs_attention.order_issues.length;
   const properties = needs_attention.inventory.length;
-  const needs = [bookings ? plural(bookings, "booking") : "", properties ? plural(properties, "property", "properties") : ""].filter(Boolean);
-  parts.push(needs.length ? `${needs.join(" and ")} need you today.` : "Nothing needs you today.");
-  return parts.join(" ");
+  const needs = [bookings ? `${bookings} 笔预订` : "", properties ? `${properties} 个房源` : ""].filter(Boolean);
+  parts.push(needs.length ? `今天有 ${needs.join("和 ")}需要你处理。` : "今天没有需要你处理的事项。");
+  return parts.join("");
 }
 
 function queueRows(data: OverviewResponse, filter: Filter): QueueRow[] {
@@ -77,8 +84,8 @@ function IssueRow({ issue, onAskAssistant }: { issue: OrderIssue; onAskAssistant
       icon={style.icon}
       tone={style.tone}
       title={issue.summary}
-      meta={[style.label, `Booking ${issue.order_id}`, issue.opened_at ? `opened ${formatDayMonth(issue.opened_at)}` : ""].filter(Boolean).join(" · ")}
-      action={{ label: issue.kind === "buyer_message" ? "Draft reply" : "Ask", onClick: () => onAskAssistant(issuePrompt(issue)) }}
+      meta={[style.label, `预订 ${issue.order_id}`, issue.opened_at ? `提交于 ${formatDayMonth(issue.opened_at)}` : ""].filter(Boolean).join(" · ")}
+      action={{ label: issue.kind === "buyer_message" ? "起草回复" : "问一问", onClick: () => onAskAssistant(issuePrompt(issue)) }}
     />
   );
 }
@@ -93,25 +100,25 @@ function InventoryRow({ alert, onAskAssistant }: { alert: InventoryAlert; onAskA
       title={alert.title}
       meta={
         <>
-          <span className={tight ? "font-semibold text-(--warn)" : ""}>{formatNumber(alert.stock)} room-nights available</span>
-          {["", tight ? runway(alert) : null, alert.sales_last_30d != null ? `${formatNumber(alert.sales_last_30d)} booked in 30 days` : "", alert.listing_id]
+          <span className={tight ? "font-semibold text-(--warn)" : ""}>{formatNumber(alert.stock)} 个房晚可售</span>
+          {["", tight ? runway(alert) : null, alert.sales_last_30d != null ? `30 天内订出 ${formatNumber(alert.sales_last_30d)}` : "", alert.listing_id]
             .filter((part, index) => index === 0 || part)
             .join(" · ")}
         </>
       }
-      action={{ label: tight ? "Ask" : "Plan rates", onClick: () => onAskAssistant(inventoryPrompt(alert.kind, `${alert.title} (${alert.listing_id})`)) }}
+      action={{ label: tight ? "问一问" : "规划房价", onClick: () => onAskAssistant(inventoryPrompt(alert.kind, `${alert.title} (${alert.listing_id})`)) }}
     />
   );
 }
 
 function TodayPanel({ today }: { today: TodaySnapshot }) {
   const rows = [
-    { label: "Arrivals", ...today.arrivals },
-    { label: "Departures", ...today.departures },
-    { label: "New bookings", ...today.new_bookings },
+    { label: "到店", ...today.arrivals },
+    { label: "离店", ...today.departures },
+    { label: "新预订", ...today.new_bookings },
   ];
   return (
-    <Panel title="Today at your properties">
+    <Panel title="今天的房源动态">
       <ul className="divide-y divide-(--line) px-[18px] pb-2">
         {rows.map((row) => (
           <li key={row.label} className="flex items-baseline gap-3 py-2">
@@ -206,16 +213,14 @@ function expandDays(
   return days;
 }
 
-const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-
 function OccupancyRibbon({ data, onAskAssistant }: { data: OccupancyOverviewResponse; onAskAssistant: (text: string) => void }) {
   const focus = useMemo(() => pickFocusMonth(data), [data]);
   if (!focus || data.properties.length === 0) return null;
-  const monthName = MONTH_NAMES[focus.month];
+  const monthName = `${focus.month + 1}月`;
   return (
     <Panel
-      title={`${monthName} occupancy on the books`}
-      action={<span className="hidden text-[12px] text-(--ink-faint) sm:inline">Paler is softer; outlined days have a staged rate.</span>}
+      title={`${monthName}在册入住率`}
+      action={<span className="hidden text-[12px] text-(--ink-faint) sm:inline">颜色越浅越冷清；带框的日期有待批准的房价。</span>}
     >
       <div className="flex flex-col gap-1.5 px-[18px] pb-4 pt-1">
         {data.properties.map((listing) => {
@@ -230,8 +235,8 @@ function OccupancyRibbon({ data, onAskAssistant }: { data: OccupancyOverviewResp
                   const pct = day.pct;
                   const soft = pct != null && pct < SOFT_PCT;
                   const question = soft
-                    ? `Why is ${listing.title} pacing soft around ${monthName} ${day.date.getDate()}?`
-                    : `How is ${listing.title} pacing for ${monthName}?`;
+                    ? `为什么 ${listing.title} 在 ${monthName}${day.date.getDate()}日 前后预订进度偏慢？`
+                    : `${listing.title} ${monthName}的预订进度如何？`;
                   return (
                     <button
                       key={day.date.toISOString()}
@@ -243,10 +248,10 @@ function OccupancyRibbon({ data, onAskAssistant }: { data: OccupancyOverviewResp
                       style={{
                         backgroundColor: pct == null ? "transparent" : `color-mix(in srgb, var(--accent) ${Math.round(pct)}%, var(--well))`,
                       }}
-                      aria-label={`${listing.title}, ${monthName} ${day.date.getDate()}: ${pct == null ? "no data" : `${Math.round(pct)}% on the books`}${
-                        day.staged ? ", staged rate window" : ""
-                      }${day.overridden ? ", promotional rate active" : ""}. Ask the assistant.`}
-                      title={`${monthName} ${day.date.getDate()} · ${pct == null ? "no data" : `${Math.round(pct)}%`}`}
+                      aria-label={`${listing.title}，${monthName}${day.date.getDate()}日：${pct == null ? "无数据" : `在册 ${Math.round(pct)}%`}${
+                        day.staged ? "，有待批准的房价窗口" : ""
+                      }${day.overridden ? "，促销价生效中" : ""}。问问助手。`}
+                      title={`${monthName}${day.date.getDate()}日 · ${pct == null ? "无数据" : `${Math.round(pct)}%`}`}
                     >
                       {day.weekend ? <span className="absolute inset-x-0 top-0 h-0.5 bg-(--ink)/30" /> : null}
                     </button>
@@ -277,20 +282,21 @@ export default function HomeView({
   onAskAssistant: (text: string) => void;
   onNavigate: (view: "properties" | "bookings") => void;
 }) {
+  const copy = useCopy();
   const [filter, setFilter] = useState<Filter>("all");
   const pending = useMemo(() => (data?.needs_attention.pending_changes ?? []).filter((change) => change.status === "staged"), [data]);
   const rows = useMemo(() => (data ? queueRows(data, filter) : []), [data, filter]);
   const now = useMemo(() => new Date(), []);
-  const title = `${greeting(now)}${operator ? `, ${operator}` : ""}`;
-  const today = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const title = `${copy.greeting(now)}${operator ? `，${operator}` : ""}`;
+  const today = now.toLocaleDateString("zh-CN", { weekday: "long", month: "long", day: "numeric" });
 
   if (failed && !data) {
     return (
       <>
         <PageHeader title={title} subtitle={today} />
         <Notice>
-          The travel API on port 8001 isn&apos;t reachable. Start it with{" "}
-          <code className="rounded bg-(--well) px-1 font-mono text-[13px]">uvicorn travel.api.main:app --app-dir examples --port 8001</code> and reload.
+          无法连接 8001 端口的 travel API。请先运行{" "}
+          <code className="rounded bg-(--well) px-1 font-mono text-[13px]">uvicorn travel.api.main:app --app-dir examples --port 8001</code>，再刷新页面。
         </Notice>
       </>
     );
@@ -315,7 +321,7 @@ export default function HomeView({
     pace: data.needs_attention.inventory.filter((alert) => alert.kind === "slow_mover").length,
   };
   const total = counts.bookings + counts.availability + counts.pace;
-  const comparison = formatComparisonLabel(snapshot.period, snapshot.compare_to);
+  const comparison = formatComparisonLabel(snapshot.period, snapshot.compare_to, COMPARISON);
   // The snapshot carries no average-booking delta, so derive it from the revenue and bookings deltas.
   const averageChangePct = ratioChangePct(snapshot.sales_change_pct, snapshot.orders_change_pct);
   const currency = snapshot.currency ?? "USD";
@@ -324,37 +330,37 @@ export default function HomeView({
     <div className="ac-reveal flex flex-col gap-5">
       <PageHeader title={title} subtitle={`${today} · ${briefing(data)}`} />
 
-      <ApprovalsBanner changes={pending} onReview={() => onAskAssistant("Walk me through the changes awaiting my approval and what each one would do.")} />
+      <ApprovalsBanner changes={pending} onReview={() => onAskAssistant("带我过一遍等待我批准的改动，以及每一项会做什么。")} />
 
-      <Panel title="This week" subtitle={`${formatPeriodLabel(snapshot.period)}${comparison ? ` · against the ${comparison}` : ""}`} bodyClassName="pb-1">
+      <Panel title="本周" subtitle={`${formatPeriodLabel(snapshot.period)}${comparison ? ` · 对比${comparison}` : ""}`} bodyClassName="pb-1">
         <StatStrip>
           <StatTile
-            label="Revenue"
+            label="营收"
             value={formatMoney(snapshot.sales, currency, { whole: snapshot.sales >= 1000 })}
             changePct={snapshot.sales_change_pct}
-            onClick={() => onAskAssistant(askWhy("Revenue", snapshot.sales_change_pct, comparison))}
-            ariaLabel="Revenue: ask the assistant why"
+            onClick={() => onAskAssistant(askWhy("营收", snapshot.sales_change_pct, comparison))}
+            ariaLabel="营收：问问助手原因"
           />
           <StatTile
-            label="Bookings"
+            label="预订数"
             value={formatNumber(snapshot.orders)}
             changePct={snapshot.orders_change_pct}
-            onClick={() => onAskAssistant(askWhy("Bookings", snapshot.orders_change_pct, comparison))}
-            ariaLabel="Bookings: ask the assistant why"
+            onClick={() => onAskAssistant(askWhy("预订数", snapshot.orders_change_pct, comparison))}
+            ariaLabel="预订数：问问助手原因"
           />
           <StatTile
-            label="Conversion"
+            label="转化率"
             value={snapshot.conversion_rate != null ? formatRate(snapshot.conversion_rate) : "—"}
             changePct={snapshot.conversion_change_pct}
-            onClick={() => onAskAssistant(askWhy("Conversion", snapshot.conversion_change_pct, comparison))}
-            ariaLabel="Conversion: ask the assistant why"
+            onClick={() => onAskAssistant(askWhy("转化率", snapshot.conversion_change_pct, comparison))}
+            ariaLabel="转化率：问问助手原因"
           />
           <StatTile
-            label="Average booking"
+            label="平均预订额"
             value={snapshot.average_order_value != null ? formatMoney(snapshot.average_order_value, currency) : "—"}
             changePct={averageChangePct}
-            onClick={() => onAskAssistant(askWhy("Average booking value", averageChangePct, comparison))}
-            ariaLabel="Average booking: ask the assistant why"
+            onClick={() => onAskAssistant(askWhy("平均预订额", averageChangePct, comparison))}
+            ariaLabel="平均预订额：问问助手原因"
           />
         </StatStrip>
       </Panel>
@@ -363,23 +369,23 @@ export default function HomeView({
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <Panel
-          title="Needs you today"
+          title="今天需要你处理"
           action={
             <Segmented<Filter>
-              label="Filter attention items"
+              label="筛选待办事项"
               value={filter}
               onChange={setFilter}
               options={[
-                { id: "all", label: "All", count: total },
-                { id: "bookings", label: "Bookings", count: counts.bookings },
-                { id: "availability", label: "Availability", count: counts.availability },
-                { id: "pace", label: "Soft pacing", count: counts.pace },
+                { id: "all", label: "全部", count: total },
+                { id: "bookings", label: "预订", count: counts.bookings },
+                { id: "availability", label: "房量", count: counts.availability },
+                { id: "pace", label: "进度偏慢", count: counts.pace },
               ]}
             />
           }
         >
           {rows.length === 0 ? (
-            <p className="px-[18px] pb-4 pt-1 text-[13.5px] text-(--ink-soft)">Nothing needs you today.</p>
+            <p className="px-[18px] pb-4 pt-1 text-[13.5px] text-(--ink-soft)">今天没有需要你处理的事项。</p>
           ) : (
             <>
               <AttentionList>
@@ -391,16 +397,16 @@ export default function HomeView({
                   ),
                 )}
               </AttentionList>
-              <QueueOverflow hidden={rows.length - ROW_CAP} link={{ label: "See all", onClick: () => onNavigate("bookings") }} />
+              <QueueOverflow hidden={rows.length - ROW_CAP} link={{ label: "查看全部", onClick: () => onNavigate("bookings") }} />
             </>
           )}
         </Panel>
 
         <div className="flex flex-col gap-4">
           {data.today ? <TodayPanel today={data.today} /> : null}
-          <Panel title="Recent bookings" action={<ViewLink label="All bookings" onClick={() => onNavigate("bookings")} />}>
+          <Panel title="最近预订" action={<ViewLink label="全部预订" onClick={() => onNavigate("bookings")} />}>
             {data.recent_orders.length === 0 ? (
-              <p className="px-[18px] pb-4 text-[13px] text-(--ink-soft)">No bookings yet.</p>
+              <p className="px-[18px] pb-4 text-[13px] text-(--ink-soft)">还没有预订。</p>
             ) : (
               <RecordList rows={bookingRows(data.recent_orders.slice(0, 4))} />
             )}

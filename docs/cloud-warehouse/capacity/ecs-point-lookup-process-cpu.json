@@ -1,0 +1,19 @@
+{
+  "boundary": "20-second sample during fictional mixed HTTP load; process CPU sums all threads; not request latency or a full-run average",
+  "observed_at": "2026-09-24T18:55:30.087689+00:00",
+  "elapsed_seconds": 20.000304089000565,
+  "processes": [
+    {
+      "role": "load_client",
+      "cpu_seconds": 3.28,
+      "cpu_percent_of_one_core": 16.399750650810756,
+      "threads": 113
+    },
+    {
+      "role": "http_server",
+      "cpu_seconds": 18.07,
+      "cpu_percent_of_one_core": 90.34862629882632,
+      "threads": 49
+    }
+  ]
+}

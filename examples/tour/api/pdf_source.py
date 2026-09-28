@@ -27,9 +27,10 @@ import subprocess
 PDF_TYPE = "application/pdf"
 PDF_MAGIC = b"%PDF"
 PDFTOTEXT = shutil.which("pdftotext")
+PDFIMAGES = shutil.which("pdfimages")
 PDFTOTEXT_TIMEOUT = 60.0
 PDF_MODES = ("layout", "default")
-# Below this many Chinese characters the file is a scan (or a cover only), not a document.
+# Below this many text letters the file is a scan (or a short cover), not a full document.
 MIN_TEXT_CHARS = 300
 CELL_SEPARATOR = " || "
 
@@ -68,6 +69,7 @@ _LABEL = r"(?:住宿|用餐|餐饮|餐食|酒店|交通|住|餐|行)\s*[：:]"
 _LABEL_SPLIT = re.compile(r"\s+(?=" + _LABEL + ")")
 _LABELS = re.compile(_LABEL)
 _HEADER_ONLY = re.compile(r"^第\s*\d{1,2}\s*天$")
+_DETAIL_START = re.compile(r"^(?:行程详情|详细行程|行程安排)\s*[：:]?$")
 # Where the itinerary stops and the terms begin. Past one of these headings the attachments'
 # numbered lists are the terms' own and never day headers.
 _TERMS_HEAD = re.compile(
@@ -83,14 +85,26 @@ _TITLE_CHARS = 40
 
 
 class ImageOnlyPdf(ValueError):
-    """A .pdf with no text layer to read."""
+    """A .pdf with no or insufficient text; a short layer does not prove a scan."""
+
+    def __init__(self, text_chars: int):
+        self.text_chars = text_chars
+        super().__init__(f"insufficient .pdf text: {text_chars} characters")
+
+
+class PdfReadError(ValueError):
+    """A classified extractor failure without document text or subprocess stderr."""
+
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(code)
 
 
 def pdf_text(data: bytes, mode: str = "layout") -> str:
     """The .pdf's text, in page layout or in text-block order, or ``ValueError`` when pdftotext
     is missing or fails."""
     if PDFTOTEXT is None:
-        raise ValueError("pdftotext is not installed")
+        raise PdfReadError("DOCUMENT_PARSER_UNAVAILABLE")
     try:
         done = subprocess.run(
             [PDFTOTEXT, *(["-layout"] if mode == "layout" else []), "-enc", "UTF-8", "-", "-"],
@@ -99,20 +113,75 @@ def pdf_text(data: bytes, mode: str = "layout") -> str:
             timeout=PDFTOTEXT_TIMEOUT,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise ValueError(f"pdftotext failed: {type(error).__name__}") from error
+    except subprocess.TimeoutExpired:
+        raise PdfReadError("DOCUMENT_PARSE_TIMEOUT") from None
+    except OSError:
+        raise PdfReadError("DOCUMENT_PARSER_UNAVAILABLE") from None
     if done.returncode != 0:
-        raise ValueError(f"pdftotext exit {done.returncode}: {done.stderr.decode()[:120]}")
+        raise PdfReadError("DOCUMENT_PDF_READ_FAILED")
     return done.stdout.decode("utf-8", errors="replace")
+
+
+class LocatedLine(str):
+    """Normalized text with physical PDF pages, retained when lines merge or move."""
+
+    pages: tuple[int, ...]
+
+    def __new__(cls, value: str, pages: tuple[int, ...]):
+        instance = super().__new__(cls, value)
+        instance.pages = tuple(sorted(set(pages)))
+        return instance
+
+
+def _located(value: str, *sources: str) -> str:
+    pages = {page for source in sources for page in getattr(source, "pages", ())}
+    return LocatedLine(value, tuple(sorted(pages))) if pages else value
 
 
 def pdf_lines(data: bytes, mode: str = "layout") -> list[str]:
     """The .pdf as document lines, in the shape of a .docx's."""
     text = pdf_text(data, mode)
-    chars = len(_CJK.findall(text))
+    chars = sum(character.isalpha() for character in text)
     if chars < MIN_TEXT_CHARS:
-        raise ImageOnlyPdf(f"image-only .pdf: {chars} characters of text")
-    return normalise_lines(text.replace("\f", "\n").splitlines())
+        raise ImageOnlyPdf(chars)
+    # Form feeds are physical page boundaries, including empty pages. A final form
+    # feed contributes no lines and therefore never invents a trailing page reference.
+    return normalise_lines(
+        [
+            LocatedLine(line, (page,))
+            for page, content in enumerate(text.split("\f"), 1)
+            for line in content.splitlines()
+        ]
+    )
+
+
+def unread_image_pages(data: bytes, lines: list[str]) -> list[int]:
+    """Detect sparse image pages without OCR or guessing the image's contents."""
+    if PDFIMAGES is None:
+        raise PdfReadError("DOCUMENT_PARSER_UNAVAILABLE")
+    try:
+        result = subprocess.run(
+            [PDFIMAGES, "-list", "-"], input=data, capture_output=True, timeout=15
+        )
+    except subprocess.TimeoutExpired:
+        raise PdfReadError("DOCUMENT_PARSE_TIMEOUT") from None
+    except OSError:
+        raise PdfReadError("DOCUMENT_PARSER_UNAVAILABLE") from None
+    if result.returncode:
+        raise PdfReadError("DOCUMENT_PDF_READ_FAILED")
+    pages = {
+        int(m[1])
+        for line in result.stdout.decode("utf-8", errors="replace").splitlines()
+        if (m := re.match(r"^\s*(\d+)\s+\d+\s+(?:image|mask|smask)\s", line))
+    }
+    return sorted(
+        page
+        for page in pages
+        if sum(
+            sum(c.isalpha() for c in line) for line in lines if page in getattr(line, "pages", ())
+        )
+        < 100
+    )
 
 
 def _title_like(line: str) -> bool:
@@ -126,8 +195,10 @@ def _hoistable(out: list[str], anchor: int) -> bool:
     to be a block; it must hold no day of its own already; and the 餐/住/行 row that opened it
     must end a day rather than open one — an attachment that writes 用餐 and 住宿 under each
     day header keeps its days where they are printed."""
-    if anchor < 2 or any(_DAY_CN.match(line) for line in out[anchor:]):
+    if anchor < 1 or any(_DAY_CN.match(line) for line in out[anchor:]):
         return False
+    if _DETAIL_START.match(out[anchor - 1]):
+        return True
     return not any(_DAY_CN.match(line) for line in out[anchor - 2 : anchor])
 
 
@@ -162,13 +233,15 @@ def normalise_lines(raw: list[str]) -> list[str]:
     """Layout text as document lines: column gaps as cells, dashes as one dash, the private-use
     characters read, the .pdf day headers rewritten, blank lines dropped."""
     lines = [
-        _cells(_DASHES.sub("-", _date_stamp(strip_private_use(line)).strip())).strip()
+        _located(
+            _cells(_DASHES.sub("-", _date_stamp(strip_private_use(line)).strip())).strip(), line
+        )
         for line in raw
         if line.strip()
     ]
     # ``餐：/ 住：飞机上 行：无`` on one line with single spaces: one cell per label.
     lines = [
-        CELL_SEPARATOR.join(_LABEL_SPLIT.split(line))
+        _located(CELL_SEPARATOR.join(_LABEL_SPLIT.split(line)), line)
         if CELL_SEPARATOR not in line and len(_LABELS.findall(line)) >= 2
         else line
         for line in lines
@@ -184,18 +257,22 @@ def normalise_lines(raw: list[str]) -> list[str]:
             skip -= 1
             continue
         if line == "或同级" and out:
-            out[-1] = f"{out[-1]} 或同级"
+            out[-1] = _located(f"{out[-1]} 或同级", out[-1], line)
+            continue
+        if _DETAIL_START.match(line):
+            out.append(line)
+            anchor = len(out)
             continue
         if _HEADER_ONLY.match(line) and index + 1 < len(lines):
             # ``第 01 天`` alone, the title on the next line.
             following = lines[index + 1]
             if len(following) <= 40 and "。" not in following and CELL_SEPARATOR not in following:
-                out.append(f"{line} {following}")
+                out.append(_located(f"{line} {following}", line, following))
                 skip = 1
                 continue
         unnumbered = _DAY_NO_NUMBER.match(line)
         if unnumbered is not None:
-            title = unnumbered[1].strip()
+            title = _located(unnumbered[1].strip(), line)
             # ``DAY   上海⸺科伦坡`` with the number drawn, then within three lines ``第1天 餐食：X
             # || 参考航班：…`` or ``1 || 餐食：X || …``: one header with the title and the
             # flight, the 餐食 cell as a row of its own, a wrapped title joined, a note kept.
@@ -208,7 +285,7 @@ def normalise_lines(raw: list[str]) -> list[str]:
                 if numbered is not None:
                     break
                 if title.endswith(("（", "(")) or ahead.startswith("-"):
-                    title = f"{title}{ahead}"
+                    title = _located(f"{title}{ahead}", title, ahead)
                 else:
                     between.append(ahead)
             if numbered is not None:
@@ -216,14 +293,18 @@ def normalise_lines(raw: list[str]) -> list[str]:
                 cells = [c.strip() for c in (numbered[2] or "").split(CELL_SEPARATOR) if c.strip()]
                 fields = [c for c in cells if _FIELD_CELL.match(c)]
                 rest = [c for c in cells if not _FIELD_CELL.match(c)]
-                out.append(CELL_SEPARATOR.join([f"{marker} {title}".strip(), *rest]))
-                out.extend(fields)
+                out.append(
+                    _located(
+                        CELL_SEPARATOR.join([f"{marker} {title}".strip(), *rest]), title, ahead
+                    )
+                )
+                out.extend(_located(field, ahead) for field in fields)
                 out.extend(between)
                 skip = consumed
                 bare_next = int(re.sub(r"\D", "", marker) or bare_next) + 1
                 continue
             day_count += 1
-            out.append(f"DAY-{day_count} {title}")
+            out.append(_located(f"DAY-{day_count} {title}", title))
             continue
         if _TERMS_HEAD.match(re.sub(r"\s+", "", line)) and len(re.sub(r"\s+", "", line)) <= 20:
             terms = True
@@ -238,7 +319,7 @@ def normalise_lines(raw: list[str]) -> list[str]:
                 following
             ):
                 bare_next += 1
-                out.append(f"第{bare[1]}天 {title}".strip())
+                out.append(_located(f"第{bare[1]}天 {title}".strip(), line))
                 continue
         marked = _DAY_CN.match(line)
         if marked is not None:
@@ -247,7 +328,7 @@ def normalise_lines(raw: list[str]) -> list[str]:
                 # ``第 12 天 || 餐：/ || 住：温暖的家 || 行：飞机``: the day number printed in the
                 # same row as the day's fields. The marker is the header and the fields are the
                 # row under it, or the day is read as having neither.
-                out.extend([marked[1], rest])
+                out.extend([_located(marked[1], line), _located(rest, line)])
                 anchor = len(out)
                 continue
             if not _title_like(rest) and _hoistable(out, anchor):
@@ -257,11 +338,11 @@ def normalise_lines(raw: list[str]) -> list[str]:
                 # the day before it — and takes that line as its title where one is printed
                 # there.
                 if anchor < len(out) and _title_like(out[anchor]):
-                    out[anchor] = f"{marked[1]} {out[anchor]}"
+                    out[anchor] = _located(f"{marked[1]} {out[anchor]}", line, out[anchor])
                 else:
-                    out.insert(anchor, marked[1])
+                    out.insert(anchor, _located(marked[1], line))
                 if rest:
-                    out.append(rest)
+                    out.append(_located(rest, line))
                 continue
         out.append(line)
         if len(_LABELS.findall(line)) >= 2 or _HEADER_ONLY.match(line):

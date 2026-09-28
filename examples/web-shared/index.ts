@@ -10,6 +10,7 @@ export { AgentApi } from "./api";
 export { useCatalogIndex } from "./catalog";
 export { type Prefill } from "./Composer";
 export { type Copy, CopyProvider, DEFAULT_COPY, mergeCopy, useCopy } from "./copy";
+export { ZH_CHROME_COPY } from "./copy-zh";
 export * from "./format";
 export { type GenerativeBlockProps, UnknownBlock } from "./generative";
 export { Icon, type IconName } from "./icons";

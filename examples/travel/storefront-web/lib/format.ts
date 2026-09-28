@@ -41,11 +41,11 @@ export function productPlace(product: Product): string | undefined {
   return product.attributes?.neighborhood ?? productCity(product);
 }
 
-// per_traveler folds into "/ person" so mixed data renders one unit.
+// per_traveler folds into "/ 人" so mixed data renders one unit.
 const PRICE_UNIT_LABELS: Record<string, string> = {
-  per_night: "/ night",
-  per_person: "/ person",
-  per_traveler: "/ person",
+  per_night: "/ 晚",
+  per_person: "/ 人",
+  per_traveler: "/ 人",
 };
 
 export function priceUnitLabel(unit?: string | null): string | null {
@@ -61,25 +61,23 @@ export function formatPrice(value: number): string {
   return formatMoney(value, "USD", { whole: Number.isInteger(value) });
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** "2026-10-13" → "Oct 13", from the string parts so no timezone shifts the day. */
+/** "2026-10-13" → "10月13日", from the string parts so no timezone shifts the day. */
 export function shortDate(iso?: string): string | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? "");
   if (!match) return null;
-  const month = MONTHS[Number(match[2]) - 1];
-  return month ? `${month} ${Number(match[3])}` : null;
+  const month = Number(match[2]);
+  return month >= 1 && month <= 12 ? `${month}月${Number(match[3])}日` : null;
 }
 
-function quantityNoun(productId: string): "nights" | "guests" | "travelers" | null {
-  if (productId.startsWith("AL-STAY-")) return "nights";
-  if (productId.startsWith("AL-EXP-")) return "guests";
-  if (productId.startsWith("AL-FLT-")) return "travelers";
+/** Stays count nights, experiences and flights count people. */
+function quantityNoun(productId: string): "晚" | "人" | null {
+  if (productId.startsWith("AL-STAY-")) return "晚";
+  if (productId.startsWith("AL-EXP-") || productId.startsWith("AL-FLT-")) return "人";
   return null;
 }
 
 export function quantityLabel(productId: string, quantity: number): string {
   const noun = quantityNoun(productId);
   if (!noun) return `× ${quantity}`;
-  return `× ${quantity} ${quantity === 1 ? noun.slice(0, -1) : noun}`;
+  return `× ${quantity} ${noun}`;
 }

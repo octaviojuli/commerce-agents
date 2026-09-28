@@ -179,33 +179,33 @@ const FLIGHT_PREMIUM: Product = {
 
 export const SHOWCASE = {
   itinerary: {
-    title: "Your Lisbon long weekend",
+    title: "你的里斯本长周末",
     // Three nights, so the footer total matches the checkout fixture for the same trip.
-    travel_dates: "Thu 15 Oct — Sun 18 Oct",
+    travel_dates: "10月15日（周四）至 10月18日（周日）",
     days: [
       {
-        label: "Day 1 — Arrive & settle into Alfama",
-        note: "Check in, shake off the flight. Wander the stairstep lanes at golden hour, grab a vinho verde at a miradouro, find a local tasca for dinner.",
+        label: "第1天 — 抵达，安顿在阿尔法玛",
+        note: "办理入住，缓一缓长途飞行。黄昏时在阶梯小巷里随意走走，在观景台喝一杯绿酒，再找家本地小馆吃晚饭。",
         products: [GUESTHOUSE_ALFAMA],
       },
       {
-        label: "Day 2 — Old city on foot + azulejo workshop",
-        note: "Morning: get lost in Alfama and Mouraria. Afternoon: tile-painting atelier in Baixa — small group, tiles fired and shipped home.",
+        label: "第2天 — 徒步老城 + 瓷砖彩绘工坊",
+        note: "上午在阿尔法玛和莫拉里亚迷路；下午去拜沙区的瓷砖彩绘工作室，小团授课，成品烧制后寄回家。",
         products: [TILE_WORKSHOP],
       },
       {
-        label: "Day 3 — Sintra day trip",
-        note: "Storybook palaces, lush gardens, and wild Atlantic cliffs. Back by early evening — a good night to splurge on a long dinner.",
+        label: "第3天 — 辛特拉一日游",
+        note: "童话般的宫殿、葱郁的花园和大西洋的野性悬崖。傍晚前返回，正好留一晚吃顿悠长的晚餐。",
         products: [SINTRA_TRIP],
       },
       {
-        label: "Day 3 Evening — Fado in a family tavern",
-        note: "As the sun drops: a guided evening walk through Alfama grazing on petiscos, ending at a live fado set.",
+        label: "第3天 傍晚 — 家庭小馆里的法多",
+        note: "日落时分跟着向导穿过阿尔法玛，边走边尝小食，最后在一场现场法多演出中收尾。",
         products: [FADO_WALK],
       },
       {
-        label: "Day 4 — Slow morning, head home",
-        note: "Breakfast under the lemon tree, a last espresso on a miradouro, then check out. October light in Lisbon is golden — worth every minute before the taxi.",
+        label: "第4天 — 慢悠悠的早晨，启程回家",
+        note: "在柠檬树下吃早餐，在观景台喝最后一杯浓缩咖啡，然后退房。里斯本十月的光线是金色的，值得在出租车来之前多待一分钟。",
         products: [],
       },
     ],
@@ -213,51 +213,51 @@ export const SHOWCASE = {
 
   // Two stays on the same arrival day are alternatives, so the footer prices the pick.
   itinerary_alternatives: {
-    title: "Lisbon, two ways to stay",
-    travel_dates: "Thu 15 Oct — Sun 18 Oct",
+    title: "里斯本，两种住法",
+    travel_dates: "10月15日（周四）至 10月18日（周日）",
     days: [
       {
-        label: "Day 1 — Arrive, pick your base",
-        note: "Two homes for the same three nights: the lemon-tree townhouse is an advance-saver rate — non-refundable — while the Graca rooftop cancels free until two days before check-in. The $54-a-night gap is what flexibility costs here.",
+        label: "第1天 — 抵达，选好落脚点",
+        note: "同样三晚，两处住所可选：柠檬树联排小楼是提前预订的优惠价，不可退款；格拉萨屋顶套房在入住前两天都可免费取消。每晚 $54 的差价，就是灵活性的价格。",
         products: [GUESTHOUSE_ALFAMA, ROOFTOP_SUITES],
       },
       {
-        label: "Day 2 — Old city on foot + azulejo workshop",
-        note: "Morning: get lost in Alfama and Mouraria. Afternoon: tile-painting atelier in Baixa.",
+        label: "第2天 — 徒步老城 + 瓷砖彩绘工坊",
+        note: "上午在阿尔法玛和莫拉里亚迷路，下午去拜沙区的瓷砖彩绘工作室。",
         products: [TILE_WORKSHOP],
       },
       {
-        label: "Day 3 — Sintra day trip",
-        note: "Storybook palaces and wild Atlantic cliffs. Back by early evening.",
+        label: "第3天 — 辛特拉一日游",
+        note: "童话般的宫殿和大西洋的野性悬崖，傍晚前返回。",
         products: [SINTRA_TRIP],
       },
       {
-        label: "Day 4 — Slow morning, head home",
-        note: "A last espresso on a miradouro, then check out.",
+        label: "第4天 — 慢悠悠的早晨，启程回家",
+        note: "在观景台喝最后一杯浓缩咖啡，然后退房。",
         products: [],
       },
     ],
   },
 
   comparison: {
-    title: "Flexibility, priced",
+    title: "灵活性值多少钱",
     entries: [
       {
         product_id: FLIGHT_ECONOMY.product_id,
         product: FLIGHT_ECONOMY,
-        pros: ["Nonstop overnight — land at 06:35", "Saves $622 per person", "Same departure time"],
-        cons: ["Non-refundable — changes cost a fee", "Tighter seat for 7 hours"],
-        best_for: "Locked-in dates and a carry-on mindset",
+        pros: ["直飞过夜航班，06:35 落地", "每人省 $622", "同一出发时间"],
+        cons: ["不可退款，改签需付手续费", "7 小时坐得更挤"],
+        best_for: "日期已定、轻装上阵的人",
       },
       {
         product_id: FLIGHT_PREMIUM.product_id,
         product: FLIGHT_PREMIUM,
-        pros: ["Fully refundable fare", "Wider seat, deeper recline", "Two checked bags included"],
-        cons: ["$622 more per person"],
-        best_for: "Plans that might move — or anyone who wants to sleep",
+        pros: ["全额可退票价", "座椅更宽、可躺更深", "含两件托运行李"],
+        cons: ["每人多付 $622"],
+        best_for: "计划可能变动的人，或者想在飞机上睡个好觉的人",
       },
     ],
-    dimensions: ["price", "refundability", "comfort", "baggage"],
+    dimensions: ["价格", "可退款", "舒适度", "行李"],
     recommended_product_id: FLIGHT_PREMIUM.product_id,
     // The price spread the server attaches to every comparison.
     price_delta: {
@@ -270,17 +270,17 @@ export const SHOWCASE = {
   },
 
   products: {
-    title: "Boutique stays in Alfama & Graca",
+    title: "阿尔法玛与格拉萨的精品住宿",
     layout: "carousel" as const,
     items: [
-      { product: GUESTHOUSE_ALFAMA, reason: "Best-loved townhouse in the old town" },
-      { product: ROOFTOP_SUITES, reason: "Private rooftop, castle-to-river views" },
-      { product: FADO_WALK, reason: "Pairs perfectly with either stay" },
+      { product: GUESTHOUSE_ALFAMA, reason: "老城区最受喜爱的联排小楼" },
+      { product: ROOFTOP_SUITES, reason: "私享屋顶，从城堡一路望到河" },
+      { product: FADO_WALK, reason: "和任一住宿都很搭" },
     ],
   },
 
   checkout: {
-    note: "Three nights at ACME Guesthouses, a Sintra day, and a fado evening for two — confirmation lands by email within a minute of booking.",
+    note: "ACME Guesthouses 三晚、辛特拉一日游和两人的法多之夜，预订后一分钟内确认邮件送达。",
     fulfillment_method: "delivery" as const,
     cart: {
       items: [
@@ -315,8 +315,8 @@ export const SHOWCASE = {
   order_status: {
     order_id: "AL-30418",
     summary:
-      "Your Kyoto trip is processing — the flight is ticketed and ACME Ryokan is confirming your three nights now. Everything lands in one email when it clears.",
-    next_step: "No action needed; confirmation usually clears within a few hours.",
+      "你的京都之旅正在确认中：机票已出票，ACME Ryokan 正在确认你的三晚住宿。一切就绪后会合并在一封邮件里发给你。",
+    next_step: "无需操作，确认通常在几小时内完成。",
     order: {
       order_id: "AL-30418",
       status: "processing",

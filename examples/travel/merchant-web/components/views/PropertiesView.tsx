@@ -17,7 +17,6 @@ import {
   PageHeader,
   Panel,
   Pill,
-  plural,
   PriceBand,
   QuotedAsData,
   SearchField,
@@ -35,6 +34,9 @@ import { runway } from "./BookingsView";
 
 type Filter = "all" | "active" | "tight" | "content" | "inactive";
 
+/** The pricing read's demand signal, as the supplier reads it. */
+const DEMAND_SIGNALS: Record<string, string> = { rising: "上升", falling: "下降", steady: "平稳", high: "旺", low: "淡", flat: "平稳" };
+
 function StatusPill({ status }: { status: Listing["status"] }) {
   const style = LISTING_STATUS[status];
   return (
@@ -45,9 +47,9 @@ function StatusPill({ status }: { status: Listing["status"] }) {
 }
 
 function ContentCell({ quality }: { quality: Listing["content_quality"] }) {
-  if (quality === "poor") return <Pill tone="danger">Poor content</Pill>;
-  if (quality === "needs_work") return <Pill tone="warn">Needs work</Pill>;
-  return <span className="text-[12.5px] text-(--ink-soft)">Good</span>;
+  if (quality === "poor") return <Pill tone="danger">内容较差</Pill>;
+  if (quality === "needs_work") return <Pill tone="warn">需完善</Pill>;
+  return <span className="text-[12.5px] text-(--ink-soft)">良好</span>;
 }
 
 /** Neighborhood and city from the listing's attributes, else its category. */
@@ -100,19 +102,19 @@ function PropertySheet({
 
   return (
     <Sheet
-      title="Property"
+      title="房源"
       detail={listingId}
       onClose={onClose}
-      closeLabel="Close property detail"
+      closeLabel="关闭房源详情"
       footer={
         listing ? (
           <>
-            <Button variant="primary" icon="spark" className="flex-1" onClick={() => ask(`Tell me how ${ref} is pacing and what you would change.`)}>
-              Ask about this property
+            <Button variant="primary" icon="spark" className="flex-1" onClick={() => ask(`告诉我 ${ref} 的预订进度，以及你会调整什么。`)}>
+              问问这个房源
             </Button>
             {alert?.kind === "slow_mover" ? (
               <Button variant="secondary" onClick={() => ask(inventoryPrompt("slow_mover", ref))}>
-                Plan rates
+                规划房价
               </Button>
             ) : null}
           </>
@@ -120,7 +122,7 @@ function PropertySheet({
       }
     >
       {failed ? (
-        <p className="text-[13.5px] text-(--ink-soft)">Couldn&apos;t load this property.</p>
+        <p className="text-[13.5px] text-(--ink-soft)">无法加载这个房源。</p>
       ) : !listing ? (
         <>
           <Skeleton className="h-24" />
@@ -135,7 +137,7 @@ function PropertySheet({
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <StatusPill status={listing.status} />
                 {listing.content_quality && listing.content_quality !== "good" ? (
-                  <Pill tone={listing.content_quality === "poor" ? "danger" : "warn"}>Content {listing.content_quality === "poor" ? "is poor" : "needs work"}</Pill>
+                  <Pill tone={listing.content_quality === "poor" ? "danger" : "warn"}>{listing.content_quality === "poor" ? "内容较差" : "内容需完善"}</Pill>
                 ) : null}
                 <Pill>{location(listing)}</Pill>
                 {listing.attributes?.room_type ? <Pill>{listing.attributes.room_type}</Pill> : null}
@@ -144,11 +146,11 @@ function PropertySheet({
           </div>
 
           <Facts>
-            <Fact label="Nightly rate" value={formatMoney(listing.price, listing.currency ?? "USD", { whole: true })} />
-            <Fact label="Available" value={formatNumber(listing.stock)} tone={listing.stock === 0 ? "danger" : alert?.kind === "low_stock" ? "warn" : undefined} />
-            <Fact label="Booked" value={listing.sales_last_30d != null ? formatNumber(listing.sales_last_30d) : null} />
+            <Fact label="每晚房价" value={formatMoney(listing.price, listing.currency ?? "USD", { whole: true })} />
+            <Fact label="可售房晚" value={formatNumber(listing.stock)} tone={listing.stock === 0 ? "danger" : alert?.kind === "low_stock" ? "warn" : undefined} />
+            <Fact label="30 天订出" value={listing.sales_last_30d != null ? formatNumber(listing.sales_last_30d) : null} />
             <Fact
-              label={pricing?.margin_pct != null ? "Margin" : "Cancellations"}
+              label={pricing?.margin_pct != null ? "利润率" : "取消率"}
               value={pricing?.margin_pct != null ? formatRate(pricing.margin_pct) : listing.return_rate_pct != null ? formatRate(listing.return_rate_pct) : null}
             />
           </Facts>
@@ -157,26 +159,26 @@ function PropertySheet({
             <section>
               <SectionTitle
                 aside={[
-                  listing.sales_last_30d != null ? `${formatNumber(listing.sales_last_30d)} booked in 30 days` : "",
-                  pricing.unit_cost != null ? `cost per night ${formatMoney(pricing.unit_cost)}` : "",
-                  pricing.demand_signal ? `demand ${titleCase(pricing.demand_signal).toLowerCase()}` : "",
-                  pricing.last_changed ? `changed ${formatDate(pricing.last_changed)}` : "",
+                  listing.sales_last_30d != null ? `30 天内订出 ${formatNumber(listing.sales_last_30d)}` : "",
+                  pricing.unit_cost != null ? `每晚成本 ${formatMoney(pricing.unit_cost)}` : "",
+                  pricing.demand_signal ? `需求${DEMAND_SIGNALS[pricing.demand_signal] ?? titleCase(pricing.demand_signal)}` : "",
+                  pricing.last_changed ? `调整于 ${formatDate(pricing.last_changed)}` : "",
                 ]
                   .filter(Boolean)
                   .join(" · ")}
               >
-                Rate
+                房价
               </SectionTitle>
               {pricing.min_price != null && pricing.max_price != null ? <PriceBand current={pricing.current_price} floor={pricing.min_price} ceiling={pricing.max_price} /> : null}
               {listing.return_rate_pct != null && pricing.margin_pct != null ? (
-                <p className="mt-2 text-[12.5px] tabular-nums text-(--ink-soft)">Cancellation rate {formatRate(listing.return_rate_pct)}</p>
+                <p className="mt-2 text-[12.5px] tabular-nums text-(--ink-soft)">取消率 {formatRate(listing.return_rate_pct)}</p>
               ) : null}
             </section>
           ) : null}
 
           {listing.missing_attributes?.length ? (
             <section>
-              <SectionTitle>Missing from the listing</SectionTitle>
+              <SectionTitle>房源信息缺少的内容</SectionTitle>
               <div className="flex flex-wrap items-center gap-1.5">
                 {listing.missing_attributes.map((attribute) => (
                   <Pill key={attribute} tone="warn">
@@ -184,8 +186,8 @@ function PropertySheet({
                   </Pill>
                 ))}
                 <AskButton
-                  label="Draft these attributes"
-                  onClick={() => ask(`Draft the missing attributes (${listing.missing_attributes?.join(", ")}) for ${ref}.`)}
+                  label="起草这些属性"
+                  onClick={() => ask(`为 ${ref} 起草缺少的属性（${listing.missing_attributes?.join("、")}）。`)}
                 />
               </div>
             </section>
@@ -193,7 +195,7 @@ function PropertySheet({
 
           {listing.review_snippets?.length ? (
             <section>
-              <SectionTitle aside={<QuotedAsData subject="Guest-written" />}>What guests say</SectionTitle>
+              <SectionTitle aside={<QuotedAsData subject="客人所写" />}>客人怎么说</SectionTitle>
               <div className="flex flex-col gap-1.5">
                 {listing.review_snippets.map((snippet, index) => (
                   <blockquote key={index} className="rounded-[10px] bg-(--ground) px-3 py-2 text-[13px] leading-snug text-(--ink-2)">
@@ -206,7 +208,7 @@ function PropertySheet({
 
           {listing.long_description ? (
             <section>
-              <SectionTitle>Description</SectionTitle>
+              <SectionTitle>描述</SectionTitle>
               <p className="whitespace-pre-line text-[13px] leading-relaxed text-(--ink-2)">{listing.long_description}</p>
             </section>
           ) : null}
@@ -227,7 +229,7 @@ function PropertyRow({ listing, alert, onOpen }: { listing: Listing; alert?: Inv
         }
       }}
       tabIndex={0}
-      aria-label={`Open ${listing.title}`}
+      aria-label={`打开 ${listing.title}`}
       className="cursor-pointer border-t border-(--line) transition-colors hover:bg-(--ground)/70 focus-visible:bg-(--ground)/70 focus-visible:outline-none"
     >
       <td className="py-2.5 pl-[18px] pr-3">
@@ -258,12 +260,12 @@ function PropertyTable({ listings, alerts, onOpen }: { listings: Listing[]; aler
       <table className="w-full border-collapse">
         <thead>
           <tr className="text-left text-[12px] font-semibold text-(--ink-soft)">
-            <th className="py-2.5 pl-[18px] pr-3 font-semibold">Property</th>
-            <th className="hidden px-3 py-2.5 font-semibold @4xl:table-cell">Location</th>
-            <th className="px-3 py-2.5 text-right font-semibold">Available</th>
-            <th className="px-3 py-2.5 text-right font-semibold">Nightly rate</th>
-            <th className="px-3 py-2.5 font-semibold">Status</th>
-            <th className="hidden py-2.5 pl-3 pr-[18px] font-semibold @2xl:table-cell">Content</th>
+            <th className="py-2.5 pl-[18px] pr-3 font-semibold">房源</th>
+            <th className="hidden px-3 py-2.5 font-semibold @4xl:table-cell">位置</th>
+            <th className="px-3 py-2.5 text-right font-semibold">可售房晚</th>
+            <th className="px-3 py-2.5 text-right font-semibold">每晚房价</th>
+            <th className="px-3 py-2.5 font-semibold">状态</th>
+            <th className="hidden py-2.5 pl-3 pr-[18px] font-semibold @2xl:table-cell">内容</th>
           </tr>
         </thead>
         <tbody>
@@ -324,9 +326,9 @@ export default function PropertiesView({ refreshKey, onAskAssistant }: { refresh
 
   const summary = listings
     ? [
-        total != null && total > listings.length ? `${formatNumber(listings.length)} of ${plural(total, "property", "properties")}` : plural(total ?? listings.length, "property", "properties"),
-        counts.tight ? `${formatNumber(counts.tight)} tight on availability` : "",
-        counts.content ? `${formatNumber(counts.content)} need content work` : "",
+        total != null && total > listings.length ? `显示 ${formatNumber(listings.length)} / 共 ${formatNumber(total)} 个房源` : `共 ${formatNumber(total ?? listings.length)} 个房源`,
+        counts.tight ? `${formatNumber(counts.tight)} 个房量紧张` : "",
+        counts.content ? `${formatNumber(counts.content)} 个需完善内容` : "",
       ]
         .filter(Boolean)
         .join(" · ")
@@ -334,44 +336,44 @@ export default function PropertiesView({ refreshKey, onAskAssistant }: { refresh
 
   return (
     <div className="ac-reveal flex flex-col gap-4">
-      <PageHeader title="Properties" subtitle={summary}>
-        <Button variant="secondary" icon="spark" onClick={() => onAskAssistant("Which properties need the most work right now, and why?")}>
-          Ask about the portfolio
+      <PageHeader title="房源" subtitle={summary}>
+        <Button variant="secondary" icon="spark" onClick={() => onAskAssistant("现在哪些房源最需要处理，为什么？")}>
+          问问整体房源
         </Button>
       </PageHeader>
 
       {failed && !listings ? (
-        <Notice>The travel API isn&apos;t reachable, so properties can&apos;t load.</Notice>
+        <Notice>无法连接 travel API，房源无法加载。</Notice>
       ) : !listings ? (
         <Skeleton className="h-96" />
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2.5">
-            <SearchField value={query} onChange={setQuery} placeholder="Search by name, ID, or neighborhood" label="Search properties" className="min-w-[260px] flex-1 sm:max-w-sm" />
+            <SearchField value={query} onChange={setQuery} placeholder="按名称、编号或街区搜索" label="搜索房源" className="min-w-[260px] flex-1 sm:max-w-sm" />
             <Segmented<Filter>
-              label="Filter properties"
+              label="筛选房源"
               value={filter}
               onChange={setFilter}
               options={[
-                { id: "all", label: "All", count: counts.all },
-                { id: "active", label: "Active", count: counts.active },
-                { id: "tight", label: "Tight", count: counts.tight },
-                { id: "content", label: "Needs content", count: counts.content },
-                { id: "inactive", label: "Inactive", count: counts.inactive },
+                { id: "all", label: "全部", count: counts.all },
+                { id: "active", label: "在售", count: counts.active },
+                { id: "tight", label: "房量紧张", count: counts.tight },
+                { id: "content", label: "需完善内容", count: counts.content },
+                { id: "inactive", label: "未在售", count: counts.inactive },
               ]}
             />
           </div>
 
-          {attention.length === 0 && rest.length === 0 ? <Notice>No properties match.</Notice> : null}
+          {attention.length === 0 && rest.length === 0 ? <Notice>没有匹配的房源。</Notice> : null}
 
           {attention.length ? (
-            <Panel title="Needs attention" subtitle={`${formatNumber(attention.length)} · sold out and tight availability first`}>
+            <Panel title="需要关注" subtitle={`${formatNumber(attention.length)} · 已售罄和房量紧张的排在前面`}>
               <PropertyTable listings={attention} alerts={alerts} onOpen={setOpenListing} />
             </Panel>
           ) : null}
 
           {rest.length ? (
-            <Panel title={attention.length ? "Everything else" : "All properties"} subtitle={formatNumber(rest.length)}>
+            <Panel title={attention.length ? "其余房源" : "全部房源"} subtitle={formatNumber(rest.length)}>
               <PropertyTable listings={rest} alerts={alerts} onOpen={setOpenListing} />
             </Panel>
           ) : null}

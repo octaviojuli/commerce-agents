@@ -1,0 +1,56 @@
+{
+    auto_https disable_redirects
+    default_sni 8.130.118.212
+}
+:80 {
+    handle /.well-known/acme-challenge/* {
+        root * /data/tour-acme
+        file_server
+    }
+    encode zstd gzip
+
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+
+    handle /static-uploads/* {
+        reverse_proxy api:8000
+    }
+
+    handle /static-output/* {
+        reverse_proxy api:8000
+    }
+
+    handle {
+        reverse_proxy web:80
+    }
+}
+
+:8080 {
+    encode zstd gzip
+
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+
+    handle /static-uploads/* {
+        reverse_proxy api:8000
+    }
+
+    handle /static-output/* {
+        reverse_proxy api:8000
+    }
+
+    handle {
+        reverse_proxy web-admin:80
+    }
+}
+
+https://8.130.118.212 {
+    tls /data/tour-letsencrypt/live/tour-ip/fullchain.pem /data/tour-letsencrypt/live/tour-ip/privkey.pem
+    header X-Content-Type-Options nosniff
+    header Referrer-Policy same-origin
+    reverse_proxy 172.18.0.1:18081 {
+        flush_interval -1
+    }
+}

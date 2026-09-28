@@ -113,8 +113,11 @@ def role(request) -> str:
 
 @pytest.mark.parametrize("platform", list(CLIENTS))
 def test_runtime_binds_the_injected_client_and_the_configured_model(
-    role, backend, skills, config, platform
+    role, backend, skills, config, platform, monkeypatch
 ):
+    # A developer's .env may select a gateway. This test constructs each platform's
+    # own client and must not inherit that unrelated endpoint override.
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
     make_client, model, endpoint = CLIENTS[platform]
     client = make_client()
     agent = AGENTS[role](

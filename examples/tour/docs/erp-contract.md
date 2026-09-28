@@ -39,6 +39,19 @@ decisions that shape Phase 4. Fictional example values throughout.
 
 ## Reads
 
+Cloud-warehouse read verification on 2026-09-23 inspected the stored departure field
+coverage plus one fresh 50-row page and one detail response. Neither response exposed
+an explicit sales-pause flag or booking deadline. `reserveHours` is the lifetime of a
+reserved order, not a deadline for accepting new bookings. Missing source sales rules
+remain unknown; cloud-local approved controls are separate. The field-only audit is
+stored privately in `.warehouse/b2b-sales-field-audit.json`, without credentials or row
+values. This sample does not establish every supplier's future API schema.
+
+The 20-page ceiling above describes the legacy direct adapter. Cloud synchronization
+uses `B2BConnector` to traverse the reported pages and validate counts, unique IDs and
+the first-page anchor. Its 2,000-page protection raises an error instead of silently
+publishing a truncated catalog.
+
 | Call | Endpoint | Filters | Row |
 |---|---|---|---|
 | routes | `GET /route/list` | `routeName~`, `routeCode~`, `departDateStart/End` | `routeId, routeCode, routeName, days, departCityId, departCityName, companyId, companyName, groupId, fromPrice, tags[], itineraryTags[], itineraryTagsStatus, periodTags[], periodPriceTags[], periodHolidayTags[], features[], firstImageUrl, posterUrls[], routeAttachmentName, routeAttachmentUrl` |

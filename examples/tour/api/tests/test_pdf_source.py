@@ -4,10 +4,20 @@
 """The .pdf 行程附件 read as document lines: pdftotext's layout text normalised into the
 .docx row shape, the three .pdf day-header shapes rewritten, a scan refused."""
 
+import subprocess
+
 import pytest
 
 from tour.api.itinerary_source import document_lines, split_days
-from tour.api.pdf_source import PDFTOTEXT, ImageOnlyPdf, normalise_lines
+from tour.api.pdf_source import (
+    PDFTOTEXT,
+    ImageOnlyPdf,
+    LocatedLine,
+    PdfReadError,
+    normalise_lines,
+    pdf_lines,
+    pdf_text,
+)
 from tour.api.route_parser import _meals
 
 
@@ -103,15 +113,26 @@ def test_the_short_meal_forms():
 
 def _pdf(text_lines: list[str]) -> bytes:
     """A one-page PDF with Helvetica text, one line per entry, as pdftotext reads it."""
-    content = "BT /F1 12 Tf 72 720 Td 14 TL " + " ".join(f"({t}) Tj T*" for t in text_lines) + " ET"
+    return _pdf_pages([text_lines])
+
+
+def _pdf_pages(pages: list[list[str]]) -> bytes:
+    """A real multipage ACME fixture, including blank physical pages."""
+    kids = " ".join(f"{4 + 2 * i} 0 R" for i in range(len(pages)))
     objects = [
         "<< /Type /Catalog /Pages 2 0 R >>",
-        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
-        " /Resources << /Font << /F1 5 0 R >> >> >>",
-        f"<< /Length {len(content)} >>\nstream\n{content}\nendstream",
+        f"<< /Type /Pages /Kids [{kids}] /Count {len(pages)} >>",
         "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
     ]
+    for index, lines in enumerate(pages):
+        content = "BT /F1 12 Tf 72 720 Td 14 TL " + " ".join(f"({t}) Tj T*" for t in lines) + " ET"
+        objects.extend(
+            [
+                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {5 + 2 * index} 0 R"
+                " /Resources << /Font << /F1 3 0 R >> >> >>",
+                f"<< /Length {len(content)} >>\nstream\n{content}\nendstream",
+            ]
+        )
     out = "%PDF-1.4\n"
     offsets = []
     for i, body in enumerate(objects, 1):
@@ -124,6 +145,41 @@ def _pdf(text_lines: list[str]) -> bytes:
     return out.encode("latin-1")
 
 
+@pytest.mark.parametrize("mode", ["layout", "default"])
+@pytest.mark.skipif(PDFTOTEXT is None, reason="pdftotext is not installed")
+def test_pdf_physical_pages_include_blank_pages_and_repeated_text(monkeypatch, mode):
+    monkeypatch.setattr("tour.api.pdf_source.MIN_TEXT_CHARS", 0)
+    lines = pdf_lines(_pdf_pages([["ACME same"], [], ["ACME same", "D1 ACME city"]]), mode)
+    assert lines == ["ACME same", "ACME same", "D1 ACME city"]
+    assert [line.pages for line in lines] == [(1,), (3,), (3,)]
+
+
+def test_page_evidence_survives_normalized_cross_page_merges_and_reordering():
+    def read(values):
+        return normalise_lines([LocatedLine(value, (page,)) for page, value in values])
+
+    lines = read([(1, "第1天"), (2, "ACME 城市"), (2, "酒店：ACME"), (3, "或同级")])
+    assert lines == ["第1天 ACME 城市", "酒店：ACME 或同级"]
+    assert [line.pages for line in lines] == [(1, 2), (2, 3)]
+    lines = read([(1, "DAY   ACME（"), (2, "- 城市）"), (2, "备注"), (3, "1   餐食：早")])
+    assert lines == ["第1天 ACME（- 城市）", "餐食：早", "备注"]
+    assert [line.pages for line in lines] == [(1, 2, 3), (3,), (2,)]
+    lines = read(
+        [
+            (1, "第1天 ACME 城市"),
+            (1, "游览城市。"),
+            (1, "餐：早 午 晚 住：ACME 行：车"),
+            (2, "另一城市"),
+            (3, "长段行程，游览景点。"),
+            (3, "第2天"),
+            (4, "继续游览。"),
+        ]
+    )
+    header = next(line for line in lines if line.startswith("第2天"))
+    assert header == "第2天 另一城市" and header.pages == (2, 3)
+    assert next(line for line in lines if line == "继续游览。").pages == (4,)
+
+
 @pytest.mark.skipif(PDFTOTEXT is None, reason="pdftotext is not installed")
 def test_document_lines_reads_a_pdf_and_refuses_a_scan(monkeypatch):
     monkeypatch.setattr("tour.api.pdf_source.MIN_TEXT_CHARS", 0)
@@ -134,6 +190,29 @@ def test_document_lines_reads_a_pdf_and_refuses_a_scan(monkeypatch):
     monkeypatch.setattr("tour.api.pdf_source.MIN_TEXT_CHARS", 300)
     with pytest.raises(ImageOnlyPdf):
         document_lines(_pdf(["DAY 1 Shanghai - Colombo"]))
+
+
+@pytest.mark.parametrize("failure", ["missing", "os", "timeout", "exit"])
+def test_pdf_extraction_errors_are_classified_without_stderr(monkeypatch, failure):
+    monkeypatch.setattr("tour.api.pdf_source.PDFTOTEXT", None if failure == "missing" else "acme")
+
+    def run(*args, **kwargs):
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired("acme", 60)
+        if failure == "os":
+            raise OSError("secret path")
+        return subprocess.CompletedProcess(args, 1, b"", b"secret source text")
+
+    monkeypatch.setattr("tour.api.pdf_source.subprocess.run", run)
+    expected = {
+        "missing": "DOCUMENT_PARSER_UNAVAILABLE",
+        "os": "DOCUMENT_PARSER_UNAVAILABLE",
+        "timeout": "DOCUMENT_PARSE_TIMEOUT",
+        "exit": "DOCUMENT_PDF_READ_FAILED",
+    }[failure]
+    with pytest.raises(PdfReadError) as error:
+        pdf_text(b"%PDF-ACME")
+    assert str(error.value) == expected
 
 
 def test_a_day_number_printed_against_the_middle_of_a_paragraph_starts_its_day():
@@ -217,3 +296,41 @@ def test_a_numbered_line_under_the_terms_is_no_day_header():
     )
     assert lines[0] == "第1天"
     assert lines[-2:] == ["2 || 护照费用", "3 || 个人消费"]
+
+
+def test_first_centered_day_stays_after_explicit_detail_heading():
+    lines = normalise_lines(
+        [
+            LocatedLine("D1 ACME 概览", (2,)),
+            LocatedLine("行程详情：", (3,)),
+            LocatedLine("ACME 城市", (3,)),
+            LocatedLine("集合后办理手续，随后乘车前往机场。", (3,)),
+            LocatedLine("第 01 天   请按领队指引办理登记手续。", (3,)),
+            LocatedLine("餐：/   住：飞机上   行：飞机", (3,)),
+        ]
+    )
+    day = split_days(lines)[0]
+    assert day.day_no == 1 and day.title == "ACME 城市"
+    assert "集合后办理手续" in day.text
+    assert "概览" not in day.text
+    assert next(line for line in lines if line.startswith("第")).pages == (3,)
+
+
+def test_sparse_image_pages_are_located_without_reading_image_text(monkeypatch):
+    from types import SimpleNamespace
+
+    from tour.api.pdf_source import unread_image_pages
+
+    monkeypatch.setattr("tour.api.pdf_source.PDFIMAGES", "pdfimages")
+
+    def run(command, **kwargs):
+        assert command == ["pdfimages", "-list", "-"]
+        assert kwargs["input"] == b"%PDF-ACME"
+        return SimpleNamespace(
+            returncode=0,
+            stdout=b"page num type width height\n1 0 image 400 600\n2 1 image 300 200\n3 2 image 500 500\n",
+        )
+
+    monkeypatch.setattr("tour.api.pdf_source.subprocess.run", run)
+    lines = [LocatedLine("ACME", (1,)), LocatedLine("正文" * 100, (2,))]
+    assert unread_image_pages(b"%PDF-ACME", lines) == [1, 3]

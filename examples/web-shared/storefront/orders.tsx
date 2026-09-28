@@ -9,6 +9,7 @@
  */
 
 import { type ReactNode, useState } from "react";
+import { type Copy, DEFAULT_COPY, useCopy } from "../copy";
 import { formatDayMonth, formatMoney, formatWeekday, plural } from "../format";
 import type { Order } from "../protocol";
 import { AskButton, Notice, PageHeader, Panel, Pill, Segmented, Skeleton, type Tone } from "../ui";
@@ -16,15 +17,16 @@ import { useStoreFrame } from "./frame";
 import { MoreLink } from "./home";
 import { StorePage } from "./Shell";
 
-const STATUS: Record<string, { label: string; tone: Tone }> = {
-  processing: { label: "Processing", tone: "muted" },
-  shipped: { label: "Shipped", tone: "info" },
-  out_for_delivery: { label: "Out for delivery", tone: "info" },
-  delayed: { label: "Delayed", tone: "warn" },
-  delivered: { label: "Delivered", tone: "ok" },
-  cancelled: { label: "Cancelled", tone: "muted" },
-  return_initiated: { label: "Return requested", tone: "violet" },
-  refunded: { label: "Refunded", tone: "ok" },
+/** The tone of each shared status; its words are the chrome's `orderStatuses`. */
+const STATUS_TONE: Record<string, Tone> = {
+  processing: "muted",
+  shipped: "info",
+  out_for_delivery: "info",
+  delayed: "warn",
+  delivered: "ok",
+  cancelled: "muted",
+  return_initiated: "violet",
+  refunded: "ok",
 };
 
 const OPEN = new Set(["processing", "shipped", "out_for_delivery", "delayed"]);
@@ -54,14 +56,15 @@ export function estimateOf(order: Order): { date: string; note: string | null } 
 }
 
 /** The label for a status, the vertical's own word first ("return_initiated" → "Return requested"). */
-export function orderStatusLabel(status: string, labels?: Record<string, string>): string {
-  return labels?.[status] ?? STATUS[status]?.label ?? status.replaceAll("_", " ");
+export function orderStatusLabel(status: string, labels?: Record<string, string>, shared: Record<string, string> = DEFAULT_COPY.orderStatuses): string {
+  return labels?.[status] ?? shared[status] ?? status.replaceAll("_", " ");
 }
 
 export function OrderStatusPill({ status, labels }: { status: string; labels?: Record<string, string> }) {
+  const copy = useCopy();
   return (
-    <Pill tone={STATUS[status]?.tone ?? "muted"} dot>
-      {orderStatusLabel(status, labels)}
+    <Pill tone={STATUS_TONE[status] ?? "muted"} dot>
+      {orderStatusLabel(status, labels, copy.orderStatuses)}
     </Pill>
   );
 }
@@ -75,6 +78,8 @@ export interface OrderHandoff {
 export interface OrderNouns {
   /** "order", "trip" */
   one: string;
+  /** The plural, when it is not `one` + "s". */
+  many?: string;
   /** The view: "Orders", "Trips" */
   title: string;
   /** The home card: "Arriving", "Coming up" */
@@ -114,32 +119,34 @@ export const ORDER_NOUNS: OrderNouns = {
   },
 };
 
-function orderTitle(order: Order): string {
+function orderTitle(order: Order, copy: Copy): string {
   const [first, ...rest] = order.items;
   if (!first) return order.order_id;
-  return rest.length ? `${first.title} + ${rest.length} more` : first.title;
+  return rest.length ? copy.moreItems(first.title, rest.length) : first.title;
 }
 
 function When({ order, nouns }: { order: Order; nouns: OrderNouns }) {
+  const copy = useCopy();
   const estimate = estimateOf(order);
-  if (!estimate) return <span>Placed {formatDayMonth(order.placed_at)}</span>;
+  if (!estimate) return <span>{copy.placedOn(formatDayMonth(order.placed_at))}</span>;
   if (!isOpen(order)) return <span>{nouns.closedWhen(order, estimate.date)}</span>;
   return (
     <span className={order.status === "delayed" ? "font-semibold text-(--warn)" : ""} title={estimate.note ?? undefined}>
-      {order.status === "delayed" ? "Expected" : nouns.openVerb} {estimate.date}
+      {order.status === "delayed" ? copy.expected : nouns.openVerb} {estimate.date}
     </span>
   );
 }
 
 function OrderRow({ order, nouns, thumb, compact = false }: { order: Order; nouns: OrderNouns; thumb: (order: Order) => ReactNode; compact?: boolean }) {
   const { ask } = useStoreFrame();
+  const copy = useCopy();
   const handoff = nouns.handoff(order);
   const estimate = estimateOf(order);
   return (
     <li className="flex items-center gap-3 border-t border-(--line) px-[18px] py-3 first:border-t-0">
       {thumb(order)}
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[14px] font-semibold text-(--ink)">{orderTitle(order)}</div>
+        <div className="truncate text-[14px] font-semibold text-(--ink)">{orderTitle(order, copy)}</div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] text-(--ink-soft)">
           {compact ? <OrderStatusPill status={order.status} labels={nouns.statusLabels} /> : <span className="tabular-nums">{order.order_id}</span>}
           <span aria-hidden>·</span>
@@ -172,7 +179,8 @@ export function ArrivingPanel({
   thumb: (order: Order) => ReactNode;
   onSeeAll?: () => void;
 }) {
-  if (!orders) return failed ? <Notice>Couldn&apos;t load your {nouns.title.toLowerCase()}.</Notice> : <Skeleton className="h-[188px]" />;
+  const copy = useCopy();
+  if (!orders) return failed ? <Notice>{copy.loadFailed(nouns.title)}</Notice> : <Skeleton className="h-[188px]" />;
   // A shopper with no history gets no card; one with nothing open sees the two most recent.
   if (!orders.length) return null;
   const open = upcoming(orders).slice(0, 3);
@@ -180,8 +188,8 @@ export function ArrivingPanel({
   return (
     <Panel
       title={nouns.cardTitle}
-      subtitle={open.length ? plural(orders.length, nouns.one) : nouns.noneOpen}
-      action={onSeeAll ? <MoreLink label={`All ${nouns.title.toLowerCase()}`} onClick={onSeeAll} /> : null}
+      subtitle={open.length ? plural(orders.length, nouns.one, nouns.many) : nouns.noneOpen}
+      action={onSeeAll ? <MoreLink label={copy.allOf(nouns.title)} onClick={onSeeAll} /> : null}
     >
       <ul>
         {shown.map((order) => (
@@ -206,27 +214,27 @@ export function OrdersView({
   subtitle?: ReactNode;
   thumb: (order: Order) => ReactNode;
 }) {
+  const copy = useCopy();
   const [filter, setFilter] = useState("all");
   const all = orders ?? [];
   const active = nouns.filters.find((entry) => entry.id === filter);
   const shown = active ? all.filter(active.match) : all;
-  const title = nouns.title.toLowerCase();
   return (
     <StorePage>
       <PageHeader title={nouns.title} subtitle={subtitle}>
         <Segmented
-          label={`Filter ${title}`}
+          label={copy.filterList(nouns.title)}
           value={filter}
           onChange={setFilter}
           options={[
-            { id: "all", label: "All", count: all.length },
+            { id: "all", label: copy.all, count: all.length },
             ...nouns.filters.map((entry) => ({ id: entry.id, label: entry.label, count: all.filter(entry.match).length })),
           ]}
         />
       </PageHeader>
       {orders === null ? (
         failed ? (
-          <Notice>Couldn&apos;t load your {title}. The assistant can still look them up.</Notice>
+          <Notice>{copy.loadFailedAssistant(nouns.title)}</Notice>
         ) : (
           <Skeleton className="h-[320px]" />
         )
@@ -239,7 +247,7 @@ export function OrdersView({
           </ul>
         </Panel>
       ) : (
-        <Notice>No {title} here.</Notice>
+        <Notice>{copy.noneHere(nouns.title)}</Notice>
       )}
     </StorePage>
   );

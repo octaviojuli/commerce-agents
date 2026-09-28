@@ -4,24 +4,32 @@
 "use client";
 
 import { useState } from "react";
-import { ArrivingPanel, estimateOf, Greeting, HomeSection, type Order, plural, type Starter, Starters, upcoming, useStoreFrame } from "web-shared";
+import { ArrivingPanel, estimateOf, Greeting, HomeSection, type Order, type Starter, Starters, upcoming, useStoreFrame } from "web-shared";
+import { ASSISTANT } from "@/lib/copy";
 import { NOUNS, TripThumb } from "@/lib/orders";
 import { PostcardWindow } from "../PostcardWindow";
 
 const STARTERS: Starter[] = [
-  { icon: "calendar", prompt: "Plan a long weekend in Lisbon" },
-  { icon: "plane", prompt: "Compare flights to Kyoto" },
-  { icon: "return", prompt: "Something refundable in Reykjavik" },
-  { icon: "pin", prompt: "What's my Marrakesh booking status?" },
+  { icon: "calendar", prompt: "帮我规划一个里斯本的长周末" },
+  { icon: "plane", prompt: "比较一下飞京都的航班" },
+  { icon: "return", prompt: "雷克雅未克有没有可免费取消的住宿" },
+  { icon: "pin", prompt: "我的马拉喀什预订进度如何？" },
 ];
 
-/** The keys of DESTINATION_GRADIENTS in lib/format.ts. */
-const POSTCARD_CITIES = ["Lisbon", "Kyoto", "Mexico City", "Reykjavik", "Marrakesh", "Queenstown"];
+/** The postcards: the catalog's city names (the keys of DESTINATION_GRADIENTS in lib/format.ts) and how the traveler says them. */
+const POSTCARD_CITIES: { city: string; name: string }[] = [
+  { city: "Lisbon", name: "里斯本" },
+  { city: "Kyoto", name: "京都" },
+  { city: "Mexico City", name: "墨西哥城" },
+  { city: "Reykjavik", name: "雷克雅未克" },
+  { city: "Marrakesh", name: "马拉喀什" },
+  { city: "Queenstown", name: "皇后镇" },
+];
 
 /** Sends just before the 300ms mail animation ends. */
 const MAILING_MS = 260;
 
-const OPENER = "Say where you're headed and ACME Assistant finds the stays, flights, and days worth keeping.";
+const OPENER = `说出目的地，${ASSISTANT}为你找出值得留下的住宿、航班和每一天。`;
 
 function Brief({ trips }: { trips: Order[] | null }) {
   const open = trips ? upcoming(trips) : [];
@@ -29,7 +37,7 @@ function Brief({ trips }: { trips: Order[] | null }) {
   const next = estimateOf(open[0])?.date;
   return (
     <>
-      {plural(open.length, "trip")} coming up{next ? `; the next starts ${next}` : ""}. {OPENER}
+      {open.length} 次行程即将出发{next ? `，最近一次 ${next} 出发` : ""}。{OPENER}
     </>
   );
 }
@@ -38,8 +46,8 @@ function Postcards() {
   const { ask, chat } = useStoreFrame();
   const [mailingCity, setMailingCity] = useState<string | null>(null);
   const disabled = !chat || chat.busy || !chat.ready;
-  const planTrip = (city: string) => {
-    const request = () => ask(`Plan a trip to ${city}`);
+  const planTrip = (city: string, name: string) => {
+    const request = () => ask(`帮我规划一次${name}之旅`);
     // Reduced motion, or a card already on its way, sends at once.
     if (mailingCity || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       request();
@@ -53,13 +61,13 @@ function Postcards() {
   };
   return (
     <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
-      {POSTCARD_CITIES.map((city, index) => (
+      {POSTCARD_CITIES.map(({ city, name }, index) => (
         <button
           key={city}
           type="button"
-          onClick={() => planTrip(city)}
+          onClick={() => planTrip(city, name)}
           disabled={disabled}
-          aria-label={`Plan a trip to ${city}`}
+          aria-label={`规划一次${name}之旅`}
           className="al-reveal-item"
           style={{ animationDelay: `${(index + 4) * 60}ms` }}
         >
@@ -83,7 +91,7 @@ export default function HomeView({ travelerName, trips, tripsFailed, onSeeTrips 
       <Greeting
         title={
           <h1 className="al-hero">
-            Where to, <em>{travelerName}</em>?
+            想去哪儿，<em>{travelerName}</em>？
           </h1>
         }
       >
@@ -91,7 +99,7 @@ export default function HomeView({ travelerName, trips, tripsFailed, onSeeTrips 
       </Greeting>
       <Starters items={STARTERS} />
       <ArrivingPanel orders={trips} failed={tripsFailed} nouns={NOUNS} thumb={(order) => <TripThumb order={order} />} onSeeAll={onSeeTrips} />
-      <HomeSection title="Start from a postcard" subtitle="Pick one and ACME Assistant starts planning">
+      <HomeSection title="从一张明信片开始" subtitle={`选一张，${ASSISTANT}就开始规划`}>
         <Postcards />
       </HomeSection>
     </div>

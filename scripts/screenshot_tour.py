@@ -25,6 +25,31 @@ from pathlib import Path
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
+# The chrome's words the tour locates by; a vertical in another language overrides them.
+LABELS: dict[str, str] = {
+    "views": "Views",
+    "assistant": "Assistant",
+    "activity": "Activity",
+    "account_sheet": "profile and memory",
+    "new_fact": "new this session",
+    "working": "working",
+    "portal_views": "Portal views",
+    "home": "Home",
+    "approve": "Approve",
+}
+
+ZH_LABELS: dict[str, str] = {
+    "views": "视图",
+    "assistant": "助手",
+    "activity": "活动",
+    "account_sheet": "资料与记忆",
+    "new_fact": "本次新增",
+    "working": "处理中",
+    "portal_views": "工作台视图",
+    "home": "首页",
+    "approve": "批准",
+}
+
 VERTICALS: dict[str, dict] = {
     "retail": {
         "base_url": "http://localhost:3000",
@@ -61,30 +86,30 @@ VERTICALS: dict[str, dict] = {
             ),
         ],
     },
+    # The travel apps are in Chinese, so the tour asks in it and locates by ZH_LABELS.
     "travel": {
         "base_url": "http://localhost:3001",
-        "view": ("trips", "Trips"),
+        "labels": ZH_LABELS,
+        "view": ("trips", "我的行程"),
         "turns": [
             (
                 "itinerary",
-                "Plan me a long weekend in Lisbon in mid-October — lay it out day by day.",
+                "帮我规划一个十月中旬的里斯本长周末，按天列出来。",
             ),
             (
                 "refundable-comparison",
-                "Compare that stay against a refundable alternative — what does the "
-                "flexibility actually cost?",
+                "把这家住宿和一个可退款的备选比一比，灵活性到底要多花多少钱？",
             ),
             (
                 # Volunteers a durable preference so the async extractor saves a NEW fact
                 # and the memory-panel frame has a marked fact to show.
                 "add-refundable",
-                "Add the refundable one to my trip — my partner's schedule shifts a "
-                "lot, so we always book refundable fares. What does the cancellation "
-                "window look like?",
+                "把可退款的那个加进我的行程。我伴侣的日程经常变，所以我们一向只订可退款的。"
+                "它的取消期限是怎样的？",
             ),
             (
                 "boarding-pass",
-                "That's everything for now — stage the checkout for my trip.",
+                "目前就这些了，帮我把行程的结算准备好。",
             ),
         ],
     },
@@ -187,33 +212,30 @@ MERCHANT_TOURS: dict[str, dict] = {
     },
     "travel": {
         "base_url": "http://localhost:3101",
-        "assistant_box_label": "Message the supplier assistant",
-        "views": [("properties", "Properties"), ("bookings", "Bookings")],
+        "labels": ZH_LABELS,
+        "assistant_box_label": "给供应商助手发消息",
+        "views": [("properties", "房源"), ("bookings", "预订")],
         "turns": [
             (
                 "october-pacing",
-                "Home says two stays are pacing soft. Which two, how does their October look on "
-                "the calendar, and where should rates move?",
+                "首页说有两家住宿预订进度偏慢。是哪两家？它们十月的日历怎么样？房价该往哪调？",
             ),
             (
                 "rate-preview",
-                "Ease the midweek rates by about ten percent on the two softest properties, but "
-                "only for their soft October weeks. The rest of the calendar stays where it is. "
-                "Show me the impact before anything goes live.",
+                "把进度最慢的两家房源的平日房价下调一成左右，但只针对它们十月偏慢的那几周，"
+                "其余日期保持不变。先给我看影响，再决定要不要生效。",
             ),
         ],
         "after": [
             (
                 "campaign-draft",
-                "Now draft a shoulder-season campaign for those same two properties to go with "
-                "the rate move: email to past guests, a modest budget of around $600. Stage it "
-                "as a draft so I can read it first.",
+                "再为这两家房源起草一个配合调价的平季营销活动：给老客人发邮件，预算大约 $600。"
+                "先存为草稿，我要先看一遍。",
             ),
             (
                 "listing-check",
-                "Which of our listings are losing us bookings on the page itself? If a "
-                "description is thin, tell me which one; if the pages are fine, say so and tell "
-                "me where the gap really is.",
+                "我们哪些房源是在页面本身上流失预订的？如果描述太薄，告诉我是哪一个；"
+                "如果页面没问题，直说，并告诉我差距到底在哪。",
             ),
         ],
     },
@@ -280,12 +302,17 @@ MERCHANT_TOURS: dict[str, dict] = {
 }
 
 
-def wait_for_turn_to_finish(page, timeout_ms: int = 180_000) -> None:
+def labels_of(config: dict) -> dict[str, str]:
+    return {**LABELS, **config.get("labels", {})}
+
+
+def wait_for_turn_to_finish(page, labels: dict[str, str], timeout_ms: int = 180_000) -> None:
     """The message box's placeholder reads "Working…" while a reply streams."""
     page.wait_for_timeout(1_200)
     page.wait_for_function(
-        "() => { const box = document.querySelector('textarea');"
-        " return box && !box.placeholder.toLowerCase().includes('working'); }",
+        "(word) => { const box = document.querySelector('textarea');"
+        " return box && !box.placeholder.toLowerCase().includes(word); }",
+        arg=labels["working"].lower(),
         timeout=timeout_ms,
     )
     page.wait_for_timeout(800)
@@ -296,11 +323,13 @@ def capture(page, output_dir: Path, name: str, **kwargs) -> None:
     print(f"captured {name}")
 
 
-def capture_activity_panel(page, output_dir: Path, name: str, wait_for_memory: bool) -> None:
+def capture_activity_panel(
+    page, output_dir: Path, name: str, wait_for_memory: bool, labels: dict[str, str]
+) -> None:
     """Open the activity panel on the latest reply and capture it. With ``wait_for_memory``
     the capture waits for the memory section to mark a fact saved this session, which the
     app re-reads a few seconds after the reply settles."""
-    button = page.get_by_role("button", name="Activity")
+    button = page.get_by_role("button", name=labels["activity"])
     if button.count() == 0:
         print(f"no Activity control found — skipped {name}")
         return
@@ -308,7 +337,7 @@ def capture_activity_panel(page, output_dir: Path, name: str, wait_for_memory: b
     page.wait_for_timeout(700)
     if wait_for_memory:
         try:
-            page.get_by_text("new this session").first.wait_for(timeout=12_000)
+            page.get_by_text(labels["new_fact"]).first.wait_for(timeout=12_000)
         except PlaywrightTimeoutError:
             print("no fact was saved this session — capturing the panel unmarked")
     capture(page, output_dir, name)
@@ -328,6 +357,7 @@ def launch_browser(playwright):
 
 
 def run_storefront_tour(page, config: dict, output_dir: Path) -> None:
+    labels = labels_of(config)
     counter = 0
 
     def numbered(name: str) -> str:
@@ -343,7 +373,7 @@ def run_storefront_tour(page, config: dict, output_dir: Path) -> None:
         if index == 0:
             page.wait_for_timeout(4_500)
             capture(page, output_dir, numbered(f"{name}-streaming"))
-        wait_for_turn_to_finish(page)
+        wait_for_turn_to_finish(page, labels)
         # Rest the frame on the newest card rather than the end of the closing prose.
         components = page.locator("[data-component]")
         if components.count() > 0:
@@ -352,23 +382,24 @@ def run_storefront_tour(page, config: dict, output_dir: Path) -> None:
         capture(page, output_dir, numbered(name))
 
     # The vertical's second view, then the shopper's sheet, then back to the conversation.
-    views = page.locator('nav[aria-label="Views"]').first
+    views = page.locator(f'nav[aria-label="{labels["views"]}"]').first
     shot, label = config["view"]
     views.get_by_role("button", name=label).click()
     page.wait_for_timeout(900)
     capture(page, output_dir, numbered(shot))
-    page.locator('header button[aria-label$="profile and memory"]').first.click()
+    page.locator(f'header button[aria-label$="{labels["account_sheet"]}"]').first.click()
     page.wait_for_timeout(700)
     capture(page, output_dir, numbered("account-sheet"))
     page.keyboard.press("Escape")
-    views.get_by_role("button", name="Assistant").click()
+    views.get_by_role("button", name=labels["assistant"]).click()
     page.wait_for_timeout(500)
 
-    capture_activity_panel(page, output_dir, numbered("memory-panel"), wait_for_memory=True)
-    capture_activity_panel(page, output_dir, numbered("inspector"), wait_for_memory=False)
+    capture_activity_panel(page, output_dir, numbered("memory-panel"), True, labels)
+    capture_activity_panel(page, output_dir, numbered("inspector"), False, labels)
 
 
 def run_merchant_tour(page, config: dict, output_dir: Path) -> None:
+    labels = labels_of(config)
     # Frames are numbered in capture order: home, the views, the turns, then the fixed tail.
     frame = iter(range(1, 100))
 
@@ -376,12 +407,12 @@ def run_merchant_tour(page, config: dict, output_dir: Path) -> None:
         return f"{next(frame):02d}-{name}"
 
     capture(page, output_dir, numbered("home"))
-    views = page.locator('nav[aria-label="Portal views"]').first
+    views = page.locator(f'nav[aria-label="{labels["portal_views"]}"]').first
     for name, label in config["views"]:
         views.get_by_role("button", name=label).click()
         page.wait_for_timeout(900)
         capture(page, output_dir, numbered(name))
-    views.get_by_role("button", name="Home").click()
+    views.get_by_role("button", name=labels["home"]).click()
     page.wait_for_timeout(600)
 
     box = page.locator(f'textarea[aria-label="{config["assistant_box_label"]}"]')
@@ -390,13 +421,13 @@ def run_merchant_tour(page, config: dict, output_dir: Path) -> None:
         for name, message in turns:
             box.fill(message)
             box.press("Enter")
-            wait_for_turn_to_finish(page)
+            wait_for_turn_to_finish(page, labels)
             capture(page, output_dir, numbered(name), full_page=True)
 
     send(config["turns"])
     # Approve the first staged change on its card, then carry on with the turns that
     # build on the applied state.
-    approve = page.get_by_role("button", name="Approve")
+    approve = page.get_by_role("button", name=labels["approve"])
     if approve.count() > 0:
         approve.first.click()
         page.wait_for_timeout(2_500)
@@ -405,8 +436,8 @@ def run_merchant_tour(page, config: dict, output_dir: Path) -> None:
         print("no Approve button found — skipped applied capture")
     send(config["after"])
 
-    capture_activity_panel(page, output_dir, numbered("memory-panel"), wait_for_memory=True)
-    capture_activity_panel(page, output_dir, numbered("inspector"), wait_for_memory=False)
+    capture_activity_panel(page, output_dir, numbered("memory-panel"), True, labels)
+    capture_activity_panel(page, output_dir, numbered("inspector"), False, labels)
 
 
 def main() -> int:

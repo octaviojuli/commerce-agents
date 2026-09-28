@@ -72,6 +72,10 @@ Single prompts, each in a fresh session:
   `InMemoryMemoryStore` that `MemorySeeder` refills from `data/memory-seed.json` on boot.
 - `api/merchant.py`: the `today` block on `/overview` and the `/occupancy` read.
 - `storefront-web/`, `merchant-web/`: this example's cards, views, and tokens, over `../web-shared/`.
+  Both apps render in Simplified Chinese: each has a `lib/copy.ts` that spreads the shared
+  `ZH_CHROME_COPY`, adds its own tool lines and nouns, and sets the date locale; the cards'
+  fixed labels are Chinese in place. The catalog, the fixtures, and the agent prompts stay
+  English, so the model answers in whichever language it is asked in.
 
 ## Data
 

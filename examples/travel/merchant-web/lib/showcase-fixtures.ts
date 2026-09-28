@@ -7,14 +7,14 @@ import type { ChangePreviewPayload, OccupancyCalendarPayload } from "./types";
 
 const change_preview: ChangePreviewPayload = {
   change_id: "chg-9107",
-  headline: "Midweek rate ease — ACME Guesthouses Condesa",
-  note: "Eases Mon–Thu nights from $204.00 to $183.60 a night for Oct 5–30; weekend rates hold.",
+  headline: "平日房价下调 — ACME Guesthouses Condesa",
+  note: "10月5日至30日，周一至周四的每晚房价从 $204.00 下调到 $183.60；周末房价不变。",
   change: {
     change_id: "chg-9107",
     kind: "promotion",
     status: "staged",
     summary:
-      "Midweek shoulder ease (10% off nightly rates, 2026-10-05 to 2026-10-30, mon/tue/wed/thu nights)",
+      "平季平日下调（每晚房价九折，2026-10-05 至 2026-10-30，周一至周四的夜晚）",
     items: [{ target: "AL-STAY-110", field: "nightly_rate", before: 204.0, after: 183.6 }],
     created_at: "2026-07-09",
     created_by: "Marta",
@@ -27,7 +27,7 @@ const change_preview: ChangePreviewPayload = {
 };
 
 const occupancy_calendar: OccupancyCalendarPayload = {
-  title: "ACME Guesthouses Condesa — late-summer occupancy",
+  title: "ACME Guesthouses Condesa — 夏末入住率",
   period: "2026-07-27/2026-08-09",
   grain: "week",
   listings: [
@@ -36,7 +36,7 @@ const occupancy_calendar: OccupancyCalendarPayload = {
       title: "ACME Guesthouses Condesa",
       rooms: 10,
       base_nightly_rate: 204.0,
-      note: "Weekends run full at 204/night; midweek dips are where a targeted ease earns bookings.",
+      note: "周末按 204/晚满房；平日的低谷才是定向下调能换来预订的地方。",
       weeks: [
         {
           week_start: "2026-07-27",

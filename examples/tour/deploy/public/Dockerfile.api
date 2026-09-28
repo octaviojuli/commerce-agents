@@ -1,0 +1,3 @@
+FROM local/tour-api:20260913-public-02
+COPY src/examples/tour/api/agent_config.py /app/examples/tour/api/agent_config.py
+COPY src/examples/tour/api/tests/test_live_mode.py /app/examples/tour/api/tests/test_live_mode.py

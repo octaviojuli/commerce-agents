@@ -1,0 +1,55 @@
+{
+  "resource_owner": "c20b895e483d49e3b6809d94dab6676e",
+  "api_image": "local/warehouse-api:20260924-13",
+  "postgres_image": "postgres:16-bookworm",
+  "limits": {
+    "database_cpu": 2,
+    "database_memory_mib": 1024,
+    "client_and_server_shared_cpu": 2,
+    "client_and_server_memory_mib": 1536
+  },
+  "external_network": false,
+  "application_credentials": false,
+  "boundary": "Same API13 image, read-only worker token budget variant and isolated diagnostic HTTP helper. Forward and reverse 400-request runs; no live application source changes.",
+  "reports": {
+    "0-40": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-c20b895e483d49e3b6809d94dab6676e/0-40.json",
+      "passed": false
+    },
+    "1-16": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-c20b895e483d49e3b6809d94dab6676e/1-16.json",
+      "passed": false
+    },
+    "2-8": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-c20b895e483d49e3b6809d94dab6676e/2-8.json",
+      "passed": false
+    },
+    "3-8": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-c20b895e483d49e3b6809d94dab6676e/3-8.json",
+      "passed": false
+    },
+    "4-16": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-c20b895e483d49e3b6809d94dab6676e/4-16.json",
+      "passed": false
+    },
+    "5-40": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-c20b895e483d49e3b6809d94dab6676e/5-40.json",
+      "passed": false
+    }
+  },
+  "cleanup_complete": true,
+  "web_before": {
+    "18085": 200,
+    "18105": 200
+  },
+  "web_after": {
+    "18085": 200,
+    "18105": 200
+  }
+}

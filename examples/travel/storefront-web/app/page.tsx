@@ -4,18 +4,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { type AgentEvent, OrdersView, plural, StoreShell, type StoreView, upcoming, useAgentTurn, useResource, useSession } from "web-shared";
+import { type AgentEvent, OrdersView, StoreShell, type StoreView, upcoming, useAgentTurn, useResource, useSession } from "web-shared";
 import Chat from "@/components/Chat";
 import TripPanel from "@/components/TripPanel";
 import HomeView from "@/components/views/HomeView";
 import { api, UNREACHABLE } from "@/lib/api";
+import { ASSISTANT, BRAND, TRAVEL_COPY } from "@/lib/copy";
 import { formatPrice } from "@/lib/format";
 import { NOUNS, TripThumb } from "@/lib/orders";
 import type { CartPayload } from "@/lib/types";
 
 type View = "assistant" | "trips";
-
-const ASSISTANT = "ACME Assistant";
 
 function Wordmark() {
   return (
@@ -23,7 +22,7 @@ function Wordmark() {
       <span className="mr-1 not-italic text-[13px] text-(--accent)" aria-hidden>
         ◈
       </span>
-      ACME Travel
+      {BRAND}
     </span>
   );
 }
@@ -54,10 +53,10 @@ export default function StorefrontPage() {
   }, [session.sessionId]);
 
   const views: StoreView<View>[] = [
-    { id: "assistant", label: "Assistant", icon: "spark" },
-    { id: "trips", label: "Trips", icon: "plane" },
+    { id: "assistant", label: "助手", icon: "spark" },
+    { id: "trips", label: "我的行程", icon: "plane" },
   ];
-  const shopper = session.shopper ?? { name: "Guest" };
+  const shopper = session.shopper ?? { name: "访客" };
   const count = cart?.items.length ?? 0;
 
   return (
@@ -70,11 +69,12 @@ export default function StorefrontPage() {
       api={api}
       assistantName={ASSISTANT}
       shopper={shopper}
-      bag={{ label: "Trip", count, noun: "booking", figure: count ? formatPrice(cart?.subtotal ?? 0) : null }}
+      bag={{ label: "本次行程", count, noun: "booking", figure: count ? formatPrice(cart?.subtotal ?? 0) : null }}
       panel={<TripPanel cart={cart} checkoutStaged={checkoutStaged} />}
       panelOpen={panelOpen}
       onPanelOpenChange={setPanelOpen}
-      placeholder={view === "trips" ? "Ask about a trip, a change, a refund…" : "Ask about a trip, a flight, a booking…"}
+      placeholder={view === "trips" ? "问问某次行程、改期或退款…" : "问问旅行、航班或预订…"}
+      copy={TRAVEL_COPY}
     >
       {/* The conversation stays mounted under the other view so its cards keep their state. */}
       <div className={view === "assistant" ? "h-full" : "hidden"}>
@@ -85,7 +85,7 @@ export default function StorefrontPage() {
           orders={trips}
           failed={tripsFailed}
           nouns={NOUNS}
-          subtitle={trips ? `${plural(upcoming(trips).length, "trip")} coming up. Ask about any of them, or plan the next one from a past trip.` : undefined}
+          subtitle={trips ? `${upcoming(trips).length} 次行程即将出发。可以问其中任何一次，或从过去的行程规划下一次。` : undefined}
           thumb={(order) => <TripThumb order={order} />}
         />
       ) : null}

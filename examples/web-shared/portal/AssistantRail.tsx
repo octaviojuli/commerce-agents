@@ -4,6 +4,7 @@
 "use client";
 
 import { type CSSProperties, type PointerEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { useCopy } from "../copy";
 
 const DEFAULT_WIDTH = 420;
 const MIN_WIDTH = 360;
@@ -28,6 +29,7 @@ export function AssistantRail({
   onClose: () => void;
   children: (rail: RailControls) => ReactNode;
 }) {
+  const copy = useCopy();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [fullscreen, setFullscreen] = useState(false);
   const widthRef = useRef(DEFAULT_WIDTH);
@@ -102,7 +104,7 @@ export function AssistantRail({
         <div
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize assistant panel"
+          aria-label={copy.resizeAssistant}
           onPointerDown={beginResize}
           className="absolute inset-y-0 left-0 z-10 hidden w-1.5 cursor-col-resize transition-colors hover:bg-(--line) lg:block"
         />

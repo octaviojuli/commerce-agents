@@ -8,16 +8,16 @@ import type { StagedChange } from "@/lib/types";
 import GenerativeBlock from "./generative";
 
 const COPY = {
-  title: "Supplier assistant",
-  intro: "Ask about bookings, occupancy, rates, or campaigns.",
+  title: "供应商助手",
+  intro: "问问预订、入住率、房价或营销活动。",
   starters: [
-    "What needs my attention this morning?",
-    "How are the Lisbon stays pacing for October?",
-    "Which properties are running behind on bookings?",
-    "Where should nightly rates move over the next month?",
+    "今天早上有什么需要我关注的？",
+    "里斯本的住宿 10 月的预订进度如何？",
+    "哪些房源的预订进度落后了？",
+    "未来一个月的房价该往哪个方向调？",
   ],
-  label: "Message the supplier assistant",
-  placeholder: "Ask about bookings, rates, campaigns…",
+  label: "给供应商助手发消息",
+  placeholder: "问问预订、房价、营销活动…",
 };
 
 export default function AssistantPanel({

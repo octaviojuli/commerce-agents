@@ -27,9 +27,12 @@ type Result = { plan: SharedPlan } | { error: "gone" | "unreachable" };
 
 async function readPlan(token: string): Promise<Result> {
   try {
-    const response = await fetch(`${API_URL}/api/share/plan/${encodeURIComponent(token)}`, {
-      cache: "no-store",
-    });
+    const response = await fetch(
+      `${API_URL}/api/share/plan/${encodeURIComponent(token)}`,
+      {
+        cache: "no-store",
+      },
+    );
     if (!response.ok) return { error: "gone" };
     return { plan: (await response.json()) as SharedPlan };
   } catch {
@@ -53,13 +56,24 @@ function routeLine(route: SharedPlan["route"]): string {
   return [route.title, days, from].filter(Boolean).join(" · ");
 }
 
-export default async function SharedPlanPage({ params }: { params: Promise<{ token: string }> }) {
+export default async function SharedPlanPage({
+  params,
+}: {
+  params: Promise<{ token: string }>;
+}) {
+  if (process.env.TOUR_BACKEND_MODE === "warehouse") {
+    return <Notice text="这份历史方案尚未迁入云仓，请联系原顾问核对。" />;
+  }
   const { token } = await params;
   const result = await readPlan(token);
   if ("error" in result) {
     return (
       <Notice
-        text={result.error === "gone" ? "链接不存在或已失效" : "暂时打不开，请稍后再试一次。"}
+        text={
+          result.error === "gone"
+            ? "链接不存在或已失效"
+            : "暂时打不开，请稍后再试一次。"
+        }
       />
     );
   }
@@ -75,7 +89,8 @@ export default async function SharedPlanPage({ params }: { params: Promise<{ tok
         {BRAND}
       </p>
       <p className="tg-num tg-label mt-1">
-        方案 v{plan.version} · 顾问 {plan.advisor_name} · {fullDateLabel(plan.created_at)}
+        方案 v{plan.version} · 顾问 {plan.advisor_name} ·{" "}
+        {fullDateLabel(plan.created_at)}
       </p>
 
       <h1 className="mt-3 text-[22px] font-semibold leading-snug tracking-[-0.01em] text-(--ink)">
@@ -93,11 +108,16 @@ export default async function SharedPlanPage({ params }: { params: Promise<{ tok
           </span>
         ) : null}
       </div>
-      <p className="mt-2 text-[13px] leading-snug text-(--ink-soft)">{routeLine(plan.route)}</p>
+      <p className="mt-2 text-[13px] leading-snug text-(--ink-soft)">
+        {routeLine(plan.route)}
+      </p>
 
       <ol className="mt-6">
         {days.map((day, i) => (
-          <li key={`${day.label}-${i}`} className="grid grid-cols-[36px_1fr] gap-x-3">
+          <li
+            key={`${day.label}-${i}`}
+            className="grid grid-cols-[36px_1fr] gap-x-3"
+          >
             <div className="flex flex-col items-center pt-0.5">
               <span
                 aria-hidden
@@ -123,7 +143,9 @@ export default async function SharedPlanPage({ params }: { params: Promise<{ tok
                 ) : null}
               </div>
               {day.note ? (
-                <p className="mt-1 text-[14px] leading-relaxed text-(--ink-2)">{day.note}</p>
+                <p className="mt-1 text-[14px] leading-relaxed text-(--ink-2)">
+                  {day.note}
+                </p>
               ) : null}
             </div>
           </li>
@@ -145,7 +167,9 @@ export default async function SharedPlanPage({ params }: { params: Promise<{ tok
       <div className="mt-6">
         <PlanReply token={token} />
       </div>
-      <p className="tg-label mt-4 text-center">确认后顾问会联系你，本页面不收款。</p>
+      <p className="tg-label mt-4 text-center">
+        确认后顾问会联系你，本页面不收款。
+      </p>
     </main>
   );
 }

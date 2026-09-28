@@ -30,6 +30,13 @@ ORDER_STATUS = {0: "预留", 1: "占位", 2: "确认", 3: "取消", 4: "审批�
 class ErpError(Exception):
     """A failed ERP call; the message is safe to show the advisor as written."""
 
+    def __init__(
+        self, message: str, *, status: int | None = None, retry_after_seconds: int | None = None
+    ) -> None:
+        self.status = status
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__(message)
+
 
 class ErpRefused(ErpError):
     """The ERP refused the call on its own rules (HTTP 400); the message is the ERP's."""

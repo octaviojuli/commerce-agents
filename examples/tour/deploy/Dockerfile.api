@@ -16,7 +16,9 @@ ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 
 # The seven packages install from the tree, so the tree comes first.
 COPY requirements.txt ./
+COPY examples/tour/skills/tour-route-parser ./examples/tour/skills/tour-route-parser
 COPY commerce-common ./commerce-common
+COPY cloud-warehouse ./cloud-warehouse
 COPY shopping-agent ./shopping-agent
 COPY merchant-agent ./merchant-agent
 RUN pip install --no-cache-dir -r requirements.txt

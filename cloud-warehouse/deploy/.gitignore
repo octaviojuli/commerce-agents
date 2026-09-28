@@ -1,0 +1,5 @@
+*.env
+connections.json
+postgres-password
+config/
+data/

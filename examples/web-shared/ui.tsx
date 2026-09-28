@@ -250,13 +250,14 @@ export function StatTile({
   onClick?: () => void;
   ariaLabel?: string;
 }) {
+  const copy = useCopy();
   const body = (
     <>
       <div className="relative text-[12.5px] font-medium whitespace-nowrap text-(--ink-soft)">
         {label}
         {onClick ? (
           <span className="absolute right-0 top-0 flex items-center gap-1 bg-inherit text-[11.5px] text-(--ink-faint) opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-            Ask why <Icon name="arrow-right" size={12} />
+            {copy.askWhy} <Icon name="arrow-right" size={12} />
           </span>
         ) : null}
       </div>
@@ -264,7 +265,7 @@ export function StatTile({
         <span className="text-[26px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-(--ink)">{value}</span>
         <ChangeChip changePct={changePct} />
       </div>
-      {points && points.length > 1 ? <Sparkline points={points} prior={prior} label={`${label} over the period`} className="mt-2" /> : null}
+      {points && points.length > 1 ? <Sparkline points={points} prior={prior} label={copy.overPeriod(label)} className="mt-2" /> : null}
     </>
   );
   const className = "group block w-full px-[18px] pb-3.5 pt-4 text-left transition-colors";

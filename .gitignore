@@ -20,6 +20,7 @@ htmlcov/
 # Node / Next.js (vertical example frontends)
 node_modules/
 .next/
+.next-*/
 next-env.d.ts
 examples/*/*-web/AGENTS.md
 examples/*/*-web/CLAUDE.md
@@ -39,5 +40,9 @@ merchant-agent/managed-agents/merchant-mcp-server/.merchant_memory.json
 .DS_Store
 .idea/
 .vscode/
+.warehouse/
+# Browser acceptance captures may contain authenticated supplier content.
+.playwright-cli/
+output/playwright/
 .claude/
 pyrightconfig.json

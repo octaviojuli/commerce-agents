@@ -5,7 +5,8 @@ import type { Metadata } from "next";
 import { Archivo, Fraunces } from "next/font/google";
 import "./globals.css";
 
-// Display face: headlines, day numerals, prices, postcard city names.
+// Display face: headlines, day numerals, prices, postcard city names. Chinese text falls through
+// to the CJK faces globals.css lists after it.
 const fraunces = Fraunces({
   subsets: ["latin"],
   style: ["normal", "italic"],
@@ -23,12 +24,12 @@ const archivo = Archivo({
 
 export const metadata: Metadata = {
   title: "ACME Travel",
-  description: "Plan and book trips with the ACME Assistant.",
+  description: "与 ACME 助手一起规划并预订旅行。",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${fraunces.variable} ${archivo.variable}`}>
+    <html lang="zh-CN" className={`${fraunces.variable} ${archivo.variable}`}>
       <body>
         {/* Grain at z-1; content above it at z-2. */}
         <div className="al-grain" aria-hidden />

@@ -11,20 +11,21 @@ const ALERT_STATUSES = new Set(["delayed", "cancelled"]);
 
 // The shared order pipeline's parcel statuses, translated into booking language.
 const BOOKING_STATUS_LABELS: Record<string, string> = {
-  shipped: "confirmed",
-  out_for_delivery: "confirmed",
-  delivered: "completed",
-  return_initiated: "refund requested",
+  processing: "确认中",
+  shipped: "已确认",
+  out_for_delivery: "已确认",
+  delivered: "已完成",
+  delayed: "已延误",
+  cancelled: "已取消",
+  return_initiated: "已申请退款",
+  refunded: "已退款",
 };
 
 /** Date-only input gets a local noon so the day is stable across timezones. */
 function formatEta(raw: string): string {
   const timestamp = Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00` : raw);
   if (Number.isNaN(timestamp)) return raw;
-  const date = new Date(timestamp);
-  const weekday = date.toLocaleDateString("en-US", { weekday: "short" });
-  const month = date.toLocaleDateString("en-US", { month: "short" });
-  return `${weekday} ${date.getDate()} ${month}`;
+  return new Date(timestamp).toLocaleDateString("zh-CN", { month: "short", day: "numeric", weekday: "short" });
 }
 
 function StatusStamp({ status }: { status: string }) {
@@ -52,7 +53,7 @@ export default function BookingStatusCard({ payload }: { payload: OrderStatusPay
     <section className="al-reveal" style={{ ...CARD, padding: 24 }}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div style={META}>Booking</div>
+          <div style={META}>预订</div>
           <h3 className="mt-0.5" style={display(20, 600)}>
             {payload.order_id}
           </h3>
@@ -96,14 +97,14 @@ export default function BookingStatusCard({ payload }: { payload: OrderStatusPay
             className="mt-1.5 flex items-baseline justify-between border-t pt-1.5"
             style={{ borderColor: "var(--line)" }}
           >
-            <span style={META}>Total</span>
+            <span style={META}>合计</span>
             <span style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 17, color: "var(--ink)" }}>
               {formatPrice(order.total)}
             </span>
           </div>
           {order.estimated_delivery ? (
             <div className="mt-1.5" style={{ ...META, fontSize: 11 }}>
-              ETA · {formatEta(order.estimated_delivery)}
+              预计 · {formatEta(order.estimated_delivery)}
             </div>
           ) : null}
         </div>

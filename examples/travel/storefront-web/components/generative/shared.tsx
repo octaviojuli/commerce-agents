@@ -10,8 +10,9 @@ import { PostcardWindow } from "../PostcardWindow";
 
 // --- Typography + surface helpers (token layer lives in globals.css :root) ---
 
-export const DISPLAY = "var(--font-display), 'Fraunces', Georgia, serif";
-export const BODY = "var(--font-body), 'Archivo', ui-sans-serif, system-ui, sans-serif";
+// Latin faces first; Chinese text falls through to the system's CJK serif and sans.
+export const DISPLAY = "var(--font-display), 'Fraunces', 'Songti SC', 'Noto Serif CJK SC', 'SimSun', Georgia, serif";
+export const BODY = "var(--font-body), 'Archivo', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', ui-sans-serif, system-ui, sans-serif";
 
 export function display(px: number, weight = 600, italic = false): CSSProperties {
   return {
@@ -45,7 +46,7 @@ export const HOVER_LIFT =
 
 // --- Date-aware stay signals (attributes stamped by examples/travel/api) ---
 
-const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
 export interface DateFlexCell {
   iso: string;
@@ -90,7 +91,7 @@ export function DateFlexStrip({ raw }: { raw?: string }) {
           return (
             <span
               key={cell.iso}
-              title={`${cell.weekday}: $${cell.rate}/night`}
+              title={`${cell.weekday}：$${cell.rate}/晚`}
               className="flex min-w-0 flex-1 flex-col items-center rounded-md py-1"
               style={{
                 fontFamily: BODY,
@@ -98,9 +99,11 @@ export function DateFlexStrip({ raw }: { raw?: string }) {
                 boxShadow: cell.chosen ? "inset 0 0 0 1.5px var(--ink)" : undefined,
               }}
             >
-              <span style={{ fontSize: 11, fontWeight: 600, color: "var(--ink-soft)" }}>
-                {cell.weekday[0]}
-                <span style={{ fontWeight: 400 }}>{cell.day}</span>
+              <span style={{ fontSize: 10, fontWeight: 600, color: "var(--ink-soft)", lineHeight: 1.3 }}>
+                {cell.weekday}
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 400, color: "var(--ink-soft)", lineHeight: 1.3 }}>
+                {cell.day}日
               </span>
               <span
                 style={{
@@ -117,7 +120,7 @@ export function DateFlexStrip({ raw }: { raw?: string }) {
       </div>
       {savings >= 15 && bestCell ? (
         <p className="mt-1" style={{ fontFamily: BODY, fontSize: 11, fontWeight: 600, color: "var(--accent)" }}>
-          Save ${savings} by arriving {bestCell.weekday}
+          {bestCell.weekday}入住可省 ${savings}
         </p>
       ) : null}
     </div>
@@ -141,9 +144,9 @@ function ratePosition(price: number, band?: string): RatePosition | null {
 }
 
 const RATE_POSITION_LABELS: Record<RatePosition["position"], string> = {
-  lower: "Lower than typical",
-  typical: "Typical rate",
-  higher: "Above typical",
+  lower: "低于常价",
+  typical: "常价",
+  higher: "高于常价",
 };
 
 export function RateGauge({ price, band }: { price: number; band?: string }) {
@@ -203,7 +206,7 @@ export function ScarcityChip({ unitsLeft }: { unitsLeft?: string }) {
         background: "var(--surface)",
       }}
     >
-      {count} left for your dates
+      所选日期仅剩 {count} 间
     </span>
   );
 }

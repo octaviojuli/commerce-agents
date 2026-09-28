@@ -12,14 +12,14 @@ import { safeHandoffs } from "web-shared";
 
 /** Keyed by the checkout tool's fulfillment enum. */
 const FULFILLMENT_LABELS: Record<string, string> = {
-  delivery: "E-ticket",
-  shipping: "E-ticket",
-  pickup: "Confirmation",
+  delivery: "电子票",
+  shipping: "电子票",
+  pickup: "确认函",
 };
 
 function fulfillmentLabel(method?: string): string {
-  if (!method) return "E-ticket";
-  return FULFILLMENT_LABELS[method] ?? "Confirmation";
+  if (!method) return "电子票";
+  return FULFILLMENT_LABELS[method] ?? "确认函";
 }
 
 const NOTCH: CSSProperties = {
@@ -41,9 +41,9 @@ export default function BoardingPass({ payload }: { payload: CheckoutPayload }) 
     <section className="al-reveal" data-checkout-card>
       <div className="flex overflow-hidden" style={CARD}>
         <div className="min-w-0 flex-1 p-6">
-          <div style={META}>Boarding pass · not charged</div>
+          <div style={META}>登机牌 · 未扣款</div>
           <h3 className="mt-1" style={display(20, 600)}>
-            Your trip, ready to book
+            你的行程，随时可订
           </h3>
           {payload.note ? (
             <p
@@ -84,7 +84,7 @@ export default function BoardingPass({ payload }: { payload: CheckoutPayload }) 
             ))}
             {!items.length ? (
               <p style={{ fontFamily: BODY, fontSize: 13, color: "var(--ink-soft)" }}>
-                Your trip basket is empty.
+                行程篮还是空的。
               </p>
             ) : null}
           </div>
@@ -94,9 +94,9 @@ export default function BoardingPass({ payload }: { payload: CheckoutPayload }) 
             style={{ borderColor: "var(--line)" }}
           >
             <span style={META}>
-              Total
+              合计
               <span style={{ display: "block", fontSize: 11, opacity: 0.8, textTransform: "none", letterSpacing: 0 }}>
-                all-in, fees included; final total confirmed at checkout
+                全含价，已含税费；最终金额以结算为准
               </span>
             </span>
             <span style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 26, color: "var(--accent)" }}>
@@ -123,7 +123,7 @@ export default function BoardingPass({ payload }: { payload: CheckoutPayload }) 
                     fontSize: 15,
                   }}
                 >
-                  {h.label ?? (h.seller ? `Continue to checkout with ${h.seller}` : "Continue to checkout")}
+                  {h.label ?? (h.seller ? `前往 ${h.seller} 结算` : "前往结算")}
                 </a>
               ))}
             </div>
@@ -143,7 +143,7 @@ export default function BoardingPass({ payload }: { payload: CheckoutPayload }) 
                 opacity: 0.92,
               }}
             >
-              Continue to checkout
+              前往结算
             </button>
           )}
           <p
@@ -151,7 +151,7 @@ export default function BoardingPass({ payload }: { payload: CheckoutPayload }) 
             className="mt-2 text-center"
             style={{ fontFamily: BODY, fontSize: 12, color: "var(--ink-soft)" }}
           >
-            Nothing is charged here. Payment happens when you check out.
+            这里不会扣款，付款在结算时完成。
           </p>
         </div>
 
@@ -187,8 +187,8 @@ export default function BoardingPass({ payload }: { payload: CheckoutPayload }) 
             className="al-passport-stamp al-stamp-thump -mr-2 self-end"
             style={{ color: "rgba(247,243,236,0.88)", fontSize: 10, letterSpacing: "0.13em" }}
           >
-            <span>Not</span>
-            <span>charged</span>
+            <span>未</span>
+            <span>扣款</span>
           </span>
           <div className="flex w-full flex-col items-center gap-3">
             <span

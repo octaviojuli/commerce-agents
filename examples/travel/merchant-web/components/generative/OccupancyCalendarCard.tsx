@@ -24,8 +24,8 @@ function PaceChip({ pacePct }: { pacePct: number | null | undefined }) {
   if (pacePct == null) return null;
   // The week's on-the-books pace, distinct from the 30-day pace the pricing summary quotes.
   return (
-    <Pill tone={pacePct >= 0 ? "ok" : "danger"} title="On-the-books pace for this week against the comparable period">
-      {formatChangePct(pacePct)} pace
+    <Pill tone={pacePct >= 0 ? "ok" : "danger"} title="本周在册预订进度，对比同期">
+      进度 {formatChangePct(pacePct)}
     </Pill>
   );
 }
@@ -75,7 +75,7 @@ function WeekStrip({ children }: { children: React.ReactNode }) {
           />
           <button
             type="button"
-            aria-label="Scroll to later weeks"
+            aria-label="滚动到之后的周"
             onClick={() => ref.current?.scrollBy({ left: 200, behavior: "smooth" })}
             className="absolute right-0.5 top-1/2 -translate-y-1/2 rounded-full border border-(--line-strong) bg-(--card) px-1.5 pb-0.5 text-[13px] leading-none text-(--ink-soft) shadow-(--shadow-sm) transition hover:text-(--ink)"
           >
@@ -100,7 +100,7 @@ function WeekCell({ week, baseRate }: { week: OccupancyWeek; baseRate?: number |
       }`}
     >
       <div className="text-[11px] font-medium text-(--ink-soft)">
-        {week.week_start ? `Week of ${formatDayMonth(week.week_start)}` : "—"}
+        {week.week_start ? `${formatDayMonth(week.week_start)}起一周` : "—"}
       </div>
       <div className="flex items-baseline gap-1.5">
         <span className="text-[13px] font-semibold tabular-nums leading-none text-(--ink)">
@@ -121,15 +121,15 @@ function WeekCell({ week, baseRate }: { week: OccupancyWeek; baseRate?: number |
             />
           </div>
           <div className="mt-0.5 text-[11px] tabular-nums text-(--ink-soft)">
-            {formatRate(occupancy)} booked
+            已订 {formatRate(occupancy)}
           </div>
         </div>
       ) : null}
       {midweek != null || weekend != null ? (
         <div className="text-[11px] tabular-nums text-(--ink-soft)">
-          {midweek != null ? `MW ${Math.round(midweek)}%` : null}
+          {midweek != null ? `平日 ${Math.round(midweek)}%` : null}
           {midweek != null && weekend != null ? " · " : null}
-          {weekend != null ? `WE ${Math.round(weekend)}%` : null}
+          {weekend != null ? `周末 ${Math.round(weekend)}%` : null}
         </div>
       ) : null}
       <PaceChip pacePct={week.on_the_books_pace_pct} />
@@ -137,8 +137,8 @@ function WeekCell({ week, baseRate }: { week: OccupancyWeek; baseRate?: number |
         <div className="flex items-center gap-1 text-[11px] font-semibold text-(--accent-ink)">
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--accent)" aria-hidden />
           <span className="truncate">
-            Override
-            {override.ends ? ` to ${formatDayMonth(override.ends)}` : ""}
+            房价覆盖
+            {override.ends ? `至 ${formatDayMonth(override.ends)}` : ""}
           </span>
         </div>
       ) : null}
@@ -154,18 +154,18 @@ function ListingStrip({ listing }: { listing: OccupancyListing }) {
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div className="min-w-0">
           <div className="truncate text-[13px] font-semibold text-(--ink)">
-            {listing.title ?? listing.listing_id ?? "Property"}
+            {listing.title ?? listing.listing_id ?? "房源"}
           </div>
           <div className="text-[12px] tabular-nums text-(--ink-soft)">
             {[
               listing.listing_id,
-              listing.rooms != null ? `${formatNumber(listing.rooms)} rooms` : null,
+              listing.rooms != null ? `${formatNumber(listing.rooms)} 间` : null,
             ]
               .filter(Boolean)
               .join(" · ")}
           </div>
         </div>
-        {baseRate ? <div className="text-[12px] tabular-nums text-(--ink-soft)">Base {baseRate} / night</div> : null}
+        {baseRate ? <div className="text-[12px] tabular-nums text-(--ink-soft)">基础价 {baseRate} / 晚</div> : null}
       </div>
       {listing.note ? (
         <p className="mt-1 text-[12px] leading-snug text-(--ink-soft)">{listing.note}</p>
@@ -182,7 +182,7 @@ function ListingStrip({ listing }: { listing: OccupancyListing }) {
         </WeekStrip>
       ) : (
         <p className="mt-2 text-[12px] text-(--ink-soft)">
-          No weeks in this window for this property.
+          这个房源在本窗口内没有周数据。
         </p>
       )}
     </div>
@@ -202,7 +202,7 @@ export default function OccupancyCalendarCard({ payload }: { payload: OccupancyC
 
   return (
     <GenCard>
-      <GenCardHeader title={payload.title ?? "Occupancy & pacing"} aside={calendarWindow} />
+      <GenCardHeader title={payload.title ?? "入住率与预订进度"} aside={calendarWindow} />
       {listings.length ? (
         <div className="mt-2.5">
           {listings.map((listing, index) => (
@@ -210,12 +210,12 @@ export default function OccupancyCalendarCard({ payload }: { payload: OccupancyC
           ))}
         </div>
       ) : (
-        <p className="px-3.5 pb-3.5 pt-2 text-[13px] text-(--ink-soft)">No occupancy data was returned for this window.</p>
+        <p className="px-3.5 pb-3.5 pt-2 text-[13px] text-(--ink-soft)">本窗口没有返回入住率数据。</p>
       )}
       {anyOverride ? (
         <div className="flex items-center gap-1.5 border-t border-(--line) px-3.5 py-2 text-[11.5px] text-(--ink-soft)">
           <span className="h-1.5 w-1.5 rounded-full bg-(--accent)" aria-hidden />
-          Weeks with an applied rate override
+          已应用房价覆盖的周
         </div>
       ) : null}
     </GenCard>

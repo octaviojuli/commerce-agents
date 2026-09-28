@@ -25,9 +25,11 @@ behind the advisor."""
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from dataclasses import fields
 from datetime import UTC, date, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any, NoReturn, TypeVar
 
 import httpx
@@ -95,26 +97,56 @@ _ERRORS: dict[int, tuple[type[erp.ErpError], str]] = {
 }  # fmt: skip
 
 
-def _raise(status: int, message: str) -> NoReturn:
+def _raise(status: int, message: str, retry_after_seconds: int | None = None) -> NoReturn:
     if status >= 500:
-        raise erp.ErpUnavailable(UNAVAILABLE)
+        raise erp.ErpUnavailable(
+            UNAVAILABLE, status=status, retry_after_seconds=retry_after_seconds
+        )
     cls, fallback = _ERRORS.get(status, (erp.ErpError, UNAVAILABLE))
-    raise cls(message or fallback)
+    raise cls(message or fallback, status=status, retry_after_seconds=retry_after_seconds)
+
+
+def _retry_after(value: str | None) -> int | None:
+    """RFC 9110 delay-seconds or HTTP-date; malformed hints use caller backoff."""
+    if not value:
+        return None
+    value = value.strip()
+    if value.isascii() and value.isdigit():
+        # Bound integer parsing without shortening an excessive supplier cooldown.
+        return int(value) if len(value) <= 9 else 10**9
+    try:
+        deadline = parsedate_to_datetime(value)
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=UTC)
+        return max(0, math.ceil(deadline.timestamp() - time.time()))
+    except (ValueError, TypeError, OverflowError):
+        return None
 
 
 def _data(response: httpx.Response, *, credentials: bool = False) -> Any:
     """The envelope's ``data``, or the ERP's status and message as the exception for it. A body
     that is not a JSON object is an outage; a 400 on the login is about the credentials."""
+    retry_after = _retry_after(response.headers.get("Retry-After"))
     try:
         payload = response.json() if response.content else {}
     except ValueError as exc:
+        if response.status_code in _ERRORS or response.status_code >= 500:
+            _raise(response.status_code, "", retry_after)
         raise erp.ErpUnavailable(UNAVAILABLE) from exc
     if not isinstance(payload, dict):
         raise erp.ErpUnavailable(UNAVAILABLE)
-    status = int(payload.get("code") or response.status_code)
+    status = (
+        int(payload.get("code") or response.status_code)
+        if response.is_success
+        else response.status_code
+    )
     if response.is_success and status == 200:
         return payload.get("data")
-    _raise(401 if credentials and status == 400 else status, str(payload.get("message") or ""))
+    _raise(
+        401 if credentials and status == 400 else status,
+        str(payload.get("message") or ""),
+        retry_after,
+    )
 
 
 def _clean(params: dict[str, Any]) -> dict[str, Any]:
@@ -293,6 +325,10 @@ class HttpErpClient:
         that held the password."""
         await self._client.aclose()
 
+    async def _exchange(self, method, path, **kwargs) -> httpx.Response:
+        """One HTTP attempt; cloud composition can enforce shared supplier cooldowns here."""
+        return await self._client.request(method, path, **kwargs)
+
     async def _send(
         self,
         method: str,
@@ -310,9 +346,7 @@ class HttpErpClient:
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         for attempt in (1, 2):
             try:
-                return await self._client.request(
-                    method, path, timeout=timeout, headers=headers, **sent
-                )
+                return await self._exchange(method, path, timeout=timeout, headers=headers, **sent)
             except httpx.TimeoutException as exc:
                 if not (retry_timeout and attempt == 1):
                     raise erp.ErpUnavailable(UNAVAILABLE) from exc

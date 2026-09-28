@@ -19,6 +19,7 @@ import BookingsView from "@/components/views/BookingsView";
 import HomeView from "@/components/views/HomeView";
 import PropertiesView from "@/components/views/PropertiesView";
 import { api, fetchOccupancy, fetchOverview, UNREACHABLE } from "@/lib/api";
+import { BRAND, TRAVEL_MERCHANT_COPY } from "@/lib/copy";
 import type { StagedChange } from "@/lib/types";
 
 type PortalView = "home" | "properties" | "bookings";
@@ -67,11 +68,11 @@ export default function PortalPage() {
   const nav = useMemo<PortalNavItem<PortalView>[]>(() => {
     const alerts = overview?.snapshot.alerts;
     return [
-      { id: "home", label: "Home", icon: "home" },
-      { id: "properties", label: "Properties", icon: "bed" },
+      { id: "home", label: "首页", icon: "home" },
+      { id: "properties", label: "房源", icon: "bed" },
       {
         id: "bookings",
-        label: "Bookings",
+        label: "预订",
         icon: "calendar",
         attention: alerts?.order_issues || null,
         count: alerts ? (alerts.low_stock ?? 0) + (alerts.slow_movers ?? 0) : null,
@@ -80,54 +81,54 @@ export default function PortalPage() {
   }, [overview]);
 
   return (
-    <>
-      <PortalShell
-        brand={{ mark: <StoreMark />, name: "ACME Travel", detail: "Supplier workspace" }}
-        nav={nav}
-        view={view}
-        onViewChange={setView}
-        operator={{ name: session.operator ?? "Operator", role: "Revenue manager" }}
-        assistantOpen={assistantOpen}
-        assistantBusy={chat.busy}
-        onToggleAssistant={() => setAssistantOpen((open) => !open)}
-        rail={
-          <AssistantRail
-            open={assistantOpen}
-            storageKey="acme-travel-supplier-panel-width"
-            onClose={() => setAssistantOpen(false)}
-          >
-            {(rail) => (
-              <AssistantPanel
-                chat={chat}
-                prefill={prefill}
-                onPrefill={askAssistant}
-                newMemoryCount={chat.newMemoryKeys.size}
-                onOpenActivity={() => setActivityOpen(true)}
-                {...rail}
-              />
-            )}
-          </AssistantRail>
-        }
-      >
-        {session.sessionId ? (
-          <>
-            {view === "home" ? (
-              <HomeView
-                data={overview}
-                failed={overviewFailed}
-                occupancy={occupancy}
-                operator={session.operator}
-                onAskAssistant={askAssistant}
-                onNavigate={setView}
-              />
-            ) : null}
-            {view === "properties" ? <PropertiesView refreshKey={refreshKey} onAskAssistant={askAssistant} /> : null}
-            {view === "bookings" ? (
-              <BookingsView refreshKey={refreshKey} recentBookings={overview?.recent_orders ?? (overviewFailed ? [] : null)} onAskAssistant={askAssistant} />
-            ) : null}
-          </>
-        ) : null}
-      </PortalShell>
+    <PortalShell
+      brand={{ mark: <StoreMark />, name: BRAND, detail: "供应商工作台" }}
+      nav={nav}
+      view={view}
+      onViewChange={setView}
+      operator={{ name: session.operator ?? "运营人员", role: "收益经理" }}
+      assistantOpen={assistantOpen}
+      assistantBusy={chat.busy}
+      onToggleAssistant={() => setAssistantOpen((open) => !open)}
+      copy={TRAVEL_MERCHANT_COPY}
+      rail={
+        <AssistantRail
+          open={assistantOpen}
+          storageKey="acme-travel-supplier-panel-width"
+          onClose={() => setAssistantOpen(false)}
+        >
+          {(rail) => (
+            <AssistantPanel
+              chat={chat}
+              prefill={prefill}
+              onPrefill={askAssistant}
+              newMemoryCount={chat.newMemoryKeys.size}
+              onOpenActivity={() => setActivityOpen(true)}
+              {...rail}
+            />
+          )}
+        </AssistantRail>
+      }
+    >
+      {session.sessionId ? (
+        <>
+          {view === "home" ? (
+            <HomeView
+              data={overview}
+              failed={overviewFailed}
+              occupancy={occupancy}
+              operator={session.operator}
+              onAskAssistant={askAssistant}
+              onNavigate={setView}
+            />
+          ) : null}
+          {view === "properties" ? <PropertiesView refreshKey={refreshKey} onAskAssistant={askAssistant} /> : null}
+          {view === "bookings" ? (
+            <BookingsView refreshKey={refreshKey} recentBookings={overview?.recent_orders ?? (overviewFailed ? [] : null)} onAskAssistant={askAssistant} />
+          ) : null}
+        </>
+      ) : null}
+      {/* A fixed overlay; it sits inside the frame so it reads the frame's copy. */}
       {activityOpen ? (
         <Inspector
           turnCount={chat.turnCount}
@@ -135,10 +136,10 @@ export default function PortalPage() {
           trace={chat.trace}
           memory={chat.memory}
           newMemoryKeys={chat.newMemoryKeys}
-          memoryTitle="Business memory"
+          memoryTitle="业务记忆"
           onClose={() => setActivityOpen(false)}
         />
       ) : null}
-    </>
+    </PortalShell>
   );
 }

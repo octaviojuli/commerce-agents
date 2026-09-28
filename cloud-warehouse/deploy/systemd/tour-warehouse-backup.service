@@ -1,0 +1,20 @@
+[Unit]
+Description=Tour warehouse verified backup cycle
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+EnvironmentFile=/etc/tour-warehouse-backup.env
+ExecStart=/opt/tour-warehouse/admin-venv/bin/python -m cloud_warehouse.cli backup-cycle --root ${WAREHOUSE_BACKUP_ROOT} --objects ${WAREHOUSE_OBJECT_ROOT} --target-database ${WAREHOUSE_BACKUP_DATABASE} --max-bytes ${WAREHOUSE_BACKUP_MAX_BYTES} --reserve-bytes ${WAREHOUSE_BACKUP_RESERVE_BYTES}
+TimeoutStartSec=3h
+KillMode=control-group
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/tour-warehouse-backups

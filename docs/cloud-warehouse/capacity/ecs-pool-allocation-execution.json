@@ -1,0 +1,64 @@
+{
+  "resource_owner": "19223c29d10b4da89d13da95dd0f2a33",
+  "api_image": "local/warehouse-api:20260924-13",
+  "postgres_image": "postgres:16-bookworm",
+  "limits": {
+    "database_cpu": 2,
+    "database_memory_mib": 1024,
+    "client_and_server_shared_cpu": 2,
+    "client_and_server_memory_mib": 1536
+  },
+  "external_network": false,
+  "application_credentials": false,
+  "boundary": "API13 image and original SQL; sequential forward/reverse 400-request diagnostics at 100 concurrency; two_24 raises runtime connection budget, CPU and memory unchanged; not production capacity acceptance.",
+  "reports": {
+    "0-single": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-19223c29d10b4da89d13da95dd0f2a33/0-single.json",
+      "passed": false
+    },
+    "1-two_fixed": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-19223c29d10b4da89d13da95dd0f2a33/1-two_fixed.json",
+      "passed": false
+    },
+    "2-two_24": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-19223c29d10b4da89d13da95dd0f2a33/2-two_24.json",
+      "passed": false
+    },
+    "3-two_24": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-19223c29d10b4da89d13da95dd0f2a33/3-two_24.json",
+      "passed": false
+    },
+    "4-two_fixed": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-19223c29d10b4da89d13da95dd0f2a33/4-two_fixed.json",
+      "passed": false
+    },
+    "5-single": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-19223c29d10b4da89d13da95dd0f2a33/5-single.json",
+      "passed": false
+    }
+  },
+  "cleanup_complete": true,
+  "web_before": {
+    "18085": 200,
+    "18105": 200
+  },
+  "live_before": "95796d825b7bf0e10e0281996f93be37ff4f79b9c8fadcf237112b7455ebaac4",
+  "wrapper_sha256": {
+    "pool-allocation-original-http.py": "8a1fb442e1d135893dcad920b6e0ca28d09ce157ba175f575c058d4502c6f09a",
+    "pool-allocation-single.py": "d97a1492475bc410f6327ee4e878c0d1369f58d4470e3aa83c2bc2f2e5f5f84e",
+    "pool-allocation-two_fixed.py": "f200b0f6b8a26eccbde5a7fc787a8a76c8730841eb7fa55f0cd3db6ff243bc9c",
+    "pool-allocation-two_24.py": "9b00b26631323cedebbff05aa141f3b41bac038493c9c6cb02306abc19426771"
+  },
+  "web_after": {
+    "18085": 200,
+    "18105": 200
+  },
+  "live_api_unchanged": true,
+  "live_api_healthy": true
+}

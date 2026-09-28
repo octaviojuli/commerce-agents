@@ -1,0 +1,10 @@
+[Unit]
+Description=Renew the Tour employee portal IP certificate
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/tour-agent/public/renew-certificate.sh
+TimeoutStartSec=10min

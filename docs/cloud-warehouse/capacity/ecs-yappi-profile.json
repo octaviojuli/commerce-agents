@@ -1,0 +1,3228 @@
+{
+  "boundary": "Yappi per-thread CPU clock; includes HTTP preflight, warmup, measured requests and graceful shutdown; excludes API startup and fixture seeding; instrumentation overhead included; cumulative timings overlap; no arguments, SQL, tokens or business values recorded",
+  "clock": "cpu",
+  "started": true,
+  "worker_threads": 44,
+  "all_operations_finished": true,
+  "threads": [
+    {
+      "id": 0,
+      "name": "_MainThread",
+      "cpu_seconds": 6.89447,
+      "scheduling_count": 1373
+    },
+    {
+      "id": 41,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.450318,
+      "scheduling_count": 396
+    },
+    {
+      "id": 1,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.447482,
+      "scheduling_count": 413
+    },
+    {
+      "id": 29,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.391656,
+      "scheduling_count": 409
+    },
+    {
+      "id": 22,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.380959,
+      "scheduling_count": 398
+    },
+    {
+      "id": 9,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.377883,
+      "scheduling_count": 429
+    },
+    {
+      "id": 24,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.372992,
+      "scheduling_count": 408
+    },
+    {
+      "id": 10,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.363143,
+      "scheduling_count": 388
+    },
+    {
+      "id": 23,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.361575,
+      "scheduling_count": 396
+    },
+    {
+      "id": 20,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.359499,
+      "scheduling_count": 410
+    },
+    {
+      "id": 17,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.352143,
+      "scheduling_count": 382
+    },
+    {
+      "id": 33,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.339757,
+      "scheduling_count": 375
+    },
+    {
+      "id": 7,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.329696,
+      "scheduling_count": 356
+    },
+    {
+      "id": 32,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.321351,
+      "scheduling_count": 361
+    },
+    {
+      "id": 28,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.320905,
+      "scheduling_count": 350
+    },
+    {
+      "id": 3,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.319832,
+      "scheduling_count": 355
+    },
+    {
+      "id": 27,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.311717,
+      "scheduling_count": 352
+    },
+    {
+      "id": 18,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.311074,
+      "scheduling_count": 361
+    },
+    {
+      "id": 38,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.305003,
+      "scheduling_count": 352
+    },
+    {
+      "id": 30,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.300679,
+      "scheduling_count": 347
+    },
+    {
+      "id": 13,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.30011,
+      "scheduling_count": 368
+    },
+    {
+      "id": 19,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.297252,
+      "scheduling_count": 325
+    },
+    {
+      "id": 21,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.297238,
+      "scheduling_count": 340
+    },
+    {
+      "id": 31,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.294447,
+      "scheduling_count": 327
+    },
+    {
+      "id": 2,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.278715,
+      "scheduling_count": 342
+    },
+    {
+      "id": 35,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.277921,
+      "scheduling_count": 301
+    },
+    {
+      "id": 36,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.276194,
+      "scheduling_count": 280
+    },
+    {
+      "id": 37,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.238664,
+      "scheduling_count": 267
+    },
+    {
+      "id": 26,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.194845,
+      "scheduling_count": 242
+    },
+    {
+      "id": 42,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.182798,
+      "scheduling_count": 196
+    },
+    {
+      "id": 49,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.07922,
+      "scheduling_count": 62
+    },
+    {
+      "id": 50,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.065766,
+      "scheduling_count": 62
+    },
+    {
+      "id": 34,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.0624,
+      "scheduling_count": 80
+    },
+    {
+      "id": 4,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.057237,
+      "scheduling_count": 71
+    },
+    {
+      "id": 14,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.04858,
+      "scheduling_count": 62
+    },
+    {
+      "id": 39,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.045693,
+      "scheduling_count": 67
+    },
+    {
+      "id": 11,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.044384,
+      "scheduling_count": 60
+    },
+    {
+      "id": 15,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.041434,
+      "scheduling_count": 57
+    },
+    {
+      "id": 25,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.039122,
+      "scheduling_count": 61
+    },
+    {
+      "id": 44,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.038855,
+      "scheduling_count": 49
+    },
+    {
+      "id": 43,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.037094,
+      "scheduling_count": 48
+    },
+    {
+      "id": 45,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.028639,
+      "scheduling_count": 39
+    },
+    {
+      "id": 48,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.027958,
+      "scheduling_count": 31
+    },
+    {
+      "id": 40,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.027418,
+      "scheduling_count": 43
+    },
+    {
+      "id": 47,
+      "name": "WorkerThread",
+      "cpu_seconds": 0.019461,
+      "scheduling_count": 19
+    },
+    {
+      "id": 46,
+      "name": "Thread",
+      "cpu_seconds": 0.018252,
+      "scheduling_count": 25
+    },
+    {
+      "id": 6,
+      "name": "Thread",
+      "cpu_seconds": 0.008784,
+      "scheduling_count": 9
+    },
+    {
+      "id": 16,
+      "name": "Thread",
+      "cpu_seconds": 0.00836,
+      "scheduling_count": 17
+    },
+    {
+      "id": 8,
+      "name": "Thread",
+      "cpu_seconds": 0.007555,
+      "scheduling_count": 10
+    },
+    {
+      "id": 5,
+      "name": "Thread",
+      "cpu_seconds": 0.007334,
+      "scheduling_count": 11
+    },
+    {
+      "id": 12,
+      "name": "Thread",
+      "cpu_seconds": 0.000467,
+      "scheduling_count": 4
+    },
+    {
+      "id": 52,
+      "name": "Thread",
+      "cpu_seconds": 0.000125,
+      "scheduling_count": 1
+    },
+    {
+      "id": 51,
+      "name": "Thread",
+      "cpu_seconds": 7.6e-05,
+      "scheduling_count": 1
+    }
+  ],
+  "main_thread": {
+    "total_cpu_seconds": 6.89447,
+    "by_own_cpu": [
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/encoders.py",
+        "line": 129,
+        "function": "jsonable_encoder",
+        "calls": 50505,
+        "own_cpu_seconds": 0.699861,
+        "cumulative_cpu_seconds": 1.4556
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "isinstance",
+        "calls": 464199,
+        "own_cpu_seconds": 0.636966,
+        "cumulative_cpu_seconds": 0.669875
+      },
+      {
+        "file": "/usr/local/lib/python3.12/dataclasses.py",
+        "line": 1301,
+        "function": "is_dataclass",
+        "calls": 50505,
+        "own_cpu_seconds": 0.199728,
+        "cumulative_cpu_seconds": 0.324964
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'get' of 'dict' objects>",
+        "calls": 95560,
+        "own_cpu_seconds": 0.130019,
+        "cumulative_cpu_seconds": 0.130019
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/routing.py",
+        "line": 242,
+        "function": "Route.matches",
+        "calls": 24221,
+        "own_cpu_seconds": 0.115545,
+        "cumulative_cpu_seconds": 0.255508
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 1251,
+        "function": "APIRoute.matches",
+        "calls": 22593,
+        "own_cpu_seconds": 0.111045,
+        "cumulative_cpu_seconds": 0.493056
+      },
+      {
+        "file": "/usr/local/lib/python3.12/typing.py",
+        "line": 2344,
+        "function": "get_origin",
+        "calls": 18188,
+        "own_cpu_seconds": 0.105703,
+        "cumulative_cpu_seconds": 0.179484
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/dependencies/utils.py",
+        "line": 586,
+        "function": "solve_dependencies",
+        "calls": 1625,
+        "own_cpu_seconds": 0.104125,
+        "cumulative_cpu_seconds": 1.954651
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/_compat/shared.py",
+        "line": 47,
+        "function": "lenient_issubclass",
+        "calls": 31731,
+        "own_cpu_seconds": 0.098897,
+        "cumulative_cpu_seconds": 0.198764
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/dependencies/utils.py",
+        "line": 780,
+        "function": "request_params_to_args",
+        "calls": 6488,
+        "own_cpu_seconds": 0.097285,
+        "cumulative_cpu_seconds": 1.165036
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 891,
+        "function": "_get_scope_effective_route_context",
+        "calls": 23000,
+        "own_cpu_seconds": 0.089671,
+        "cumulative_cpu_seconds": 0.148367
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 2719,
+        "function": "APIRouter.app",
+        "calls": 408,
+        "own_cpu_seconds": 0.082266,
+        "cumulative_cpu_seconds": 5.699526
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/_compat/shared.py",
+        "line": 64,
+        "function": "field_annotation_is_sequence",
+        "calls": 10104,
+        "own_cpu_seconds": 0.079726,
+        "cumulative_cpu_seconds": 0.543569
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/h11/_headers.py",
+        "line": 152,
+        "function": "normalize_and_validate",
+        "calls": 813,
+        "own_cpu_seconds": 0.079304,
+        "cumulative_cpu_seconds": 0.19835
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/anyio/_backends/_asyncio.py",
+        "line": 2582,
+        "function": "run_sync_in_worker_thread",
+        "calls": 1113,
+        "own_cpu_seconds": 0.078617,
+        "cumulative_cpu_seconds": 0.669228
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "hasattr",
+        "calls": 60396,
+        "own_cpu_seconds": 0.077159,
+        "cumulative_cpu_seconds": 0.077159
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'send' of '_socket.socket' objects>",
+        "calls": 814,
+        "own_cpu_seconds": 0.07485,
+        "cumulative_cpu_seconds": 0.07485
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/_compat/shared.py",
+        "line": 58,
+        "function": "_annotation_is_sequence",
+        "calls": 16168,
+        "own_cpu_seconds": 0.070688,
+        "cumulative_cpu_seconds": 0.264832
+      },
+      {
+        "file": "/usr/local/lib/python3.12/asyncio/base_events.py",
+        "line": 1922,
+        "function": "_UnixSelectorEventLoop._run_once",
+        "calls": 300,
+        "own_cpu_seconds": 0.066205,
+        "cumulative_cpu_seconds": 6.880635
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/_utils.py",
+        "line": 96,
+        "function": "get_route_path",
+        "calls": 24221,
+        "own_cpu_seconds": 0.063272,
+        "cumulative_cpu_seconds": 0.094678
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/h11/_util.py",
+        "line": 84,
+        "function": "validate",
+        "calls": 12197,
+        "own_cpu_seconds": 0.05931,
+        "cumulative_cpu_seconds": 0.107755
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/dependencies/utils.py",
+        "line": 749,
+        "function": "_get_multidict_value",
+        "calls": 4042,
+        "own_cpu_seconds": 0.053764,
+        "cumulative_cpu_seconds": 0.797836
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'run' of '_contextvars.Context' objects>",
+        "calls": 7938,
+        "own_cpu_seconds": 0.052393,
+        "cumulative_cpu_seconds": 6.733606
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/http_observation.py",
+        "line": 45,
+        "function": "HttpObservation.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.051545,
+        "cumulative_cpu_seconds": 5.917034
+      },
+      {
+        "file": "/usr/local/lib/python3.12/typing.py",
+        "line": 392,
+        "function": "inner",
+        "calls": 2032,
+        "own_cpu_seconds": 0.050966,
+        "cumulative_cpu_seconds": 0.050966
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 406,
+        "function": "app",
+        "calls": 407,
+        "own_cpu_seconds": 0.050325,
+        "cumulative_cpu_seconds": 4.213821
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'match' of 're.Pattern' objects>",
+        "calls": 27573,
+        "own_cpu_seconds": 0.047542,
+        "cumulative_cpu_seconds": 0.047542
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/dependencies/utils.py",
+        "line": 1051,
+        "function": "get_validation_alias",
+        "calls": 10812,
+        "own_cpu_seconds": 0.045059,
+        "cumulative_cpu_seconds": 0.136149
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/uvicorn/protocols/http/h11_impl.py",
+        "line": 178,
+        "function": "H11Protocol.handle_events",
+        "calls": 814,
+        "own_cpu_seconds": 0.041304,
+        "cumulative_cpu_seconds": 0.454257
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/h11/_connection.py",
+        "line": 272,
+        "function": "Connection._process_event",
+        "calls": 2236,
+        "own_cpu_seconds": 0.038948,
+        "cumulative_cpu_seconds": 0.232475
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sniffio/_impl.py",
+        "line": 25,
+        "function": "current_async_library",
+        "calls": 5565,
+        "own_cpu_seconds": 0.037516,
+        "cumulative_cpu_seconds": 0.056198
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "getattr",
+        "calls": 13870,
+        "own_cpu_seconds": 0.037504,
+        "cumulative_cpu_seconds": 0.083786
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'startswith' of 'str' objects>",
+        "calls": 24957,
+        "own_cpu_seconds": 0.037037,
+        "cumulative_cpu_seconds": 0.037037
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "len",
+        "calls": 20326,
+        "own_cpu_seconds": 0.035857,
+        "cumulative_cpu_seconds": 0.042724
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/anyio/lowlevel.py",
+        "line": 83,
+        "function": "current_token",
+        "calls": 4452,
+        "own_cpu_seconds": 0.035482,
+        "cumulative_cpu_seconds": 0.133861
+      },
+      {
+        "file": "/usr/local/lib/python3.12/asyncio/events.py",
+        "line": 86,
+        "function": "Handle._run",
+        "calls": 6825,
+        "own_cpu_seconds": 0.034757,
+        "cumulative_cpu_seconds": 6.768363
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'to_json' of 'pydantic_core._pydantic_core.SchemaSerializer' objects>",
+        "calls": 202,
+        "own_cpu_seconds": 0.033582,
+        "cumulative_cpu_seconds": 0.033582
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 137,
+        "function": "app",
+        "calls": 407,
+        "own_cpu_seconds": 0.033132,
+        "cumulative_cpu_seconds": 5.02966
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/uvicorn/protocols/http/h11_impl.py",
+        "line": 460,
+        "function": "RequestResponseCycle.send",
+        "calls": 814,
+        "own_cpu_seconds": 0.032349,
+        "cumulative_cpu_seconds": 0.688483
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/_compat/v2.py",
+        "line": 125,
+        "function": "ModelField.validation_alias",
+        "calls": 10812,
+        "own_cpu_seconds": 0.0323,
+        "cumulative_cpu_seconds": 0.046241
+      },
+      {
+        "file": "/usr/local/lib/python3.12/asyncio/base_events.py",
+        "line": 818,
+        "function": "_UnixSelectorEventLoop._call_soon",
+        "calls": 5046,
+        "own_cpu_seconds": 0.032084,
+        "cumulative_cpu_seconds": 0.064122
+      },
+      {
+        "file": "/usr/local/lib/python3.12/json/encoder.py",
+        "line": 205,
+        "function": "JSONEncoder.iterencode",
+        "calls": 713,
+        "own_cpu_seconds": 0.0316,
+        "cumulative_cpu_seconds": 0.0316
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "issubclass",
+        "calls": 15563,
+        "own_cpu_seconds": 0.031577,
+        "cumulative_cpu_seconds": 0.06221
+      },
+      {
+        "file": "/usr/local/lib/python3.12/asyncio/base_events.py",
+        "line": 789,
+        "function": "_UnixSelectorEventLoop.call_soon",
+        "calls": 5046,
+        "own_cpu_seconds": 0.031251,
+        "cumulative_cpu_seconds": 0.103491
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'fullmatch' of 're.Pattern' objects>",
+        "calls": 12197,
+        "own_cpu_seconds": 0.030308,
+        "cumulative_cpu_seconds": 0.030308
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py",
+        "line": 31,
+        "function": "wrapped_app",
+        "calls": 814,
+        "own_cpu_seconds": 0.030081,
+        "cumulative_cpu_seconds": 5.759425
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'append' of 'list' objects>",
+        "calls": 19137,
+        "own_cpu_seconds": 0.026094,
+        "cumulative_cpu_seconds": 0.026094
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/dependencies/models.py",
+        "line": 161,
+        "function": "_is_gen_callable",
+        "calls": 2839,
+        "own_cpu_seconds": 0.02505,
+        "cumulative_cpu_seconds": 0.053748
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/datastructures.py",
+        "line": 537,
+        "function": "Headers.getlist",
+        "calls": 4049,
+        "own_cpu_seconds": 0.024559,
+        "cumulative_cpu_seconds": 0.04059
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/anyio/_backends/_asyncio.py",
+        "line": 2121,
+        "function": "CapacityLimiter.acquire_on_behalf_of",
+        "calls": 1113,
+        "own_cpu_seconds": 0.024387,
+        "cumulative_cpu_seconds": 0.0899
+      },
+      {
+        "file": "/usr/local/lib/python3.12/asyncio/events.py",
+        "line": 36,
+        "function": "Handle.__init__",
+        "calls": 5600,
+        "own_cpu_seconds": 0.024136,
+        "cumulative_cpu_seconds": 0.033172
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "any",
+        "calls": 4974,
+        "own_cpu_seconds": 0.023903,
+        "cumulative_cpu_seconds": 0.052753
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/h11/_connection.py",
+        "line": 342,
+        "function": "Connection._respond_to_state_changes",
+        "calls": 2643,
+        "own_cpu_seconds": 0.023569,
+        "cumulative_cpu_seconds": 0.123944
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'validate_python' of 'pydantic_core._pydantic_core.SchemaValidator' objects>",
+        "calls": 1921,
+        "own_cpu_seconds": 0.023426,
+        "cumulative_cpu_seconds": 0.02848
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'encode' of 'str' objects>",
+        "calls": 11880,
+        "own_cpu_seconds": 0.022875,
+        "cumulative_cpu_seconds": 0.022875
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/h11/_headers.py",
+        "line": 209,
+        "function": "get_comma_header",
+        "calls": 4065,
+        "own_cpu_seconds": 0.022871,
+        "cumulative_cpu_seconds": 0.032208
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/dependencies/models.py",
+        "line": 191,
+        "function": "_is_async_gen_callable",
+        "calls": 2839,
+        "own_cpu_seconds": 0.022723,
+        "cumulative_cpu_seconds": 0.048766
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'recv' of '_socket.socket' objects>",
+        "calls": 731,
+        "own_cpu_seconds": 0.022401,
+        "cumulative_cpu_seconds": 0.022401
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/anyio/to_thread.py",
+        "line": 27,
+        "function": "run_sync",
+        "calls": 1113,
+        "own_cpu_seconds": 0.022098,
+        "cumulative_cpu_seconds": 0.716807
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/pydantic/_internal/_fields.py",
+        "line": 705,
+        "function": "resolve_default_value",
+        "calls": 2828,
+        "own_cpu_seconds": 0.021744,
+        "cumulative_cpu_seconds": 0.04205
+      }
+    ],
+    "by_cumulative_cpu": [
+      {
+        "file": "/usr/local/lib/python3.12/asyncio/base_events.py",
+        "line": 1922,
+        "function": "_UnixSelectorEventLoop._run_once",
+        "calls": 300,
+        "own_cpu_seconds": 0.066205,
+        "cumulative_cpu_seconds": 6.880635
+      },
+      {
+        "file": "/usr/local/lib/python3.12/asyncio/events.py",
+        "line": 86,
+        "function": "Handle._run",
+        "calls": 6825,
+        "own_cpu_seconds": 0.034757,
+        "cumulative_cpu_seconds": 6.768363
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'run' of '_contextvars.Context' objects>",
+        "calls": 7938,
+        "own_cpu_seconds": 0.052393,
+        "cumulative_cpu_seconds": 6.733606
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/uvicorn/protocols/http/h11_impl.py",
+        "line": 414,
+        "function": "RequestResponseCycle.run_asgi",
+        "calls": 407,
+        "own_cpu_seconds": 0.019127,
+        "cumulative_cpu_seconds": 6.025444
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py",
+        "line": 28,
+        "function": "ProxyHeadersMiddleware.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.016314,
+        "cumulative_cpu_seconds": 6.006533
+      },
+      {
+        "file": "/app/cloud-warehouse/scripts/capacity_http.py",
+        "line": 16,
+        "function": "traced",
+        "calls": 408,
+        "own_cpu_seconds": 0.013308,
+        "cumulative_cpu_seconds": 5.986688
+      },
+      {
+        "file": "/capacity-original-http.py",
+        "line": 19,
+        "function": "timed_app",
+        "calls": 408,
+        "own_cpu_seconds": 0.014289,
+        "cumulative_cpu_seconds": 5.97862
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/applications.py",
+        "line": 1160,
+        "function": "FastAPI.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.013703,
+        "cumulative_cpu_seconds": 5.963674
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/applications.py",
+        "line": 92,
+        "function": "FastAPI.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.012856,
+        "cumulative_cpu_seconds": 5.949973
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py",
+        "line": 149,
+        "function": "ServerErrorMiddleware.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.020244,
+        "cumulative_cpu_seconds": 5.93712
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/http_observation.py",
+        "line": 45,
+        "function": "HttpObservation.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.051545,
+        "cumulative_cpu_seconds": 5.917034
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/middleware/exceptions.py",
+        "line": 47,
+        "function": "ExceptionMiddleware.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.019099,
+        "cumulative_cpu_seconds": 5.782681
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py",
+        "line": 31,
+        "function": "wrapped_app",
+        "calls": 814,
+        "own_cpu_seconds": 0.030081,
+        "cumulative_cpu_seconds": 5.759425
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py",
+        "line": 15,
+        "function": "AsyncExitStackMiddleware.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.01825,
+        "cumulative_cpu_seconds": 5.743837
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/routing.py",
+        "line": 666,
+        "function": "APIRouter.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.015419,
+        "cumulative_cpu_seconds": 5.714942
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 2719,
+        "function": "APIRouter.app",
+        "calls": 408,
+        "own_cpu_seconds": 0.082266,
+        "cumulative_cpu_seconds": 5.699526
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 1261,
+        "function": "APIRoute.handle",
+        "calls": 407,
+        "own_cpu_seconds": 0.014748,
+        "cumulative_cpu_seconds": 5.103764
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/routing.py",
+        "line": 271,
+        "function": "APIRoute.handle",
+        "calls": 407,
+        "own_cpu_seconds": 0.017157,
+        "cumulative_cpu_seconds": 5.086724
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 134,
+        "function": "app",
+        "calls": 407,
+        "own_cpu_seconds": 0.016627,
+        "cumulative_cpu_seconds": 5.069569
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 137,
+        "function": "app",
+        "calls": 407,
+        "own_cpu_seconds": 0.033132,
+        "cumulative_cpu_seconds": 5.02966
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 406,
+        "function": "app",
+        "calls": 407,
+        "own_cpu_seconds": 0.050325,
+        "cumulative_cpu_seconds": 4.213821
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/dependencies/utils.py",
+        "line": 586,
+        "function": "solve_dependencies",
+        "calls": 1625,
+        "own_cpu_seconds": 0.104125,
+        "cumulative_cpu_seconds": 1.954651
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 301,
+        "function": "serialize_response",
+        "calls": 405,
+        "own_cpu_seconds": 0.012154,
+        "cumulative_cpu_seconds": 1.642415
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/encoders.py",
+        "line": 129,
+        "function": "jsonable_encoder",
+        "calls": 50505,
+        "own_cpu_seconds": 0.699861,
+        "cumulative_cpu_seconds": 1.4556
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/dependencies/utils.py",
+        "line": 780,
+        "function": "request_params_to_args",
+        "calls": 6488,
+        "own_cpu_seconds": 0.097285,
+        "cumulative_cpu_seconds": 1.165036
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/dependencies/utils.py",
+        "line": 749,
+        "function": "_get_multidict_value",
+        "calls": 4042,
+        "own_cpu_seconds": 0.053764,
+        "cumulative_cpu_seconds": 0.797836
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/responses.py",
+        "line": 163,
+        "function": "JSONResponse.__call__",
+        "calls": 407,
+        "own_cpu_seconds": 0.006603,
+        "cumulative_cpu_seconds": 0.775919
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py",
+        "line": 34,
+        "function": "sender",
+        "calls": 1628,
+        "own_cpu_seconds": 0.009017,
+        "cumulative_cpu_seconds": 0.769317
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/http_observation.py",
+        "line": 71,
+        "function": "observed_send",
+        "calls": 814,
+        "own_cpu_seconds": 0.015825,
+        "cumulative_cpu_seconds": 0.7603
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/concurrency.py",
+        "line": 32,
+        "function": "run_in_threadpool",
+        "calls": 1113,
+        "own_cpu_seconds": 0.020846,
+        "cumulative_cpu_seconds": 0.73765
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/anyio/to_thread.py",
+        "line": 27,
+        "function": "run_sync",
+        "calls": 1113,
+        "own_cpu_seconds": 0.022098,
+        "cumulative_cpu_seconds": 0.716807
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py",
+        "line": 156,
+        "function": "_send",
+        "calls": 814,
+        "own_cpu_seconds": 0.00527,
+        "cumulative_cpu_seconds": 0.711576
+      },
+      {
+        "file": "/capacity-original-http.py",
+        "line": 24,
+        "function": "timed_send",
+        "calls": 814,
+        "own_cpu_seconds": 0.013769,
+        "cumulative_cpu_seconds": 0.706305
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/uvicorn/protocols/http/h11_impl.py",
+        "line": 460,
+        "function": "RequestResponseCycle.send",
+        "calls": 814,
+        "own_cpu_seconds": 0.032349,
+        "cumulative_cpu_seconds": 0.688483
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "isinstance",
+        "calls": 464199,
+        "own_cpu_seconds": 0.636966,
+        "cumulative_cpu_seconds": 0.669875
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/anyio/_backends/_asyncio.py",
+        "line": 2582,
+        "function": "run_sync_in_worker_thread",
+        "calls": 1113,
+        "own_cpu_seconds": 0.078617,
+        "cumulative_cpu_seconds": 0.669228
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/_compat/shared.py",
+        "line": 64,
+        "function": "field_annotation_is_sequence",
+        "calls": 10104,
+        "own_cpu_seconds": 0.079726,
+        "cumulative_cpu_seconds": 0.543569
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 1251,
+        "function": "APIRoute.matches",
+        "calls": 22593,
+        "own_cpu_seconds": 0.111045,
+        "cumulative_cpu_seconds": 0.493056
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/uvicorn/protocols/http/h11_impl.py",
+        "line": 178,
+        "function": "H11Protocol.handle_events",
+        "calls": 814,
+        "own_cpu_seconds": 0.041304,
+        "cumulative_cpu_seconds": 0.454257
+      },
+      {
+        "file": "/usr/local/lib/python3.12/asyncio/selector_events.py",
+        "line": 969,
+        "function": "_SelectorSocketTransport._read_ready",
+        "calls": 507,
+        "own_cpu_seconds": 0.002124,
+        "cumulative_cpu_seconds": 0.44711
+      },
+      {
+        "file": "/usr/local/lib/python3.12/asyncio/selector_events.py",
+        "line": 1009,
+        "function": "_SelectorSocketTransport._read_ready__data_received",
+        "calls": 507,
+        "own_cpu_seconds": 0.003145,
+        "cumulative_cpu_seconds": 0.444985
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 344,
+        "function": "run_endpoint_function",
+        "calls": 405,
+        "own_cpu_seconds": 0.008966,
+        "cumulative_cpu_seconds": 0.435755
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/uvicorn/protocols/http/h11_impl.py",
+        "line": 172,
+        "function": "H11Protocol.data_received",
+        "calls": 407,
+        "own_cpu_seconds": 0.002903,
+        "cumulative_cpu_seconds": 0.42161
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/h11/_connection.py",
+        "line": 438,
+        "function": "Connection.next_event",
+        "calls": 1727,
+        "own_cpu_seconds": 0.021625,
+        "cumulative_cpu_seconds": 0.345186
+      },
+      {
+        "file": "/usr/local/lib/python3.12/dataclasses.py",
+        "line": 1301,
+        "function": "is_dataclass",
+        "calls": 50505,
+        "own_cpu_seconds": 0.199728,
+        "cumulative_cpu_seconds": 0.324964
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/_compat/shared.py",
+        "line": 58,
+        "function": "_annotation_is_sequence",
+        "calls": 16168,
+        "own_cpu_seconds": 0.070688,
+        "cumulative_cpu_seconds": 0.264832
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/h11/_connection.py",
+        "line": 517,
+        "function": "Connection.send",
+        "calls": 1323,
+        "own_cpu_seconds": 0.010248,
+        "cumulative_cpu_seconds": 0.256452
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/routing.py",
+        "line": 242,
+        "function": "Route.matches",
+        "calls": 24221,
+        "own_cpu_seconds": 0.115545,
+        "cumulative_cpu_seconds": 0.255508
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/h11/_connection.py",
+        "line": 544,
+        "function": "Connection.send_with_data_passthrough",
+        "calls": 1323,
+        "own_cpu_seconds": 0.018103,
+        "cumulative_cpu_seconds": 0.242516
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/h11/_connection.py",
+        "line": 410,
+        "function": "Connection._extract_next_receive_event",
+        "calls": 1727,
+        "own_cpu_seconds": 0.013991,
+        "cumulative_cpu_seconds": 0.237985
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/api.py",
+        "line": 635,
+        "function": "quote",
+        "calls": 101,
+        "own_cpu_seconds": 0.005325,
+        "cumulative_cpu_seconds": 0.237113
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/h11/_connection.py",
+        "line": 272,
+        "function": "Connection._process_event",
+        "calls": 2236,
+        "own_cpu_seconds": 0.038948,
+        "cumulative_cpu_seconds": 0.232475
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/quotes.py",
+        "line": 365,
+        "function": "create",
+        "calls": 101,
+        "own_cpu_seconds": 0.016583,
+        "cumulative_cpu_seconds": 0.231787
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/_compat/shared.py",
+        "line": 47,
+        "function": "lenient_issubclass",
+        "calls": 31731,
+        "own_cpu_seconds": 0.098897,
+        "cumulative_cpu_seconds": 0.198764
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/h11/_headers.py",
+        "line": 152,
+        "function": "normalize_and_validate",
+        "calls": 813,
+        "own_cpu_seconds": 0.079304,
+        "cumulative_cpu_seconds": 0.19835
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/h11/_readers.py",
+        "line": 75,
+        "function": "maybe_read_from_IDLE_client",
+        "calls": 813,
+        "own_cpu_seconds": 0.01678,
+        "cumulative_cpu_seconds": 0.194741
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/h11/_events.py",
+        "line": 137,
+        "function": "Response.__init__",
+        "calls": 814,
+        "own_cpu_seconds": 0.016903,
+        "cumulative_cpu_seconds": 0.187051
+      },
+      {
+        "file": "/usr/local/lib/python3.12/typing.py",
+        "line": 2344,
+        "function": "get_origin",
+        "calls": 18188,
+        "own_cpu_seconds": 0.105703,
+        "cumulative_cpu_seconds": 0.179484
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/anyio/lowlevel.py",
+        "line": 166,
+        "function": "RunVar.get",
+        "calls": 4452,
+        "own_cpu_seconds": 0.014257,
+        "cumulative_cpu_seconds": 0.178135
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/anyio/lowlevel.py",
+        "line": 151,
+        "function": "RunVar._current_vars",
+        "calls": 4452,
+        "own_cpu_seconds": 0.021218,
+        "cumulative_cpu_seconds": 0.163878
+      }
+    ]
+  },
+  "business_workers": {
+    "total_cpu_seconds": 10.019108,
+    "by_own_cpu": [
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 275,
+        "function": "Cursor._maybe_prepare_gen",
+        "calls": 7771,
+        "own_cpu_seconds": 0.741883,
+        "cumulative_cpu_seconds": 1.624501
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/connection.py",
+        "line": 479,
+        "function": "Connection.wait",
+        "calls": 7080,
+        "own_cpu_seconds": 0.534318,
+        "cumulative_cpu_seconds": 3.514976
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_connection_base.py",
+        "line": 443,
+        "function": "Connection._exec_command",
+        "calls": 3644,
+        "own_cpu_seconds": 0.485035,
+        "cumulative_cpu_seconds": 0.516163
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 583,
+        "function": "Cursor._send_query_prepared",
+        "calls": 2085,
+        "own_cpu_seconds": 0.247714,
+        "cumulative_cpu_seconds": 0.247714
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_column.py",
+        "line": 20,
+        "function": "Column.__init__",
+        "calls": 21011,
+        "own_cpu_seconds": 0.233723,
+        "cumulative_cpu_seconds": 0.601127
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_column.py",
+        "line": 61,
+        "function": "Column.__getitem__",
+        "calls": 42022,
+        "own_cpu_seconds": 0.221048,
+        "cumulative_cpu_seconds": 0.333453
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'acquire' of '_thread.lock' objects>",
+        "calls": 7617,
+        "own_cpu_seconds": 0.195506,
+        "cumulative_cpu_seconds": 0.195506
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 416,
+        "function": "Cursor._execute_send",
+        "calls": 1757,
+        "own_cpu_seconds": 0.18931,
+        "cumulative_cpu_seconds": 0.18931
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "isinstance",
+        "calls": 110372,
+        "own_cpu_seconds": 0.165281,
+        "cumulative_cpu_seconds": 0.176652
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py",
+        "line": 664,
+        "function": "CursorResultMetaData._colnames_from_description",
+        "calls": 23740,
+        "own_cpu_seconds": 0.161283,
+        "cumulative_cpu_seconds": 0.527603
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1852,
+        "function": "Connection._exec_single_context",
+        "calls": 2931,
+        "own_cpu_seconds": 0.123841,
+        "cumulative_cpu_seconds": 4.877801
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 504,
+        "function": "Cursor._select_current_result",
+        "calls": 3842,
+        "own_cpu_seconds": 0.113659,
+        "cumulative_cpu_seconds": 0.209255
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_typeinfo.py",
+        "line": 265,
+        "function": "TypesRegistry.__getitem__",
+        "calls": 21011,
+        "own_cpu_seconds": 0.11283,
+        "cumulative_cpu_seconds": 0.177008
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1593,
+        "function": "Connection._execute_clauseelement",
+        "calls": 2931,
+        "own_cpu_seconds": 0.106732,
+        "cumulative_cpu_seconds": 6.114724
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_queries.py",
+        "line": 94,
+        "function": "PostgresQuery.dump",
+        "calls": 3842,
+        "own_cpu_seconds": 0.10163,
+        "cumulative_cpu_seconds": 0.393035
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py",
+        "line": 512,
+        "function": "CursorResultMetaData._merge_cursor_description",
+        "calls": 2729,
+        "own_cpu_seconds": 0.09859,
+        "cumulative_cpu_seconds": 0.90161
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'get' of 'dict' objects>",
+        "calls": 42376,
+        "own_cpu_seconds": 0.097238,
+        "cumulative_cpu_seconds": 0.097238
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/event/attr.py",
+        "line": 510,
+        "function": "_ListenerCollection.__call__",
+        "calls": 9506,
+        "own_cpu_seconds": 0.094846,
+        "cumulative_cpu_seconds": 0.246531
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/types/array.py",
+        "line": 89,
+        "function": "ListDumper._flatiter",
+        "calls": 3636,
+        "own_cpu_seconds": 0.093955,
+        "cumulative_cpu_seconds": 0.10332
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 195,
+        "function": "Cursor._execute_gen",
+        "calls": 8682,
+        "own_cpu_seconds": 0.092448,
+        "cumulative_cpu_seconds": 2.685107
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py",
+        "line": 816,
+        "function": "CursorResultMetaData._merge_cols_by_none",
+        "calls": 23740,
+        "own_cpu_seconds": 0.089349,
+        "cumulative_cpu_seconds": 0.616952
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/event/attr.py",
+        "line": 396,
+        "function": "_EmptyListener.__iter__",
+        "calls": 28914,
+        "own_cpu_seconds": 0.089094,
+        "cumulative_cpu_seconds": 0.136119
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'sub' of 're.Pattern' objects>",
+        "calls": 2957,
+        "own_cpu_seconds": 0.088235,
+        "cumulative_cpu_seconds": 0.31482
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py",
+        "line": 1313,
+        "function": "_init_compiled",
+        "calls": 2931,
+        "own_cpu_seconds": 0.083474,
+        "cumulative_cpu_seconds": 0.3782
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/sql/elements.py",
+        "line": 2315,
+        "function": "repl",
+        "calls": 7376,
+        "own_cpu_seconds": 0.079204,
+        "cumulative_cpu_seconds": 0.223953
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/sql/type_api.py",
+        "line": 934,
+        "function": "NullType._cached_result_processor",
+        "calls": 21011,
+        "own_cpu_seconds": 0.072934,
+        "cumulative_cpu_seconds": 0.1175
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 114,
+        "function": "Cursor.description",
+        "calls": 2931,
+        "own_cpu_seconds": 0.072258,
+        "cumulative_cpu_seconds": 0.673385
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_typeinfo.py",
+        "line": 289,
+        "function": "TypesRegistry.get",
+        "calls": 21011,
+        "own_cpu_seconds": 0.070361,
+        "cumulative_cpu_seconds": 0.24737
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "getattr",
+        "calls": 26751,
+        "own_cpu_seconds": 0.069083,
+        "cumulative_cpu_seconds": 0.103679
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py",
+        "line": 1799,
+        "function": "PGExecutionContext_psycopg.get_result_processor",
+        "calls": 21011,
+        "own_cpu_seconds": 0.068568,
+        "cumulative_cpu_seconds": 0.186068
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 374,
+        "function": "Cursor._start_query",
+        "calls": 4753,
+        "own_cpu_seconds": 0.067584,
+        "cumulative_cpu_seconds": 0.385052
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/cursor.py",
+        "line": 239,
+        "function": "Cursor.fetchone",
+        "calls": 4749,
+        "own_cpu_seconds": 0.063193,
+        "cumulative_cpu_seconds": 0.138412
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1793,
+        "function": "Connection._execute_context",
+        "calls": 2931,
+        "own_cpu_seconds": 0.0617,
+        "cumulative_cpu_seconds": 5.367453
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_adapters_map.py",
+        "line": 75,
+        "function": "AdaptersMap.__init__",
+        "calls": 3856,
+        "own_cpu_seconds": 0.060897,
+        "cumulative_cpu_seconds": 0.095716
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'send' of '_socket.socket' objects>",
+        "calls": 1113,
+        "own_cpu_seconds": 0.059924,
+        "cumulative_cpu_seconds": 0.059924
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/sql/cache_key.py",
+        "line": 221,
+        "function": "TextClause._gen_cache_key",
+        "calls": 2931,
+        "own_cpu_seconds": 0.057386,
+        "cumulative_cpu_seconds": 0.21969
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'append' of 'list' objects>",
+        "calls": 34810,
+        "own_cpu_seconds": 0.056626,
+        "cumulative_cpu_seconds": 0.056626
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/sql/elements.py",
+        "line": 2160,
+        "function": "BindParameter._gen_cache_key",
+        "calls": 6264,
+        "own_cpu_seconds": 0.0559,
+        "cumulative_cpu_seconds": 0.077901
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "len",
+        "calls": 33104,
+        "own_cpu_seconds": 0.055437,
+        "cumulative_cpu_seconds": 0.055472
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 61,
+        "function": "Cursor.__init__",
+        "calls": 3842,
+        "own_cpu_seconds": 0.054402,
+        "cumulative_cpu_seconds": 0.162759
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_queries.py",
+        "line": 59,
+        "function": "PostgresQuery.convert",
+        "calls": 3842,
+        "own_cpu_seconds": 0.053765,
+        "cumulative_cpu_seconds": 0.5371
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py",
+        "line": 1921,
+        "function": "PGExecutionContext_psycopg._setup_dml_or_text_result",
+        "calls": 2931,
+        "own_cpu_seconds": 0.05283,
+        "cumulative_cpu_seconds": 1.822513
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/event/base.py",
+        "line": 357,
+        "function": "JoinedConnectionEventsDispatch.__getattr__",
+        "calls": 6377,
+        "own_cpu_seconds": 0.051897,
+        "cumulative_cpu_seconds": 0.137479
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 666,
+        "function": "Cursor._encoding",
+        "calls": 21011,
+        "own_cpu_seconds": 0.050718,
+        "cumulative_cpu_seconds": 0.050718
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "iter",
+        "calls": 30531,
+        "own_cpu_seconds": 0.048979,
+        "cumulative_cpu_seconds": 0.048979
+      },
+      {
+        "file": "/usr/local/lib/python3.12/weakref.py",
+        "line": 414,
+        "function": "WeakKeyDictionary.__getitem__",
+        "calls": 22040,
+        "own_cpu_seconds": 0.048461,
+        "cumulative_cpu_seconds": 0.048461
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/event/attr.py",
+        "line": 654,
+        "function": "_JoinedListener.listeners",
+        "calls": 14457,
+        "own_cpu_seconds": 0.047632,
+        "cumulative_cpu_seconds": 0.073361
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'validate_python' of 'pydantic_core._pydantic_core.SchemaValidator' objects>",
+        "calls": 4343,
+        "own_cpu_seconds": 0.045861,
+        "cumulative_cpu_seconds": 0.046887
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py",
+        "line": 363,
+        "function": "CursorResultMetaData.__init__",
+        "calls": 2729,
+        "own_cpu_seconds": 0.045801,
+        "cumulative_cpu_seconds": 0.976003
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py",
+        "line": 1850,
+        "function": "PGExecutionContext_psycopg._setup_result_proxy",
+        "calls": 2931,
+        "own_cpu_seconds": 0.045473,
+        "cumulative_cpu_seconds": 1.877387
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/sql/sqltypes.py",
+        "line": 3898,
+        "function": "_resolve_value_to_type",
+        "calls": 7376,
+        "own_cpu_seconds": 0.045207,
+        "cumulative_cpu_seconds": 0.066631
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/cursor.py",
+        "line": 100,
+        "function": "Cursor.execute",
+        "calls": 3842,
+        "own_cpu_seconds": 0.043543,
+        "cumulative_cpu_seconds": 3.157895
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_preparing.py",
+        "line": 128,
+        "function": "PrepareManager.maybe_add_to_cache",
+        "calls": 3842,
+        "own_cpu_seconds": 0.041587,
+        "cumulative_cpu_seconds": 0.06029
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/sql/compiler.py",
+        "line": 1860,
+        "function": "PGCompiler_psycopg.construct_params",
+        "calls": 2931,
+        "own_cpu_seconds": 0.041473,
+        "cumulative_cpu_seconds": 0.048251
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/sql/elements.py",
+        "line": 1974,
+        "function": "BindParameter.__init__",
+        "calls": 7376,
+        "own_cpu_seconds": 0.041441,
+        "cumulative_cpu_seconds": 0.108072
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'decode' of 'bytes' objects>",
+        "calls": 21457,
+        "own_cpu_seconds": 0.040509,
+        "cumulative_cpu_seconds": 0.040509
+      },
+      {
+        "file": "/usr/local/lib/python3.12/threading.py",
+        "line": 323,
+        "function": "Condition.wait",
+        "calls": 1510,
+        "own_cpu_seconds": 0.039833,
+        "cumulative_cpu_seconds": 0.253527
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1551,
+        "function": "Connection._invoke_before_exec_event",
+        "calls": 2931,
+        "own_cpu_seconds": 0.039509,
+        "cumulative_cpu_seconds": 0.115564
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/advisor.py",
+        "line": 84,
+        "function": "_departure",
+        "calls": 1010,
+        "own_cpu_seconds": 0.039468,
+        "cumulative_cpu_seconds": 0.108736
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_queries.py",
+        "line": 165,
+        "function": "PostgresQuery._ensure_bytes",
+        "calls": 3842,
+        "own_cpu_seconds": 0.039237,
+        "cumulative_cpu_seconds": 0.071904
+      }
+    ],
+    "by_cumulative_cpu": [
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/anyio/_backends/_asyncio.py",
+        "line": 1019,
+        "function": "WorkerThread.run",
+        "calls": 43,
+        "own_cpu_seconds": 0.030628,
+        "cumulative_cpu_seconds": 9.568585
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'run' of '_contextvars.Context' objects>",
+        "calls": 1113,
+        "own_cpu_seconds": 0.015954,
+        "cumulative_cpu_seconds": 9.535478
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/sql/elements.py",
+        "line": 517,
+        "function": "TextClause._execute_on_connection",
+        "calls": 2931,
+        "own_cpu_seconds": 0.01777,
+        "cumulative_cpu_seconds": 6.132495
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1593,
+        "function": "Connection._execute_clauseelement",
+        "calls": 2931,
+        "own_cpu_seconds": 0.106732,
+        "cumulative_cpu_seconds": 6.114724
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1793,
+        "function": "Connection._execute_context",
+        "calls": 2931,
+        "own_cpu_seconds": 0.0617,
+        "cumulative_cpu_seconds": 5.367453
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1852,
+        "function": "Connection._exec_single_context",
+        "calls": 2931,
+        "own_cpu_seconds": 0.123841,
+        "cumulative_cpu_seconds": 4.877801
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1377,
+        "function": "Connection.execute",
+        "calls": 1820,
+        "own_cpu_seconds": 0.013117,
+        "cumulative_cpu_seconds": 4.149963
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/connection.py",
+        "line": 479,
+        "function": "Connection.wait",
+        "calls": 7080,
+        "own_cpu_seconds": 0.534318,
+        "cumulative_cpu_seconds": 3.514976
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/cursor.py",
+        "line": 100,
+        "function": "Cursor.execute",
+        "calls": 3842,
+        "own_cpu_seconds": 0.043543,
+        "cumulative_cpu_seconds": 3.157895
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/quotes.py",
+        "line": 304,
+        "function": "_save_quote",
+        "calls": 101,
+        "own_cpu_seconds": 0.019097,
+        "cumulative_cpu_seconds": 3.123706
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 195,
+        "function": "Cursor._execute_gen",
+        "calls": 8682,
+        "own_cpu_seconds": 0.092448,
+        "cumulative_cpu_seconds": 2.685107
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py",
+        "line": 951,
+        "function": "PGDialect_psycopg.do_execute",
+        "calls": 2931,
+        "own_cpu_seconds": 0.018954,
+        "cumulative_cpu_seconds": 2.671707
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "next",
+        "calls": 2512,
+        "own_cpu_seconds": 0.013054,
+        "cumulative_cpu_seconds": 2.623593
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/quotes.py",
+        "line": 146,
+        "function": "_scope",
+        "calls": 303,
+        "own_cpu_seconds": 0.030481,
+        "cumulative_cpu_seconds": 2.62057
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/persistence.py",
+        "line": 29,
+        "function": "transaction",
+        "calls": 1010,
+        "own_cpu_seconds": 0.015198,
+        "cumulative_cpu_seconds": 2.251623
+      },
+      {
+        "file": "/usr/local/lib/python3.12/contextlib.py",
+        "line": 132,
+        "function": "_GeneratorContextManager.__enter__",
+        "calls": 1255,
+        "own_cpu_seconds": 0.006371,
+        "cumulative_cpu_seconds": 2.191903
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1287,
+        "function": "Connection.scalar",
+        "calls": 1111,
+        "own_cpu_seconds": 0.008946,
+        "cumulative_cpu_seconds": 2.105234
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/sql/elements.py",
+        "line": 532,
+        "function": "TextClause._execute_on_scalar",
+        "calls": 1111,
+        "own_cpu_seconds": 0.021923,
+        "cumulative_cpu_seconds": 2.096288
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py",
+        "line": 1850,
+        "function": "PGExecutionContext_psycopg._setup_result_proxy",
+        "calls": 2931,
+        "own_cpu_seconds": 0.045473,
+        "cumulative_cpu_seconds": 1.877387
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py",
+        "line": 1921,
+        "function": "PGExecutionContext_psycopg._setup_dml_or_text_result",
+        "calls": 2931,
+        "own_cpu_seconds": 0.05283,
+        "cumulative_cpu_seconds": 1.822513
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/api.py",
+        "line": 188,
+        "function": "principal",
+        "calls": 405,
+        "own_cpu_seconds": 0.011026,
+        "cumulative_cpu_seconds": 1.800823
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/auth.py",
+        "line": 114,
+        "function": "authenticate",
+        "calls": 405,
+        "own_cpu_seconds": 0.027368,
+        "cumulative_cpu_seconds": 1.773135
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/quotes.py",
+        "line": 291,
+        "function": "_prepare_quote",
+        "calls": 101,
+        "own_cpu_seconds": 0.005801,
+        "cumulative_cpu_seconds": 1.656188
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 275,
+        "function": "Cursor._maybe_prepare_gen",
+        "calls": 7771,
+        "own_cpu_seconds": 0.741883,
+        "cumulative_cpu_seconds": 1.624501
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/advisor.py",
+        "line": 50,
+        "function": "WarehouseAdvisorBackend._read",
+        "calls": 404,
+        "own_cpu_seconds": 0.005247,
+        "cumulative_cpu_seconds": 1.271871
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 3272,
+        "function": "Engine.connect",
+        "calls": 911,
+        "own_cpu_seconds": 0.007048,
+        "cumulative_cpu_seconds": 1.149244
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 3234,
+        "function": "Engine.begin",
+        "calls": 1010,
+        "own_cpu_seconds": 0.015149,
+        "cumulative_cpu_seconds": 1.143281
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 130,
+        "function": "Connection.__init__",
+        "calls": 911,
+        "own_cpu_seconds": 0.028653,
+        "cumulative_cpu_seconds": 1.142196
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/persistence.py",
+        "line": 42,
+        "function": "require_role",
+        "calls": 606,
+        "own_cpu_seconds": 0.010148,
+        "cumulative_cpu_seconds": 1.123308
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py",
+        "line": 1533,
+        "function": "CursorResult.__init__",
+        "calls": 2931,
+        "own_cpu_seconds": 0.038663,
+        "cumulative_cpu_seconds": 1.085455
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/api.py",
+        "line": 1082,
+        "function": "advisor_departures",
+        "calls": 101,
+        "own_cpu_seconds": 0.00407,
+        "cumulative_cpu_seconds": 1.073788
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/api.py",
+        "line": 1048,
+        "function": "advisor_products",
+        "calls": 101,
+        "own_cpu_seconds": 0.007014,
+        "cumulative_cpu_seconds": 1.063384
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/advisor.py",
+        "line": 211,
+        "function": "WarehouseAdvisorBackend.departures_page",
+        "calls": 101,
+        "own_cpu_seconds": 0.007777,
+        "cumulative_cpu_seconds": 1.063076
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/advisor.py",
+        "line": 131,
+        "function": "WarehouseAdvisorBackend.catalog_page",
+        "calls": 101,
+        "own_cpu_seconds": 0.015196,
+        "cumulative_cpu_seconds": 1.046599
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 3297,
+        "function": "Engine.raw_connection",
+        "calls": 911,
+        "own_cpu_seconds": 0.005356,
+        "cumulative_cpu_seconds": 1.032447
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/pool/base.py",
+        "line": 440,
+        "function": "NullPool.connect",
+        "calls": 911,
+        "own_cpu_seconds": 0.005672,
+        "cumulative_cpu_seconds": 1.027091
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/pool/base.py",
+        "line": 1282,
+        "function": "_checkout",
+        "calls": 911,
+        "own_cpu_seconds": 0.009169,
+        "cumulative_cpu_seconds": 1.021418
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py",
+        "line": 1596,
+        "function": "CursorResult._init_metadata",
+        "calls": 2729,
+        "own_cpu_seconds": 0.03108,
+        "cumulative_cpu_seconds": 1.013111
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/pool/base.py",
+        "line": 707,
+        "function": "checkout",
+        "calls": 911,
+        "own_cpu_seconds": 0.018805,
+        "cumulative_cpu_seconds": 1.01057
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/pool/impl.py",
+        "line": 306,
+        "function": "NullPool._do_get",
+        "calls": 911,
+        "own_cpu_seconds": 0.006266,
+        "cumulative_cpu_seconds": 0.980372
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py",
+        "line": 363,
+        "function": "CursorResultMetaData.__init__",
+        "calls": 2729,
+        "own_cpu_seconds": 0.045801,
+        "cumulative_cpu_seconds": 0.976003
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/pool/base.py",
+        "line": 386,
+        "function": "NullPool._create_connection",
+        "calls": 911,
+        "own_cpu_seconds": 0.009022,
+        "cumulative_cpu_seconds": 0.974106
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/pool/base.py",
+        "line": 666,
+        "function": "_ConnectionRecord.__init__",
+        "calls": 911,
+        "own_cpu_seconds": 0.010723,
+        "cumulative_cpu_seconds": 0.965083
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/pool/base.py",
+        "line": 888,
+        "function": "_ConnectionRecord.__connect",
+        "calls": 911,
+        "own_cpu_seconds": 0.022099,
+        "cumulative_cpu_seconds": 0.95436
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/quotes.py",
+        "line": 254,
+        "function": "_display",
+        "calls": 101,
+        "own_cpu_seconds": 0.005749,
+        "cumulative_cpu_seconds": 0.949626
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/price_books.py",
+        "line": 302,
+        "function": "resolve",
+        "calls": 303,
+        "own_cpu_seconds": 0.019042,
+        "cumulative_cpu_seconds": 0.939584
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py",
+        "line": 512,
+        "function": "CursorResultMetaData._merge_cursor_description",
+        "calls": 2729,
+        "own_cpu_seconds": 0.09859,
+        "cumulative_cpu_seconds": 0.90161
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/pool/base.py",
+        "line": 361,
+        "function": "<lambda>",
+        "calls": 911,
+        "own_cpu_seconds": 0.005936,
+        "cumulative_cpu_seconds": 0.883482
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/database_pool.py",
+        "line": 29,
+        "function": "connection",
+        "calls": 911,
+        "own_cpu_seconds": 0.008961,
+        "cumulative_cpu_seconds": 0.877546
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg_pool/pool.py",
+        "line": 194,
+        "function": "ConnectionPool.getconn",
+        "calls": 911,
+        "own_cpu_seconds": 0.018999,
+        "cumulative_cpu_seconds": 0.867176
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg_pool/pool.py",
+        "line": 222,
+        "function": "ConnectionPool._getconn_with_check_loop",
+        "calls": 911,
+        "own_cpu_seconds": 0.015442,
+        "cumulative_cpu_seconds": 0.832629
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/api.py",
+        "line": 302,
+        "function": "departures",
+        "calls": 101,
+        "own_cpu_seconds": 0.001762,
+        "cumulative_cpu_seconds": 0.791433
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/catalog.py",
+        "line": 270,
+        "function": "list_departures",
+        "calls": 101,
+        "own_cpu_seconds": 0.020603,
+        "cumulative_cpu_seconds": 0.789671
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg_pool/pool.py",
+        "line": 305,
+        "function": "ConnectionPool._check_connection",
+        "calls": 911,
+        "own_cpu_seconds": 0.005009,
+        "cumulative_cpu_seconds": 0.698212
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg_pool/pool.py",
+        "line": 553,
+        "function": "check_connection",
+        "calls": 911,
+        "own_cpu_seconds": 0.035807,
+        "cumulative_cpu_seconds": 0.693202
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 114,
+        "function": "Cursor.description",
+        "calls": 2931,
+        "own_cpu_seconds": 0.072258,
+        "cumulative_cpu_seconds": 0.673385
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py",
+        "line": 816,
+        "function": "CursorResultMetaData._merge_cols_by_none",
+        "calls": 23740,
+        "own_cpu_seconds": 0.089349,
+        "cumulative_cpu_seconds": 0.616952
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_column.py",
+        "line": 20,
+        "function": "Column.__init__",
+        "calls": 21011,
+        "own_cpu_seconds": 0.233723,
+        "cumulative_cpu_seconds": 0.601127
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 461,
+        "function": "Cursor._convert_query",
+        "calls": 3842,
+        "own_cpu_seconds": 0.030503,
+        "cumulative_cpu_seconds": 0.57377
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/connection.py",
+        "line": 281,
+        "function": "Connection.execute",
+        "calls": 911,
+        "own_cpu_seconds": 0.010253,
+        "cumulative_cpu_seconds": 0.573652
+      }
+    ]
+  },
+  "all_threads": {
+    "total_cpu_seconds": 16.964532,
+    "by_own_cpu": [
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "isinstance",
+        "calls": 574759,
+        "own_cpu_seconds": 0.802568,
+        "cumulative_cpu_seconds": 0.846947
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 275,
+        "function": "Cursor._maybe_prepare_gen",
+        "calls": 7771,
+        "own_cpu_seconds": 0.741883,
+        "cumulative_cpu_seconds": 1.624501
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/encoders.py",
+        "line": 129,
+        "function": "jsonable_encoder",
+        "calls": 50505,
+        "own_cpu_seconds": 0.699861,
+        "cumulative_cpu_seconds": 1.4556
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/connection.py",
+        "line": 479,
+        "function": "Connection.wait",
+        "calls": 7080,
+        "own_cpu_seconds": 0.534318,
+        "cumulative_cpu_seconds": 3.514976
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_connection_base.py",
+        "line": 443,
+        "function": "Connection._exec_command",
+        "calls": 3644,
+        "own_cpu_seconds": 0.485035,
+        "cumulative_cpu_seconds": 0.516163
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 583,
+        "function": "Cursor._send_query_prepared",
+        "calls": 2085,
+        "own_cpu_seconds": 0.247714,
+        "cumulative_cpu_seconds": 0.247714
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_column.py",
+        "line": 20,
+        "function": "Column.__init__",
+        "calls": 21011,
+        "own_cpu_seconds": 0.233723,
+        "cumulative_cpu_seconds": 0.601127
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'get' of 'dict' objects>",
+        "calls": 138048,
+        "own_cpu_seconds": 0.227411,
+        "cumulative_cpu_seconds": 0.227411
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_column.py",
+        "line": 61,
+        "function": "Column.__getitem__",
+        "calls": 42022,
+        "own_cpu_seconds": 0.221048,
+        "cumulative_cpu_seconds": 0.333453
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'acquire' of '_thread.lock' objects>",
+        "calls": 9065,
+        "own_cpu_seconds": 0.202294,
+        "cumulative_cpu_seconds": 0.202294
+      },
+      {
+        "file": "/usr/local/lib/python3.12/dataclasses.py",
+        "line": 1301,
+        "function": "is_dataclass",
+        "calls": 50505,
+        "own_cpu_seconds": 0.199728,
+        "cumulative_cpu_seconds": 0.324964
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 416,
+        "function": "Cursor._execute_send",
+        "calls": 1757,
+        "own_cpu_seconds": 0.18931,
+        "cumulative_cpu_seconds": 0.18931
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py",
+        "line": 664,
+        "function": "CursorResultMetaData._colnames_from_description",
+        "calls": 23740,
+        "own_cpu_seconds": 0.161283,
+        "cumulative_cpu_seconds": 0.527603
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'send' of '_socket.socket' objects>",
+        "calls": 1927,
+        "own_cpu_seconds": 0.134774,
+        "cumulative_cpu_seconds": 0.134774
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1852,
+        "function": "Connection._exec_single_context",
+        "calls": 2931,
+        "own_cpu_seconds": 0.123841,
+        "cumulative_cpu_seconds": 4.877801
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/routing.py",
+        "line": 242,
+        "function": "Route.matches",
+        "calls": 24221,
+        "own_cpu_seconds": 0.115545,
+        "cumulative_cpu_seconds": 0.255508
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 504,
+        "function": "Cursor._select_current_result",
+        "calls": 3842,
+        "own_cpu_seconds": 0.113659,
+        "cumulative_cpu_seconds": 0.209255
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_typeinfo.py",
+        "line": 265,
+        "function": "TypesRegistry.__getitem__",
+        "calls": 21011,
+        "own_cpu_seconds": 0.11283,
+        "cumulative_cpu_seconds": 0.177008
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 1251,
+        "function": "APIRoute.matches",
+        "calls": 22593,
+        "own_cpu_seconds": 0.111045,
+        "cumulative_cpu_seconds": 0.493056
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1593,
+        "function": "Connection._execute_clauseelement",
+        "calls": 2931,
+        "own_cpu_seconds": 0.106732,
+        "cumulative_cpu_seconds": 6.114724
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "getattr",
+        "calls": 40621,
+        "own_cpu_seconds": 0.106587,
+        "cumulative_cpu_seconds": 0.187465
+      },
+      {
+        "file": "/usr/local/lib/python3.12/typing.py",
+        "line": 2344,
+        "function": "get_origin",
+        "calls": 18188,
+        "own_cpu_seconds": 0.105703,
+        "cumulative_cpu_seconds": 0.179484
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/dependencies/utils.py",
+        "line": 586,
+        "function": "solve_dependencies",
+        "calls": 1625,
+        "own_cpu_seconds": 0.104125,
+        "cumulative_cpu_seconds": 1.954651
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_queries.py",
+        "line": 94,
+        "function": "PostgresQuery.dump",
+        "calls": 3842,
+        "own_cpu_seconds": 0.10163,
+        "cumulative_cpu_seconds": 0.393035
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/_compat/shared.py",
+        "line": 47,
+        "function": "lenient_issubclass",
+        "calls": 31731,
+        "own_cpu_seconds": 0.098897,
+        "cumulative_cpu_seconds": 0.198764
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py",
+        "line": 512,
+        "function": "CursorResultMetaData._merge_cursor_description",
+        "calls": 2729,
+        "own_cpu_seconds": 0.09859,
+        "cumulative_cpu_seconds": 0.90161
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/dependencies/utils.py",
+        "line": 780,
+        "function": "request_params_to_args",
+        "calls": 6488,
+        "own_cpu_seconds": 0.097285,
+        "cumulative_cpu_seconds": 1.165036
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/event/attr.py",
+        "line": 510,
+        "function": "_ListenerCollection.__call__",
+        "calls": 9508,
+        "own_cpu_seconds": 0.094901,
+        "cumulative_cpu_seconds": 0.250984
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/types/array.py",
+        "line": 89,
+        "function": "ListDumper._flatiter",
+        "calls": 3636,
+        "own_cpu_seconds": 0.093955,
+        "cumulative_cpu_seconds": 0.10332
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 195,
+        "function": "Cursor._execute_gen",
+        "calls": 8682,
+        "own_cpu_seconds": 0.092448,
+        "cumulative_cpu_seconds": 2.685107
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "len",
+        "calls": 53574,
+        "own_cpu_seconds": 0.09154,
+        "cumulative_cpu_seconds": 0.098443
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 891,
+        "function": "_get_scope_effective_route_context",
+        "calls": 23000,
+        "own_cpu_seconds": 0.089671,
+        "cumulative_cpu_seconds": 0.148367
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py",
+        "line": 816,
+        "function": "CursorResultMetaData._merge_cols_by_none",
+        "calls": 23740,
+        "own_cpu_seconds": 0.089349,
+        "cumulative_cpu_seconds": 0.616952
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/event/attr.py",
+        "line": 396,
+        "function": "_EmptyListener.__iter__",
+        "calls": 28914,
+        "own_cpu_seconds": 0.089094,
+        "cumulative_cpu_seconds": 0.136119
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'sub' of 're.Pattern' objects>",
+        "calls": 3048,
+        "own_cpu_seconds": 0.088509,
+        "cumulative_cpu_seconds": 0.315094
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "hasattr",
+        "calls": 61874,
+        "own_cpu_seconds": 0.084059,
+        "cumulative_cpu_seconds": 0.084059
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py",
+        "line": 1313,
+        "function": "_init_compiled",
+        "calls": 2931,
+        "own_cpu_seconds": 0.083474,
+        "cumulative_cpu_seconds": 0.3782
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'append' of 'list' objects>",
+        "calls": 54003,
+        "own_cpu_seconds": 0.08283,
+        "cumulative_cpu_seconds": 0.08283
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 2719,
+        "function": "APIRouter.app",
+        "calls": 408,
+        "own_cpu_seconds": 0.082266,
+        "cumulative_cpu_seconds": 5.699526
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/_compat/shared.py",
+        "line": 64,
+        "function": "field_annotation_is_sequence",
+        "calls": 10104,
+        "own_cpu_seconds": 0.079726,
+        "cumulative_cpu_seconds": 0.543569
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/h11/_headers.py",
+        "line": 152,
+        "function": "normalize_and_validate",
+        "calls": 813,
+        "own_cpu_seconds": 0.079304,
+        "cumulative_cpu_seconds": 0.19835
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/sql/elements.py",
+        "line": 2315,
+        "function": "repl",
+        "calls": 7376,
+        "own_cpu_seconds": 0.079204,
+        "cumulative_cpu_seconds": 0.223953
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/anyio/_backends/_asyncio.py",
+        "line": 2582,
+        "function": "run_sync_in_worker_thread",
+        "calls": 1113,
+        "own_cpu_seconds": 0.078617,
+        "cumulative_cpu_seconds": 0.669228
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/sql/type_api.py",
+        "line": 934,
+        "function": "NullType._cached_result_processor",
+        "calls": 21011,
+        "own_cpu_seconds": 0.072934,
+        "cumulative_cpu_seconds": 0.1175
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 114,
+        "function": "Cursor.description",
+        "calls": 2931,
+        "own_cpu_seconds": 0.072258,
+        "cumulative_cpu_seconds": 0.673385
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/_compat/shared.py",
+        "line": 58,
+        "function": "_annotation_is_sequence",
+        "calls": 16168,
+        "own_cpu_seconds": 0.070688,
+        "cumulative_cpu_seconds": 0.264832
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_typeinfo.py",
+        "line": 289,
+        "function": "TypesRegistry.get",
+        "calls": 21011,
+        "own_cpu_seconds": 0.070361,
+        "cumulative_cpu_seconds": 0.24737
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'validate_python' of 'pydantic_core._pydantic_core.SchemaValidator' objects>",
+        "calls": 6264,
+        "own_cpu_seconds": 0.069287,
+        "cumulative_cpu_seconds": 0.075368
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py",
+        "line": 1799,
+        "function": "PGExecutionContext_psycopg.get_result_processor",
+        "calls": 21011,
+        "own_cpu_seconds": 0.068568,
+        "cumulative_cpu_seconds": 0.186068
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'run' of '_contextvars.Context' objects>",
+        "calls": 9051,
+        "own_cpu_seconds": 0.068347,
+        "cumulative_cpu_seconds": 16.269084
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 374,
+        "function": "Cursor._start_query",
+        "calls": 4753,
+        "own_cpu_seconds": 0.067584,
+        "cumulative_cpu_seconds": 0.385052
+      },
+      {
+        "file": "/usr/local/lib/python3.12/asyncio/base_events.py",
+        "line": 1922,
+        "function": "_UnixSelectorEventLoop._run_once",
+        "calls": 300,
+        "own_cpu_seconds": 0.066205,
+        "cumulative_cpu_seconds": 6.880635
+      },
+      {
+        "file": "/usr/local/lib/python3.12/weakref.py",
+        "line": 414,
+        "function": "WeakKeyDictionary.__getitem__",
+        "calls": 28800,
+        "own_cpu_seconds": 0.064183,
+        "cumulative_cpu_seconds": 0.064183
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/_utils.py",
+        "line": 96,
+        "function": "get_route_path",
+        "calls": 24221,
+        "own_cpu_seconds": 0.063272,
+        "cumulative_cpu_seconds": 0.094678
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/cursor.py",
+        "line": 239,
+        "function": "Cursor.fetchone",
+        "calls": 4749,
+        "own_cpu_seconds": 0.063193,
+        "cumulative_cpu_seconds": 0.138412
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1793,
+        "function": "Connection._execute_context",
+        "calls": 2931,
+        "own_cpu_seconds": 0.0617,
+        "cumulative_cpu_seconds": 5.367453
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_adapters_map.py",
+        "line": 75,
+        "function": "AdaptersMap.__init__",
+        "calls": 3856,
+        "own_cpu_seconds": 0.060897,
+        "cumulative_cpu_seconds": 0.095716
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/h11/_util.py",
+        "line": 84,
+        "function": "validate",
+        "calls": 12197,
+        "own_cpu_seconds": 0.05931,
+        "cumulative_cpu_seconds": 0.107755
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'decode' of 'bytes' objects>",
+        "calls": 32492,
+        "own_cpu_seconds": 0.058175,
+        "cumulative_cpu_seconds": 0.058175
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/sql/cache_key.py",
+        "line": 221,
+        "function": "TextClause._gen_cache_key",
+        "calls": 2931,
+        "own_cpu_seconds": 0.057386,
+        "cumulative_cpu_seconds": 0.21969
+      }
+    ],
+    "by_cumulative_cpu": [
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "<method 'run' of '_contextvars.Context' objects>",
+        "calls": 9051,
+        "own_cpu_seconds": 0.068347,
+        "cumulative_cpu_seconds": 16.269084
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/anyio/_backends/_asyncio.py",
+        "line": 1019,
+        "function": "WorkerThread.run",
+        "calls": 43,
+        "own_cpu_seconds": 0.030628,
+        "cumulative_cpu_seconds": 9.568585
+      },
+      {
+        "file": "/usr/local/lib/python3.12/asyncio/base_events.py",
+        "line": 1922,
+        "function": "_UnixSelectorEventLoop._run_once",
+        "calls": 300,
+        "own_cpu_seconds": 0.066205,
+        "cumulative_cpu_seconds": 6.880635
+      },
+      {
+        "file": "/usr/local/lib/python3.12/asyncio/events.py",
+        "line": 86,
+        "function": "Handle._run",
+        "calls": 6825,
+        "own_cpu_seconds": 0.034757,
+        "cumulative_cpu_seconds": 6.768363
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/sql/elements.py",
+        "line": 517,
+        "function": "TextClause._execute_on_connection",
+        "calls": 2931,
+        "own_cpu_seconds": 0.01777,
+        "cumulative_cpu_seconds": 6.132495
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1593,
+        "function": "Connection._execute_clauseelement",
+        "calls": 2931,
+        "own_cpu_seconds": 0.106732,
+        "cumulative_cpu_seconds": 6.114724
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/uvicorn/protocols/http/h11_impl.py",
+        "line": 414,
+        "function": "RequestResponseCycle.run_asgi",
+        "calls": 407,
+        "own_cpu_seconds": 0.019127,
+        "cumulative_cpu_seconds": 6.025444
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py",
+        "line": 28,
+        "function": "ProxyHeadersMiddleware.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.016314,
+        "cumulative_cpu_seconds": 6.006533
+      },
+      {
+        "file": "/app/cloud-warehouse/scripts/capacity_http.py",
+        "line": 16,
+        "function": "traced",
+        "calls": 408,
+        "own_cpu_seconds": 0.013308,
+        "cumulative_cpu_seconds": 5.986688
+      },
+      {
+        "file": "/capacity-original-http.py",
+        "line": 19,
+        "function": "timed_app",
+        "calls": 408,
+        "own_cpu_seconds": 0.014289,
+        "cumulative_cpu_seconds": 5.97862
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/applications.py",
+        "line": 1160,
+        "function": "FastAPI.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.013703,
+        "cumulative_cpu_seconds": 5.963674
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/applications.py",
+        "line": 92,
+        "function": "FastAPI.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.012856,
+        "cumulative_cpu_seconds": 5.949973
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/middleware/errors.py",
+        "line": 149,
+        "function": "ServerErrorMiddleware.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.020244,
+        "cumulative_cpu_seconds": 5.93712
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/http_observation.py",
+        "line": 45,
+        "function": "HttpObservation.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.051545,
+        "cumulative_cpu_seconds": 5.917034
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/middleware/exceptions.py",
+        "line": 47,
+        "function": "ExceptionMiddleware.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.019099,
+        "cumulative_cpu_seconds": 5.782681
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/_exception_handler.py",
+        "line": 31,
+        "function": "wrapped_app",
+        "calls": 814,
+        "own_cpu_seconds": 0.030081,
+        "cumulative_cpu_seconds": 5.759425
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py",
+        "line": 15,
+        "function": "AsyncExitStackMiddleware.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.01825,
+        "cumulative_cpu_seconds": 5.743837
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/routing.py",
+        "line": 666,
+        "function": "APIRouter.__call__",
+        "calls": 408,
+        "own_cpu_seconds": 0.015419,
+        "cumulative_cpu_seconds": 5.714942
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 2719,
+        "function": "APIRouter.app",
+        "calls": 408,
+        "own_cpu_seconds": 0.082266,
+        "cumulative_cpu_seconds": 5.699526
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1793,
+        "function": "Connection._execute_context",
+        "calls": 2931,
+        "own_cpu_seconds": 0.0617,
+        "cumulative_cpu_seconds": 5.367453
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 1261,
+        "function": "APIRoute.handle",
+        "calls": 407,
+        "own_cpu_seconds": 0.014748,
+        "cumulative_cpu_seconds": 5.103764
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/starlette/routing.py",
+        "line": 271,
+        "function": "APIRoute.handle",
+        "calls": 407,
+        "own_cpu_seconds": 0.017157,
+        "cumulative_cpu_seconds": 5.086724
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 134,
+        "function": "app",
+        "calls": 407,
+        "own_cpu_seconds": 0.016627,
+        "cumulative_cpu_seconds": 5.069569
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 137,
+        "function": "app",
+        "calls": 407,
+        "own_cpu_seconds": 0.033132,
+        "cumulative_cpu_seconds": 5.02966
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1852,
+        "function": "Connection._exec_single_context",
+        "calls": 2931,
+        "own_cpu_seconds": 0.123841,
+        "cumulative_cpu_seconds": 4.877801
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 406,
+        "function": "app",
+        "calls": 407,
+        "own_cpu_seconds": 0.050325,
+        "cumulative_cpu_seconds": 4.213821
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1377,
+        "function": "Connection.execute",
+        "calls": 1820,
+        "own_cpu_seconds": 0.013117,
+        "cumulative_cpu_seconds": 4.149963
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/connection.py",
+        "line": 479,
+        "function": "Connection.wait",
+        "calls": 7080,
+        "own_cpu_seconds": 0.534318,
+        "cumulative_cpu_seconds": 3.514976
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/cursor.py",
+        "line": 100,
+        "function": "Cursor.execute",
+        "calls": 3842,
+        "own_cpu_seconds": 0.043543,
+        "cumulative_cpu_seconds": 3.157895
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/quotes.py",
+        "line": 304,
+        "function": "_save_quote",
+        "calls": 101,
+        "own_cpu_seconds": 0.019097,
+        "cumulative_cpu_seconds": 3.123706
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 195,
+        "function": "Cursor._execute_gen",
+        "calls": 8682,
+        "own_cpu_seconds": 0.092448,
+        "cumulative_cpu_seconds": 2.685107
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py",
+        "line": 951,
+        "function": "PGDialect_psycopg.do_execute",
+        "calls": 2931,
+        "own_cpu_seconds": 0.018954,
+        "cumulative_cpu_seconds": 2.671707
+      },
+      {
+        "file": "builtins",
+        "line": 0,
+        "function": "next",
+        "calls": 2528,
+        "own_cpu_seconds": 0.013114,
+        "cumulative_cpu_seconds": 2.626171
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/quotes.py",
+        "line": 146,
+        "function": "_scope",
+        "calls": 303,
+        "own_cpu_seconds": 0.030481,
+        "cumulative_cpu_seconds": 2.62057
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/persistence.py",
+        "line": 29,
+        "function": "transaction",
+        "calls": 1010,
+        "own_cpu_seconds": 0.015198,
+        "cumulative_cpu_seconds": 2.251623
+      },
+      {
+        "file": "/usr/local/lib/python3.12/contextlib.py",
+        "line": 132,
+        "function": "_GeneratorContextManager.__enter__",
+        "calls": 1255,
+        "own_cpu_seconds": 0.006371,
+        "cumulative_cpu_seconds": 2.191903
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 1287,
+        "function": "Connection.scalar",
+        "calls": 1111,
+        "own_cpu_seconds": 0.008946,
+        "cumulative_cpu_seconds": 2.105234
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/sql/elements.py",
+        "line": 532,
+        "function": "TextClause._execute_on_scalar",
+        "calls": 1111,
+        "own_cpu_seconds": 0.021923,
+        "cumulative_cpu_seconds": 2.096288
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/dependencies/utils.py",
+        "line": 586,
+        "function": "solve_dependencies",
+        "calls": 1625,
+        "own_cpu_seconds": 0.104125,
+        "cumulative_cpu_seconds": 1.954651
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py",
+        "line": 1850,
+        "function": "PGExecutionContext_psycopg._setup_result_proxy",
+        "calls": 2931,
+        "own_cpu_seconds": 0.045473,
+        "cumulative_cpu_seconds": 1.877387
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/default.py",
+        "line": 1921,
+        "function": "PGExecutionContext_psycopg._setup_dml_or_text_result",
+        "calls": 2931,
+        "own_cpu_seconds": 0.05283,
+        "cumulative_cpu_seconds": 1.822513
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/api.py",
+        "line": 188,
+        "function": "principal",
+        "calls": 405,
+        "own_cpu_seconds": 0.011026,
+        "cumulative_cpu_seconds": 1.800823
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/auth.py",
+        "line": 114,
+        "function": "authenticate",
+        "calls": 405,
+        "own_cpu_seconds": 0.027368,
+        "cumulative_cpu_seconds": 1.773135
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/quotes.py",
+        "line": 291,
+        "function": "_prepare_quote",
+        "calls": 101,
+        "own_cpu_seconds": 0.005801,
+        "cumulative_cpu_seconds": 1.656188
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/routing.py",
+        "line": 301,
+        "function": "serialize_response",
+        "calls": 405,
+        "own_cpu_seconds": 0.012154,
+        "cumulative_cpu_seconds": 1.642415
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/psycopg/_cursor_base.py",
+        "line": 275,
+        "function": "Cursor._maybe_prepare_gen",
+        "calls": 7771,
+        "own_cpu_seconds": 0.741883,
+        "cumulative_cpu_seconds": 1.624501
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/encoders.py",
+        "line": 129,
+        "function": "jsonable_encoder",
+        "calls": 50505,
+        "own_cpu_seconds": 0.699861,
+        "cumulative_cpu_seconds": 1.4556
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/advisor.py",
+        "line": 50,
+        "function": "WarehouseAdvisorBackend._read",
+        "calls": 404,
+        "own_cpu_seconds": 0.005247,
+        "cumulative_cpu_seconds": 1.271871
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/fastapi/dependencies/utils.py",
+        "line": 780,
+        "function": "request_params_to_args",
+        "calls": 6488,
+        "own_cpu_seconds": 0.097285,
+        "cumulative_cpu_seconds": 1.165036
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 3272,
+        "function": "Engine.connect",
+        "calls": 911,
+        "own_cpu_seconds": 0.007048,
+        "cumulative_cpu_seconds": 1.149244
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 3234,
+        "function": "Engine.begin",
+        "calls": 1010,
+        "own_cpu_seconds": 0.015149,
+        "cumulative_cpu_seconds": 1.143281
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 130,
+        "function": "Connection.__init__",
+        "calls": 911,
+        "own_cpu_seconds": 0.028653,
+        "cumulative_cpu_seconds": 1.142196
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/persistence.py",
+        "line": 42,
+        "function": "require_role",
+        "calls": 606,
+        "own_cpu_seconds": 0.010148,
+        "cumulative_cpu_seconds": 1.123308
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py",
+        "line": 1533,
+        "function": "CursorResult.__init__",
+        "calls": 2931,
+        "own_cpu_seconds": 0.038663,
+        "cumulative_cpu_seconds": 1.085455
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/api.py",
+        "line": 1082,
+        "function": "advisor_departures",
+        "calls": 101,
+        "own_cpu_seconds": 0.00407,
+        "cumulative_cpu_seconds": 1.073788
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/api.py",
+        "line": 1048,
+        "function": "advisor_products",
+        "calls": 101,
+        "own_cpu_seconds": 0.007014,
+        "cumulative_cpu_seconds": 1.063384
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/advisor.py",
+        "line": 211,
+        "function": "WarehouseAdvisorBackend.departures_page",
+        "calls": 101,
+        "own_cpu_seconds": 0.007777,
+        "cumulative_cpu_seconds": 1.063076
+      },
+      {
+        "file": "/app/cloud-warehouse/cloud_warehouse/advisor.py",
+        "line": 131,
+        "function": "WarehouseAdvisorBackend.catalog_page",
+        "calls": 101,
+        "own_cpu_seconds": 0.015196,
+        "cumulative_cpu_seconds": 1.046599
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/engine/base.py",
+        "line": 3297,
+        "function": "Engine.raw_connection",
+        "calls": 911,
+        "own_cpu_seconds": 0.005356,
+        "cumulative_cpu_seconds": 1.032447
+      },
+      {
+        "file": "/usr/local/lib/python3.12/site-packages/sqlalchemy/pool/base.py",
+        "line": 440,
+        "function": "NullPool.connect",
+        "calls": 911,
+        "own_cpu_seconds": 0.005672,
+        "cumulative_cpu_seconds": 1.027091
+      }
+    ]
+  }
+}

@@ -4,7 +4,7 @@
 "use client";
 
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
-import { formatPrice, productCity, productPlace, productPriceUnit } from "@/lib/format";
+import { formatPrice, productCity, productPlace, productPriceUnit, shortDate } from "@/lib/format";
 import type { Product, ProductsPayload } from "@/lib/types";
 import { PostcardWindow } from "../PostcardWindow";
 import {
@@ -34,14 +34,22 @@ const HIDDEN_ATTRS = new Set([
   "units_left_for_dates",
 ]);
 
+/** What a yes/no attribute says when it is a yes; an unlisted key shows its own words. */
+const YES_CHIPS: Record<string, string> = {
+  breakfast_included: "含早餐",
+  nonstop: "直飞",
+  checked_bag_included: "含托运行李",
+  small_group: "小团",
+};
+
 function specChips(product: Product): string[] {
   return Object.entries(product.attributes ?? {})
     .filter(([key]) => !HIDDEN_ATTRS.has(key) && !/cancel|refund/i.test(key))
     .map(([key, value]) => {
-      if (/^(yes|true)$/i.test(value)) return key.replace(/_/g, " ").replace(/\bincluded\b/, "incl.");
+      if (/^(yes|true)$/i.test(value)) return YES_CHIPS[key] ?? key.replace(/_/g, " ");
       if (/^(no|false)$/i.test(value)) return null;
-      if (key === "duration_hours") return `${value} hrs`;
-      if (key === "group_size_max") return `groups of ${value}`;
+      if (key === "duration_hours") return `${value} 小时`;
+      if (key === "group_size_max") return `${value} 人团`;
       return value;
     })
     .filter((chip): chip is string => Boolean(chip))
@@ -55,16 +63,9 @@ function hasFreeCancellation(product: Product): boolean {
   );
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
 /** From the string parts, so no timezone shifts the day. */
 function cancellationDeadline(product: Product): string | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(
-    product.attributes?.free_cancellation_until ?? "",
-  );
-  if (!match) return null;
-  const month = MONTHS[Number(match[2]) - 1];
-  return month ? `${month} ${Number(match[3])}` : null;
+  return shortDate(product.attributes?.free_cancellation_until);
 }
 
 function isNonRefundable(product: Product): boolean {
@@ -80,7 +81,7 @@ function SoldOutBand() {
       className="absolute inset-x-0 top-1/2 z-10 -translate-y-1/2 py-1.5 text-center"
       style={{ ...META, fontSize: 11, color: "var(--surface)", background: "rgba(31,61,51,0.82)" }}
     >
-      Sold out for these dates
+      所选日期已售罄
     </span>
   );
 }
@@ -153,8 +154,8 @@ export function TravelCard({
                 background: "var(--accent-soft)",
               }}
             >
-              ✓ Free cancellation
-              {deadline ? ` until ${deadline}` : ""}
+              ✓ 免费取消
+              {deadline ? `，至 ${deadline}` : ""}
             </span>
           ) : isNonRefundable(product) ? (
             <span
@@ -167,7 +168,7 @@ export function TravelCard({
                 background: "var(--well)",
               }}
             >
-              Non-refundable
+              不可退款
             </span>
           ) : null}
           <ScarcityChip unitsLeft={product.attributes?.units_left_for_dates} />
@@ -181,7 +182,7 @@ export function TravelCard({
           </span>
           {unit ? (
             <span style={{ ...META, fontSize: 11, marginLeft: 3 }}>
-              {unit} · all-in
+              {unit} · 全含价
             </span>
           ) : null}
         </span>
@@ -192,8 +193,7 @@ export function TravelCard({
         <p
           style={{
             fontFamily: DISPLAY,
-            fontStyle: "italic",
-            fontWeight: 300,
+            fontWeight: 400,
             fontSize: 13,
             lineHeight: 1.45,
             color: "var(--ink-soft)",

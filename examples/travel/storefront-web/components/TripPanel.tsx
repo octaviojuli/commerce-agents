@@ -3,8 +3,9 @@
 
 "use client";
 
-import { AskLink, BagPanel, CheckoutButton, plural, RemoveLink, Stepper, TotalRow, useCatalogIndex, useStoreFrame } from "web-shared";
+import { AskLink, BagPanel, CheckoutButton, RemoveLink, Stepper, TotalRow, useCatalogIndex, useStoreFrame } from "web-shared";
 import { fetchProducts } from "@/lib/api";
+import { ASSISTANT } from "@/lib/copy";
 import { formatPrice, productCity, productPlace, quantityLabel, shortDate } from "@/lib/format";
 import type { CartItem, CartPayload, Product } from "@/lib/types";
 import { PostcardWindow } from "./PostcardWindow";
@@ -17,8 +18,7 @@ function quantityNoun(item: CartItem): "night" | "guest" | null {
 }
 
 function quantityMessage(item: CartItem, quantity: number): string {
-  const s = quantity === 1 ? "" : "s";
-  return quantityNoun(item) === "night" ? `Make the ${item.title} ${quantity} night${s}.` : `Make the ${item.title} for ${quantity} guest${s}.`;
+  return quantityNoun(item) === "night" ? `把${item.title}改为 ${quantity} 晚。` : `把${item.title}改为 ${quantity} 人。`;
 }
 
 function cancellationLine(product?: Product): { text: string; free: boolean } | null {
@@ -26,10 +26,10 @@ function cancellationLine(product?: Product): { text: string; free: boolean } | 
   const refundable = /^(yes|true)$/i.test(product.attributes.refundable ?? "");
   if (refundable) {
     const until = shortDate(product.attributes.free_cancellation_until);
-    return { text: until ? `Cancel free until ${until}` : "Free cancellation", free: true };
+    return { text: until ? `可免费取消至 ${until}` : "免费取消", free: true };
   }
   if (/^(no|false|none)$/i.test((product.attributes.refundable ?? "").trim())) {
-    return { text: "Non-refundable", free: false };
+    return { text: "不可退款", free: false };
   }
   return null;
 }
@@ -68,7 +68,7 @@ function CartRow({ item, product }: { item: CartItem; product?: Product }) {
                 ))}
               </span>
               <span className="text-[11px] font-semibold text-(--ink-soft)">
-                {nights} night{nights === 1 ? "" : "s"}
+                {nights} 晚
               </span>
             </div>
           ) : null}
@@ -99,10 +99,10 @@ function CartRow({ item, product }: { item: CartItem; product?: Product }) {
             quantity={item.quantity}
             unit={noun}
             itemTitle={item.title}
-            onChange={(quantity) => ask(quantity < 1 ? `Remove the ${item.title} from my trip.` : quantityMessage(item, quantity))}
+            onChange={(quantity) => ask(quantity < 1 ? `把${item.title}从我的行程中移除。` : quantityMessage(item, quantity))}
           />
         ) : null}
-        <RemoveLink itemTitle={item.title} onClick={() => ask(`Remove the ${item.title} from my trip.`)} />
+        <RemoveLink itemTitle={item.title} onClick={() => ask(`把${item.title}从我的行程中移除。`)} />
       </div>
     </div>
   );
@@ -125,23 +125,23 @@ export default function TripPanel({
   const count = items.length;
   return (
     <BagPanel
-      title="Trip"
-      count={plural(count, "booking")}
+      title="本次行程"
+      count={`${count} 项预订`}
       isEmpty={count === 0}
       empty={
         <>
-          Nothing booked yet.
+          还没有预订任何项目。
           <br />
-          Ask ACME Assistant where to go.
+          问问{ASSISTANT}想去哪儿。
         </>
       }
       footer={
         <>
-          <TotalRow label="Trip total" value={formatPrice(cart?.subtotal ?? 0)} note={count ? "All-in; nothing is charged until you check out." : undefined} />
-          <CheckoutButton staged={checkoutStaged} disabled={count === 0} prompt="Check out my trip." />
+          <TotalRow label="行程总额" value={formatPrice(cart?.subtotal ?? 0)} note={count ? "全含价；结算前不会扣款。" : undefined} />
+          <CheckoutButton staged={checkoutStaged} disabled={count === 0} prompt="结算我的行程。" />
           {count ? (
             <div className="mt-2.5 flex justify-center">
-              <AskLink label="Ask about this trip" prompt="Look over my trip: anything missing or worth changing?" />
+              <AskLink label="问问这次行程" prompt="帮我看看这次行程：有没有遗漏或值得调整的地方？" />
             </div>
           ) : null}
         </>

@@ -3,7 +3,14 @@
 
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ActivityButton } from "../ActivityButton";
 import type { AgentApi } from "../api";
 import { Composer } from "../Composer";
@@ -74,7 +81,14 @@ export function StoreShell<V extends string>({
   profileId?: string;
   onSwitchProfile?: (id: string) => void;
   /** `count` is what the bag holds; `noun` names it ("item", "booking"); `figure` is a running total; `extra` a live badge. */
-  bag: { label: string; count: number; noun: string; figure?: string | null; extra?: ReactNode };
+  bag: {
+    label: string;
+    count: number;
+    noun: string;
+    figure?: string | null;
+    extra?: ReactNode;
+    icon?: IconName;
+  };
   panel: ReactNode;
   panelOpen: boolean;
   onPanelOpenChange: (open: boolean) => void;
@@ -93,7 +107,10 @@ export function StoreShell<V extends string>({
   const home = views[0].id;
   const { send } = chat;
 
-  const closePanel = useCallback(() => onPanelOpenChange(false), [onPanelOpenChange]);
+  const closePanel = useCallback(
+    () => onPanelOpenChange(false),
+    [onPanelOpenChange],
+  );
   /** Every hand-off on the page goes through here: close the drawer, show the conversation, send. */
   const ask = useCallback(
     (message: string) => {
@@ -111,7 +128,10 @@ export function StoreShell<V extends string>({
   // The drawer takes focus when it opens, gives it back when it closes, and closes on Escape.
   useEffect(() => {
     if (!panelOpen) return;
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : bagButtonRef.current;
+    const opener =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : bagButtonRef.current;
     panelRef.current?.querySelector<HTMLElement>("button")?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onPanelOpenChange(false);
@@ -129,7 +149,10 @@ export function StoreShell<V extends string>({
         <div className="flex h-dvh flex-col text-(--ink)">
           <header className="flex h-[58px] shrink-0 items-center gap-2 border-b border-(--line) bg-(--chrome) px-3 sm:gap-5 sm:px-5">
             <div className="flex shrink-0 items-center">{brand}</div>
-            <nav className="flex min-w-0 items-center gap-1" aria-label={copy.views}>
+            <nav
+              className="flex min-w-0 items-center gap-1"
+              aria-label={copy.views}
+            >
               {views.map((item) => {
                 const active = item.id === view;
                 return (
@@ -138,12 +161,22 @@ export function StoreShell<V extends string>({
                     type="button"
                     onClick={() => onViewChange(item.id)}
                     aria-current={active ? "page" : undefined}
-                    aria-label={item.attention ? `${item.label}, ${item.attention.label}` : item.label}
+                    aria-label={
+                      item.attention
+                        ? `${item.label}, ${item.attention.label}`
+                        : item.label
+                    }
                     className={`flex items-center gap-2 rounded-[9px] px-2.5 py-1.5 text-[14px] transition-colors ${
-                      active ? "bg-(--well) font-semibold text-(--ink)" : "font-medium text-(--ink-2) hover:bg-(--well)/60"
+                      active
+                        ? "bg-(--well) font-semibold text-(--ink)"
+                        : "font-medium text-(--ink-2) hover:bg-(--well)/60"
                     }`}
                   >
-                    <Icon name={item.icon} size={17} className={active ? "text-(--ink)" : "text-(--ink-soft)"} />
+                    <Icon
+                      name={item.icon}
+                      size={17}
+                      className={active ? "text-(--ink)" : "text-(--ink-soft)"}
+                    />
                     <span className="hidden sm:inline">{item.label}</span>
                     {item.attention ? (
                       <span className="rounded-full bg-(--warn-soft) px-1.5 text-[11px] font-semibold tabular-nums text-(--warn)">
@@ -167,9 +200,13 @@ export function StoreShell<V extends string>({
                 aria-label={copy.openBag(bag.label, bag.count, bag.noun)}
                 className="flex h-[34px] items-center gap-2 rounded-full bg-(--ink) pl-3 pr-1.5 text-[13px] font-semibold text-(--surface) transition hover:brightness-110 xl:hidden"
               >
-                <Icon name="bag" size={16} />
+                <Icon name={bag.icon ?? "bag"} size={16} />
                 <span className="hidden sm:inline">{bag.label}</span>
-                {bag.figure ? <span className="hidden tabular-nums md:inline">· {bag.figure}</span> : null}
+                {bag.figure ? (
+                  <span className="hidden tabular-nums md:inline">
+                    · {bag.figure}
+                  </span>
+                ) : null}
                 {bag.extra}
                 <span
                   key={bag.count}
@@ -187,9 +224,13 @@ export function StoreShell<V extends string>({
               >
                 <Avatar name={shopper.name} />
                 <span className="hidden min-w-0 md:block">
-                  <span className="block truncate text-[13px] font-semibold leading-tight">{shopper.name}</span>
+                  <span className="block truncate text-[13px] font-semibold leading-tight">
+                    {shopper.name}
+                  </span>
                   {shopper.tier ? (
-                    <span className="block truncate text-[11.5px] leading-tight text-(--ink-soft)">{shopper.tier}</span>
+                    <span className="block truncate text-[11.5px] leading-tight text-(--ink-soft)">
+                      {shopper.tier}
+                    </span>
                   ) : null}
                 </span>
               </button>

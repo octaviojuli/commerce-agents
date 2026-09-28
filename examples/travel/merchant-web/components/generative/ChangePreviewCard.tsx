@@ -8,7 +8,6 @@ import {
   type ChangeAction,
   ChangeStatusPill,
   DiffRows,
-  describeProposer,
   formatDate,
   formatMoney,
   GenCard,
@@ -19,7 +18,9 @@ import {
   MarginHeadroom,
   titleCase,
   useChangeActions,
+  useCopy,
 } from "web-shared";
+import { CHANGE_KIND_LABELS } from "@/lib/copy";
 import type { ChangePreviewPayload, StagedChange } from "@/lib/types";
 
 /** Rate moves carry a margin headroom bar under the diff. */
@@ -30,6 +31,7 @@ export default function ChangePreviewCard({
   payload: ChangePreviewPayload;
   onAct?: (changeId: string, action: ChangeAction) => Promise<StagedChange | null>;
 }) {
+  const copy = useCopy();
   const { change, busy, error, act, canAct } = useChangeActions(payload.change, onAct);
   const shortItems = change.items.filter((item) => !isLongTextDiff(item));
   const longItems = change.items.filter(isLongTextDiff);
@@ -37,13 +39,13 @@ export default function ChangePreviewCard({
   return (
     <GenCard>
       <GenCardHeader
-        title={payload.headline ?? "Proposed change"}
+        title={payload.headline ?? "拟议改动"}
         meta={
           <>
             <ChangeStatusPill status={change.status} />
-            <span>{titleCase(change.kind)}</span>
+            <span>{CHANGE_KIND_LABELS[change.kind] ?? titleCase(change.kind)}</span>
             <span aria-hidden>·</span>
-            <span>{describeProposer(change)}</span>
+            <span>{copy.describeProposer(change)}</span>
             <span aria-hidden>·</span>
             <span>{formatDate(change.created_at)}</span>
           </>
@@ -56,11 +58,11 @@ export default function ChangePreviewCard({
       {longItems.map((item, index) => (
         <LongTextDiff key={`${item.target}-${item.field}-${index}`} item={item} />
       ))}
-      <MarginHeadroom change={change} costLabel="Nightly cost" />
+      <MarginHeadroom change={change} costLabel="每晚成本" />
 
       {change.margin_impact != null ? (
         <p className="mx-3.5 mt-2 text-[12.5px] tabular-nums text-(--ink-soft)">
-          Margin impact{" "}
+          利润影响{" "}
           <b className={`font-semibold ${change.margin_impact < 0 ? "text-(--danger)" : "text-(--ok)"}`}>
             {change.margin_impact > 0 ? "+" : ""}
             {formatMoney(change.margin_impact, change.currency ?? undefined)}

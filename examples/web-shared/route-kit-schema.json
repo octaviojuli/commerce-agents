@@ -1,0 +1,1904 @@
+{
+ "$defs": {
+  "Applicability": {
+   "properties": {
+    "raw": {
+     "default": "",
+     "title": "Raw",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    },
+    "start": {
+     "anyOf": [
+      {
+       "format": "date",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Start"
+    },
+    "end": {
+     "anyOf": [
+      {
+       "format": "date",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "End"
+    },
+    "departure_cities": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Departure Cities",
+     "type": "array"
+    },
+    "version_label": {
+     "default": "",
+     "title": "Version Label",
+     "type": "string"
+    }
+   },
+   "title": "Applicability",
+   "type": "object"
+  },
+  "CancellationTier": {
+   "properties": {
+    "raw": {
+     "default": "",
+     "title": "Raw",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    },
+    "days_before_min": {
+     "anyOf": [
+      {
+       "minimum": 0,
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Days Before Min"
+    },
+    "days_before_max": {
+     "anyOf": [
+      {
+       "minimum": 0,
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Days Before Max"
+    },
+    "penalty_percent": {
+     "anyOf": [
+      {
+       "maximum": 100.0,
+       "minimum": 0.0,
+       "type": "number"
+      },
+      {
+       "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Penalty Percent"
+    },
+    "penalty_money": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Money"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    }
+   },
+   "title": "CancellationTier",
+   "type": "object"
+  },
+  "ChildNode": {
+   "properties": {
+    "node_id": {
+     "default": "",
+     "title": "Node Id",
+     "type": "string"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "local_name": {
+     "default": "",
+     "title": "Local Name",
+     "type": "string"
+    },
+    "visit_mode": {
+     "default": "unknown",
+     "enum": [
+      "inside",
+      "outside",
+      "passing",
+      "drive_by",
+      "distant_view",
+      "walk",
+      "unknown"
+     ],
+     "title": "Visit Mode",
+     "type": "string"
+    },
+    "duration_text": {
+     "default": "",
+     "title": "Duration Text",
+     "type": "string"
+    },
+    "ticket": {
+     "default": "unknown",
+     "enum": [
+      "included",
+      "excluded",
+      "free_entry",
+      "unknown"
+     ],
+     "title": "Ticket",
+     "type": "string"
+    },
+    "includes": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Includes",
+     "type": "array"
+    },
+    "inclusion": {
+     "default": "unknown",
+     "enum": [
+      "included",
+      "gift",
+      "optional_paid",
+      "package_item",
+      "recommended_not_included",
+      "unknown"
+     ],
+     "title": "Inclusion",
+     "type": "string"
+    },
+    "description": {
+     "default": "",
+     "title": "Description",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "title": "ChildNode",
+   "type": "object"
+  },
+  "CitedFact": {
+   "properties": {
+    "raw": {
+     "default": "",
+     "title": "Raw",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    }
+   },
+   "title": "CitedFact",
+   "type": "object"
+  },
+  "Condition": {
+   "properties": {
+    "condition": {
+     "default": "",
+     "title": "Condition",
+     "type": "string"
+    },
+    "text": {
+     "title": "Text",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    }
+   },
+   "required": [
+    "text"
+   ],
+   "title": "Condition",
+   "type": "object"
+  },
+  "Day": {
+   "properties": {
+    "title": {
+     "default": "",
+     "title": "Title",
+     "type": "string"
+    },
+    "cities": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Cities",
+     "type": "array"
+    },
+    "countries": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Countries",
+     "type": "array"
+    },
+    "summary": {
+     "default": "",
+     "title": "Summary",
+     "type": "string"
+    },
+    "day_kind": {
+     "default": "regular",
+     "enum": [
+      "regular",
+      "transit",
+      "free",
+      "at_sea",
+      "port_call",
+      "cruising_no_landing",
+      "resort"
+     ],
+     "title": "Day Kind",
+     "type": "string"
+    },
+    "travel_text": {
+     "default": "",
+     "title": "Travel Text",
+     "type": "string"
+    },
+    "services": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Services"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "port_call": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/PortCall"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "items": {
+     "items": {
+      "$ref": "#/$defs/Node"
+     },
+     "title": "Items",
+     "type": "array"
+    },
+    "meals": {
+     "$ref": "#/$defs/Meals"
+    },
+    "stay": {
+     "$ref": "#/$defs/Stay"
+    },
+    "notes": {
+     "items": {
+      "$ref": "#/$defs/Note"
+     },
+     "title": "Notes",
+     "type": "array"
+    },
+    "title_cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Title Cite",
+     "type": "array"
+    },
+    "day_id": {
+     "default": "",
+     "title": "Day Id",
+     "type": "string"
+    },
+    "day": {
+     "title": "Day",
+     "type": "integer"
+    },
+    "day_end": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Day End"
+    },
+    "units": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Units",
+     "type": "array"
+    },
+    "overview_units": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Overview Units",
+     "type": "array"
+    },
+    "status": {
+     "default": "extracted",
+     "enum": [
+      "extracted",
+      "source_only"
+     ],
+     "title": "Status",
+     "type": "string"
+    },
+    "issues": {
+     "items": {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     "title": "Issues",
+     "type": "array"
+    }
+   },
+   "required": [
+    "day"
+   ],
+   "title": "Day",
+   "type": "object"
+  },
+  "Disclaimer": {
+   "properties": {
+    "reason": {
+     "default": "other",
+     "enum": [
+      "weather",
+      "wildlife",
+      "operating_days",
+      "closure",
+      "booking",
+      "traffic",
+      "other"
+     ],
+     "title": "Reason",
+     "type": "string"
+    },
+    "text": {
+     "title": "Text",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    }
+   },
+   "required": [
+    "text"
+   ],
+   "title": "Disclaimer",
+   "type": "object"
+  },
+  "Formation": {
+   "properties": {
+    "raw": {
+     "default": "",
+     "title": "Raw",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    },
+    "minimum_travelers": {
+     "anyOf": [
+      {
+       "minimum": 1,
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Minimum Travelers"
+    },
+    "failure_action": {
+     "default": "",
+     "title": "Failure Action",
+     "type": "string"
+    },
+    "booking_deadline": {
+     "default": "",
+     "title": "Booking Deadline",
+     "type": "string"
+    }
+   },
+   "title": "Formation",
+   "type": "object"
+  },
+  "Highlight": {
+   "properties": {
+    "title": {
+     "default": "",
+     "title": "Title",
+     "type": "string"
+    },
+    "text": {
+     "title": "Text",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    }
+   },
+   "required": [
+    "text"
+   ],
+   "title": "Highlight",
+   "type": "object"
+  },
+  "Insurance": {
+   "properties": {
+    "raw": {
+     "default": "",
+     "title": "Raw",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    },
+    "included": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Included"
+    },
+    "description": {
+     "default": "",
+     "title": "Description",
+     "type": "string"
+    }
+   },
+   "title": "Insurance",
+   "type": "object"
+  },
+  "Item": {
+   "properties": {
+    "text": {
+     "title": "Text",
+     "type": "string"
+    },
+    "category": {
+     "default": "",
+     "title": "Category",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    }
+   },
+   "required": [
+    "text"
+   ],
+   "title": "Item",
+   "type": "object"
+  },
+  "Meal": {
+   "properties": {
+    "status": {
+     "default": "unknown",
+     "enum": [
+      "included",
+      "self",
+      "not_applicable",
+      "unknown"
+     ],
+     "title": "Status",
+     "type": "string"
+    },
+    "text": {
+     "default": "",
+     "title": "Text",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    }
+   },
+   "title": "Meal",
+   "type": "object"
+  },
+  "Meals": {
+   "properties": {
+    "breakfast": {
+     "$ref": "#/$defs/Meal"
+    },
+    "lunch": {
+     "$ref": "#/$defs/Meal"
+    },
+    "dinner": {
+     "$ref": "#/$defs/Meal"
+    }
+   },
+   "title": "Meals",
+   "type": "object"
+  },
+  "Meeting": {
+   "properties": {
+    "raw": {
+     "default": "",
+     "title": "Raw",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    },
+    "location": {
+     "default": "",
+     "title": "Location",
+     "type": "string"
+    },
+    "time": {
+     "default": "",
+     "title": "Time",
+     "type": "string"
+    },
+    "domestic_connection": {
+     "default": "",
+     "title": "Domestic Connection",
+     "type": "string"
+    }
+   },
+   "title": "Meeting",
+   "type": "object"
+  },
+  "Money": {
+   "properties": {
+    "raw": {
+     "default": "",
+     "title": "Raw",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    },
+    "amount": {
+     "anyOf": [
+      {
+       "minimum": 0.0,
+       "type": "number"
+      },
+      {
+       "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Amount"
+    },
+    "currency": {
+     "default": "",
+     "title": "Currency",
+     "type": "string"
+    },
+    "unit": {
+     "anyOf": [
+      {
+       "enum": [
+        "person",
+        "room",
+        "night"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Unit"
+    }
+   },
+   "title": "Money",
+   "type": "object"
+  },
+  "Node": {
+   "properties": {
+    "node_id": {
+     "default": "",
+     "title": "Node Id",
+     "type": "string"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "local_name": {
+     "default": "",
+     "title": "Local Name",
+     "type": "string"
+    },
+    "visit_mode": {
+     "default": "unknown",
+     "enum": [
+      "inside",
+      "outside",
+      "passing",
+      "drive_by",
+      "distant_view",
+      "walk",
+      "unknown"
+     ],
+     "title": "Visit Mode",
+     "type": "string"
+    },
+    "duration_text": {
+     "default": "",
+     "title": "Duration Text",
+     "type": "string"
+    },
+    "ticket": {
+     "default": "unknown",
+     "enum": [
+      "included",
+      "excluded",
+      "free_entry",
+      "unknown"
+     ],
+     "title": "Ticket",
+     "type": "string"
+    },
+    "includes": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Includes",
+     "type": "array"
+    },
+    "inclusion": {
+     "default": "unknown",
+     "enum": [
+      "included",
+      "gift",
+      "optional_paid",
+      "package_item",
+      "recommended_not_included",
+      "unknown"
+     ],
+     "title": "Inclusion",
+     "type": "string"
+    },
+    "description": {
+     "default": "",
+     "title": "Description",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    },
+    "type": {
+     "enum": [
+      "meet",
+      "transport",
+      "poi",
+      "group",
+      "activity",
+      "free",
+      "shopping",
+      "optional",
+      "package",
+      "recommend",
+      "photo_spot",
+      "notice"
+     ],
+     "title": "Type",
+     "type": "string"
+    },
+    "part_of_day": {
+     "anyOf": [
+      {
+       "enum": [
+        "morning",
+        "noon",
+        "afternoon",
+        "evening",
+        "night"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Part Of Day"
+    },
+    "clock_text": {
+     "default": "",
+     "title": "Clock Text",
+     "type": "string"
+    },
+    "highlight": {
+     "default": false,
+     "title": "Highlight",
+     "type": "boolean"
+    },
+    "spot_label": {
+     "default": "",
+     "title": "Spot Label",
+     "type": "string"
+    },
+    "price_text": {
+     "default": "",
+     "title": "Price Text",
+     "type": "string"
+    },
+    "min_participants": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Min Participants"
+    },
+    "booking_note": {
+     "default": "",
+     "title": "Booking Note",
+     "type": "string"
+    },
+    "transport": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Transport"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "shopping_kind": {
+     "anyOf": [
+      {
+       "enum": [
+        "designated_store",
+        "outlet_mall",
+        "department_store",
+        "market"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Shopping Kind"
+    },
+    "categories": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Categories",
+     "type": "array"
+    },
+    "children": {
+     "items": {
+      "$ref": "#/$defs/ChildNode"
+     },
+     "title": "Children",
+     "type": "array"
+    },
+    "alternative": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Condition"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "disclaimer": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Disclaimer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "extra_cost_note": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Note"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "review": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Review",
+     "type": "array"
+    }
+   },
+   "required": [
+    "name",
+    "type"
+   ],
+   "title": "Node",
+   "type": "object"
+  },
+  "Note": {
+   "properties": {
+    "text": {
+     "title": "Text",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    }
+   },
+   "required": [
+    "text"
+   ],
+   "title": "Note",
+   "type": "object"
+  },
+  "NoticeGroup": {
+   "properties": {
+    "category": {
+     "default": "other",
+     "enum": [
+      "visa_documents",
+      "health_age",
+      "booking_cancellation",
+      "flight_luggage",
+      "safety",
+      "local_customs",
+      "money_tips",
+      "shopping_optional",
+      "other"
+     ],
+     "title": "Category",
+     "type": "string"
+    },
+    "title": {
+     "default": "",
+     "title": "Title",
+     "type": "string"
+    },
+    "items": {
+     "items": {
+      "$ref": "#/$defs/Item"
+     },
+     "title": "Items",
+     "type": "array"
+    }
+   },
+   "title": "NoticeGroup",
+   "type": "object"
+  },
+  "OptionalItem": {
+   "properties": {
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "price_text": {
+     "default": "",
+     "title": "Price Text",
+     "type": "string"
+    },
+    "duration_text": {
+     "default": "",
+     "title": "Duration Text",
+     "type": "string"
+    },
+    "note": {
+     "default": "",
+     "title": "Note",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "title": "OptionalItem",
+   "type": "object"
+  },
+  "PassengerRule": {
+   "properties": {
+    "raw": {
+     "default": "",
+     "title": "Raw",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    },
+    "minimum_age": {
+     "anyOf": [
+      {
+       "maximum": 120,
+       "minimum": 0,
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Minimum Age"
+    },
+    "maximum_age": {
+     "anyOf": [
+      {
+       "maximum": 120,
+       "minimum": 0,
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Maximum Age"
+    },
+    "bed_policy": {
+     "default": "",
+     "title": "Bed Policy",
+     "type": "string"
+    },
+    "conditions": {
+     "default": "",
+     "title": "Conditions",
+     "type": "string"
+    }
+   },
+   "title": "PassengerRule",
+   "type": "object"
+  },
+  "Policies": {
+   "properties": {
+    "single_room": {
+     "items": {
+      "$ref": "#/$defs/Item"
+     },
+     "title": "Single Room",
+     "type": "array"
+    },
+    "child": {
+     "items": {
+      "$ref": "#/$defs/Item"
+     },
+     "title": "Child",
+     "type": "array"
+    },
+    "tips": {
+     "items": {
+      "$ref": "#/$defs/Item"
+     },
+     "title": "Tips",
+     "type": "array"
+    },
+    "cancellation": {
+     "items": {
+      "$ref": "#/$defs/Item"
+     },
+     "title": "Cancellation",
+     "type": "array"
+    },
+    "deposit": {
+     "items": {
+      "$ref": "#/$defs/Item"
+     },
+     "title": "Deposit",
+     "type": "array"
+    }
+   },
+   "title": "Policies",
+   "type": "object"
+  },
+  "PortCall": {
+   "properties": {
+    "port": {
+     "default": "",
+     "title": "Port",
+     "type": "string"
+    },
+    "arrive_text": {
+     "default": "",
+     "title": "Arrive Text",
+     "type": "string"
+    },
+    "depart_text": {
+     "default": "",
+     "title": "Depart Text",
+     "type": "string"
+    },
+    "all_aboard_text": {
+     "default": "",
+     "title": "All Aboard Text",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    }
+   },
+   "title": "PortCall",
+   "type": "object"
+  },
+  "Price": {
+   "properties": {
+    "category": {
+     "default": "unknown",
+     "enum": [
+      "tour",
+      "child",
+      "senior",
+      "single_room",
+      "service_fee",
+      "additional",
+      "unknown"
+     ],
+     "title": "Category",
+     "type": "string"
+    },
+    "audience": {
+     "default": "",
+     "title": "Audience",
+     "type": "string"
+    },
+    "condition": {
+     "default": "",
+     "title": "Condition",
+     "type": "string"
+    },
+    "label": {
+     "default": "",
+     "title": "Label",
+     "type": "string"
+    },
+    "amount": {
+     "default": "",
+     "title": "Amount",
+     "type": "string"
+    },
+    "currency": {
+     "default": "",
+     "title": "Currency",
+     "type": "string"
+    },
+    "basis": {
+     "default": "",
+     "title": "Basis",
+     "type": "string"
+    },
+    "text": {
+     "title": "Text",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    }
+   },
+   "required": [
+    "text"
+   ],
+   "title": "Price",
+   "type": "object"
+  },
+  "Quality": {
+   "properties": {
+    "days_expected": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Days Expected"
+    },
+    "days_found": {
+     "default": 0,
+     "title": "Days Found",
+     "type": "integer"
+    },
+    "days_extracted": {
+     "default": 0,
+     "title": "Days Extracted",
+     "type": "integer"
+    },
+    "units": {
+     "default": 0,
+     "title": "Units",
+     "type": "integer"
+    },
+    "mapped_units": {
+     "default": 0,
+     "title": "Mapped Units",
+     "type": "integer"
+    },
+    "direct_units": {
+     "default": 0,
+     "title": "Direct Units",
+     "type": "integer"
+    },
+    "inferred_units": {
+     "default": 0,
+     "title": "Inferred Units",
+     "type": "integer"
+    },
+    "auto_attached": {
+     "default": 0,
+     "title": "Auto Attached",
+     "type": "integer"
+    },
+    "unmapped": {
+     "items": {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     "title": "Unmapped",
+     "type": "array"
+    },
+    "issues": {
+     "items": {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     "title": "Issues",
+     "type": "array"
+    },
+    "removed": {
+     "items": {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     "title": "Removed",
+     "type": "array"
+    },
+    "image_units": {
+     "default": 0,
+     "title": "Image Units",
+     "type": "integer"
+    }
+   },
+   "title": "Quality",
+   "type": "object"
+  },
+  "Services": {
+   "properties": {
+    "coach": {
+     "default": "unknown",
+     "enum": [
+      "included",
+      "excluded",
+      "partial",
+      "unknown"
+     ],
+     "title": "Coach",
+     "type": "string"
+    },
+    "guide": {
+     "default": "unknown",
+     "enum": [
+      "included",
+      "excluded",
+      "partial",
+      "unknown"
+     ],
+     "title": "Guide",
+     "type": "string"
+    },
+    "note": {
+     "default": "",
+     "title": "Note",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    }
+   },
+   "title": "Services",
+   "type": "object"
+  },
+  "ShoppingStop": {
+   "properties": {
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "kind": {
+     "anyOf": [
+      {
+       "enum": [
+        "designated_store",
+        "outlet_mall",
+        "department_store",
+        "market"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Kind"
+    },
+    "categories": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Categories",
+     "type": "array"
+    },
+    "duration_text": {
+     "default": "",
+     "title": "Duration Text",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "title": "ShoppingStop",
+   "type": "object"
+  },
+  "Source": {
+   "properties": {
+    "file_name": {
+     "title": "File Name",
+     "type": "string"
+    },
+    "media": {
+     "title": "Media",
+     "type": "string"
+    },
+    "pages": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Pages"
+    },
+    "sha256": {
+     "title": "Sha256",
+     "type": "string"
+    },
+    "image_pages": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Image Pages",
+     "type": "array"
+    },
+    "scanned": {
+     "default": false,
+     "title": "Scanned",
+     "type": "boolean"
+    },
+    "pictures": {
+     "items": {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     "title": "Pictures",
+     "type": "array"
+    },
+    "cover_image": {
+     "default": "",
+     "title": "Cover Image",
+     "type": "string"
+    },
+    "parser": {
+     "title": "Parser",
+     "type": "string"
+    },
+    "model": {
+     "default": "",
+     "title": "Model",
+     "type": "string"
+    },
+    "extracted_at": {
+     "default": "",
+     "title": "Extracted At",
+     "type": "string"
+    }
+   },
+   "required": [
+    "file_name",
+    "media",
+    "sha256",
+    "parser"
+   ],
+   "title": "Source",
+   "type": "object"
+  },
+  "Stay": {
+   "properties": {
+    "kind": {
+     "default": "unknown",
+     "enum": [
+      "hotel",
+      "ship",
+      "flight",
+      "train",
+      "home",
+      "unknown"
+     ],
+     "title": "Kind",
+     "type": "string"
+    },
+    "names": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Names",
+     "type": "array"
+    },
+    "city": {
+     "default": "",
+     "title": "City",
+     "type": "string"
+    },
+    "grade_text": {
+     "default": "",
+     "title": "Grade Text",
+     "type": "string"
+    },
+    "grade_basis": {
+     "default": "unknown",
+     "enum": [
+      "supplier_description",
+      "official_rating",
+      "unknown"
+     ],
+     "title": "Grade Basis",
+     "type": "string"
+    },
+    "room_type": {
+     "default": "",
+     "title": "Room Type",
+     "type": "string"
+    },
+    "consecutive_nights": {
+     "anyOf": [
+      {
+       "minimum": 1,
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Consecutive Nights"
+    },
+    "or_similar": {
+     "default": false,
+     "title": "Or Similar",
+     "type": "boolean"
+    },
+    "check_in_text": {
+     "default": "",
+     "title": "Check In Text",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    }
+   },
+   "title": "Stay",
+   "type": "object"
+  },
+  "Transport": {
+   "properties": {
+    "mode": {
+     "default": "unknown",
+     "enum": [
+      "coach",
+      "flight",
+      "train",
+      "night_train",
+      "ferry",
+      "cruise",
+      "boat",
+      "speedboat",
+      "seaplane",
+      "shuttle",
+      "cable_car",
+      "walk",
+      "unknown"
+     ],
+     "title": "Mode",
+     "type": "string"
+    },
+    "from_place": {
+     "default": "",
+     "title": "From Place",
+     "type": "string"
+    },
+    "to_place": {
+     "default": "",
+     "title": "To Place",
+     "type": "string"
+    },
+    "distance_text": {
+     "default": "",
+     "title": "Distance Text",
+     "type": "string"
+    },
+    "duration_text": {
+     "default": "",
+     "title": "Duration Text",
+     "type": "string"
+    },
+    "service_no": {
+     "default": "",
+     "title": "Service No",
+     "type": "string"
+    },
+    "times_text": {
+     "default": "",
+     "title": "Times Text",
+     "type": "string"
+    },
+    "reference": {
+     "default": false,
+     "title": "Reference",
+     "type": "boolean"
+    },
+    "departure_local_time": {
+     "default": "",
+     "title": "Departure Local Time",
+     "type": "string"
+    },
+    "arrival_local_time": {
+     "default": "",
+     "title": "Arrival Local Time",
+     "type": "string"
+    },
+    "arrival_day_offset": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Arrival Day Offset"
+    }
+   },
+   "title": "Transport",
+   "type": "object"
+  },
+  "TravelerRequirements": {
+   "properties": {
+    "child": {
+     "$ref": "#/$defs/PassengerRule"
+    },
+    "senior": {
+     "$ref": "#/$defs/PassengerRule"
+    },
+    "pregnancy": {
+     "$ref": "#/$defs/CitedFact"
+    },
+    "visa": {
+     "$ref": "#/$defs/VisaRule"
+    },
+    "insurance": {
+     "$ref": "#/$defs/Insurance"
+    }
+   },
+   "title": "TravelerRequirements",
+   "type": "object"
+  },
+  "VisaRule": {
+   "properties": {
+    "raw": {
+     "default": "",
+     "title": "Raw",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    },
+    "type": {
+     "default": "",
+     "title": "Type",
+     "type": "string"
+    },
+    "submission_deadline": {
+     "default": "",
+     "title": "Submission Deadline",
+     "type": "string"
+    },
+    "passport_validity": {
+     "default": "",
+     "title": "Passport Validity",
+     "type": "string"
+    }
+   },
+   "title": "VisaRule",
+   "type": "object"
+  }
+ },
+ "properties": {
+  "title": {
+   "default": "",
+   "title": "Title",
+   "type": "string"
+  },
+  "subtitle": {
+   "default": "",
+   "title": "Subtitle",
+   "type": "string"
+  },
+  "title_cite": {
+   "items": {
+    "type": "integer"
+   },
+   "title": "Title Cite",
+   "type": "array"
+  },
+  "nights": {
+   "anyOf": [
+    {
+     "type": "integer"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null,
+   "title": "Nights"
+  },
+  "depart_city": {
+   "default": "",
+   "title": "Depart City",
+   "type": "string"
+  },
+  "countries": {
+   "items": {
+    "type": "string"
+   },
+   "title": "Countries",
+   "type": "array"
+  },
+  "cover_facts": {
+   "items": {
+    "$ref": "#/$defs/Item"
+   },
+   "title": "Cover Facts",
+   "type": "array"
+  },
+  "selling_points": {
+   "items": {
+    "$ref": "#/$defs/Item"
+   },
+   "title": "Selling Points",
+   "type": "array"
+  },
+  "highlights": {
+   "items": {
+    "$ref": "#/$defs/Highlight"
+   },
+   "title": "Highlights",
+   "type": "array"
+  },
+  "prices": {
+   "items": {
+    "$ref": "#/$defs/Price"
+   },
+   "title": "Prices",
+   "type": "array"
+  },
+  "departure_dates_text": {
+   "default": "",
+   "title": "Departure Dates Text",
+   "type": "string"
+  },
+  "departure_dates_cite": {
+   "items": {
+    "type": "integer"
+   },
+   "title": "Departure Dates Cite",
+   "type": "array"
+  },
+  "inclusions": {
+   "items": {
+    "$ref": "#/$defs/Item"
+   },
+   "title": "Inclusions",
+   "type": "array"
+  },
+  "exclusions": {
+   "items": {
+    "$ref": "#/$defs/Item"
+   },
+   "title": "Exclusions",
+   "type": "array"
+  },
+  "shopping": {
+   "items": {
+    "$ref": "#/$defs/ShoppingStop"
+   },
+   "title": "Shopping",
+   "type": "array"
+  },
+  "optional_items": {
+   "items": {
+    "$ref": "#/$defs/OptionalItem"
+   },
+   "title": "Optional Items",
+   "type": "array"
+  },
+  "policies": {
+   "$ref": "#/$defs/Policies"
+  },
+  "applicability": {
+   "$ref": "#/$defs/Applicability"
+  },
+  "formation": {
+   "$ref": "#/$defs/Formation"
+  },
+  "traveler_requirements": {
+   "$ref": "#/$defs/TravelerRequirements"
+  },
+  "cancellation_tiers": {
+   "items": {
+    "$ref": "#/$defs/CancellationTier"
+   },
+   "title": "Cancellation Tiers",
+   "type": "array"
+  },
+  "meeting": {
+   "$ref": "#/$defs/Meeting"
+  },
+  "shopping_status": {
+   "default": "unknown",
+   "enum": [
+    "present",
+    "none",
+    "unknown"
+   ],
+   "title": "Shopping Status",
+   "type": "string"
+  },
+  "shopping_cite": {
+   "items": {
+    "type": "integer"
+   },
+   "title": "Shopping Cite",
+   "type": "array"
+  },
+  "notices": {
+   "items": {
+    "$ref": "#/$defs/NoticeGroup"
+   },
+   "title": "Notices",
+   "type": "array"
+  },
+  "schema": {
+   "const": "route-kit/1",
+   "default": "route-kit/1",
+   "title": "Schema",
+   "type": "string"
+  },
+  "code": {
+   "default": "",
+   "title": "Code",
+   "type": "string"
+  },
+  "listed_name": {
+   "default": "",
+   "title": "Listed Name",
+   "type": "string"
+  },
+  "days_count": {
+   "default": 0,
+   "title": "Days Count",
+   "type": "integer"
+  },
+  "days": {
+   "items": {
+    "$ref": "#/$defs/Day"
+   },
+   "title": "Days",
+   "type": "array"
+  },
+  "source": {
+   "$ref": "#/$defs/Source"
+  },
+  "quality": {
+   "$ref": "#/$defs/Quality"
+  },
+  "units": {
+   "items": {
+    "additionalProperties": true,
+    "type": "object"
+   },
+   "title": "Units",
+   "type": "array"
+  }
+ },
+ "required": [
+  "source"
+ ],
+ "title": "RouteContent",
+ "type": "object",
+ "$comment": "route-kit/1: one itinerary attachment read into evidence-linked fields"
+}

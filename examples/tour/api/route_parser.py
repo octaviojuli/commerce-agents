@@ -39,6 +39,7 @@ from .route_doc import (
     Meal,
     Meals,
     OptionalItem,
+    PageLocation,
     Policies,
     Quality,
     RouteDoc,
@@ -49,10 +50,11 @@ from .route_doc import (
 )
 from .tags import normalize
 
-PARSER_VERSION = "docx-rules-4"
+PARSER_VERSION = "docx-rules-8"
 
 # ``MU6017``, also glued to its times (``MU601714:25-19:00``).
-_FLIGHT_NO = re.compile(r"\b([A-Z]{2}\d{2,4})(?:(?!\d)|(?=\d{1,2}:\d{2}))")
+_FLIGHT_DESIGNATOR = r"(?!\d{2})[A-Z0-9]{2}\d{2,4}"
+_FLIGHT_NO = re.compile(r"\b(" + _FLIGHT_DESIGNATOR + r")(?:(?!\d)|(?=\d{1,2}:\d{2}))")
 # ``1425-1900``, ``01:20-07:40``, ``14:25/19:00`` and a ``+1`` day: the separator is a dash or,
 # between two clock times, a slash.
 _FLIGHT_TIMES = re.compile(
@@ -211,7 +213,17 @@ _SECTION_HEAD = re.compile(
 _HEADING_NUMBER = re.compile(r"^\s*(?:\d{1,2}|[一二三四五六七八九十]{1,3})\s*[、.．:：)]?\s*")
 # A heading that is a note inside a day as often as a section of the terms; it ends the
 # itinerary only where no day follows it.
-_SOFT_HEADS = ("温馨提示", "注意事项", "特别提醒", "特别注意", "贴心提示", "特别说明")
+_SOFT_HEADS = (
+    "温馨提示",
+    "注意事项",
+    "特别提醒",
+    "特别注意",
+    "贴心提示",
+    "特别说明",
+    "自费",
+    "购物",
+    "另行付费",
+)
 _INCLUDE_HEADS = ("包含项目", "费用包含", "服务所包含项目", "报价包含")
 _EXCLUDE_HEADS = ("不包含项目", "费用不含", "费用不包含", "服务所不含项目", "报价不含")
 _SHOPPING_HEADS = ("购物安排", "购物说明", "购物")
@@ -334,11 +346,11 @@ _NOT_A_GIFT = ("项目", "如下", "如上", "内容", "标准", "价值", "一�
 # 含官导 and 含讲解 are a guide and not a ticket: an attachment that writes 龙达含官导 in its
 # 包含 list is paying the guide, and the 首道门票 is the visitor's. Only 含门票, 首道门票, 入内
 # and a named 含X票 (含船票, 含缆车) put the ticket in the price.
-_TICKET_WORDS = ("含门票", "入内", "首道门票")
+_TICKET_WORDS = ("含门票", "首道门票")
 _TICKET_RE = re.compile(r"含[^，。）)【】]{0,6}(?:票|缆车|上塔|小火车|快艇|游船)")
 # 不入内 makes the stop an 外观; 不含门票 and 不含园内门票 only say the ticket is not in the price.
 _NO_ENTRY = re.compile(r"不入内|非入内|不登顶")
-_NO_TICKET = re.compile(r"不含[^，。）)】]{0,4}门票|不含首道")
+_NO_TICKET = re.compile(r"不含[^，。）)】]{0,4}门票|不含首道|门票不含")
 # What is glued to a sight's name and is not part of it: the ticket and guide notes after it,
 # and the 独家安排---/打卡机位1--- the attachments write before it.
 # ``独家安排---【X】`` outside the bracket and ``【特别安排-彩色岛含船票】``/``【特别赠送：X】``
@@ -358,7 +370,7 @@ _HIGHLIGHT_LABELS = ("行程亮点", "产品特色", "特别安排", "特别赠�
 # A cover label that stays with what follows it: 特别赠送 alone on a line is the label of the
 # gift on the next, and the highlight the card shows is the two together.
 _MERGED_LABELS = ("特别赠送",)
-_HOME_WORDS = ("家", "无", "结束", "温馨的家")
+_HOME_WORDS = ("家", "无", "结束", "温馨的家", "温暖的家")
 _FLIGHT_STAY = ("飞机上", "机上", "夜宿飞机")
 _SHIP_STAY = ("邮轮", "游轮", "船上", "夜船")
 # A 出发城市 written against the first stop with no separator between them (上海巴塞罗那): the
@@ -518,7 +530,7 @@ def _flights(text: str, day: int, airline: str = "") -> list[Flight]:
         numbers = _FLIGHT_NO.findall(chunk)
         if not numbers:
             continue
-        pieces = re.split(r"(?=\b[A-Z]{2}\d{2,4}\b)", chunk)
+        pieces = re.split(r"(?=\b" + _FLIGHT_DESIGNATOR + r"\b)", chunk)
         for index, piece in enumerate(pieces):
             piece = piece.strip(" ;；,，")
             number = _FLIGHT_NO.search(piece)
@@ -806,8 +818,7 @@ def _sights(text: str) -> list[Sight]:
             or _NO_ENTRY.search(inner + near[:16])
         ):
             kind = "外观" if kind == "景点" else kind
-            ticket = False
-        elif _NO_TICKET.search(inner + near[:16]):
+        if _NO_TICKET.search(inner + near[:16]):
             ticket = False
         elif any(word in inner + after for word in _TICKET_WORDS) or _TICKET_RE.search(
             inner + after
@@ -891,7 +902,7 @@ def _prose_sights(
             name = name.strip(" 。；;")
             if 2 <= len(name) <= _PROSE_NAME_MAX and name not in seen and "【" not in name:
                 seen.add(name)
-                found.append((at, Sight(name=name, kind="外观", ticket_included=False)))
+                found.append((at, Sight(name=name, kind="外观")))
     for gift in _GIFT_PROSE.finditer(text):
         name = gift[1].strip()
         if any(start <= gift.start() < end for start, end in brackets):
@@ -1009,6 +1020,8 @@ def _split(lines: list[str]) -> tuple[list[str], list[str], list[str]]:
     for i in range(first + 1, len(lines)):
         if not _is_heading(lines[i]) or _header(lines[i], chinese):
             continue
+        if re.match(r"^(?:自费|购物|另行付费)(?:推荐|建议)", _heading_text(lines[i])):
+            continue
         if i < last and _heading_text(lines[i]).startswith(_SOFT_HEADS):
             continue
         end = i
@@ -1066,6 +1079,12 @@ def _cover(lines: list[str]) -> Cover:
                 continue
         under_head = ""
         label, value = cells[0], " ".join(cells[1:]).strip(" /")
+        if label in {"天数", "日期", "日程"} and re.fullmatch(
+            r"(?:行程|安排|餐食|住宿|交通)+", re.sub(r"\s+", "", value)
+        ):
+            continue  # Table column names are not route metadata.
+        if label == "参考航班":
+            continue  # A repeated overview label must not become one cover flight.
         cover.fields[label] = value
         for field, labels in _COVER_LABELS.items():
             if label in labels and not getattr(cover, field):
@@ -1312,7 +1331,7 @@ def _policies(exclusions: list[str], inclusions: list[str], notices: list[str]) 
         return (clauses[0] if clauses else best[3]).strip()[:160]
 
     cancellation = first(
-        ("概不退回", "不退回", "团体订位", "退改"),
+        ("概不退回", "不退回", "团体订位", "退改", "退团政策"),
         ("退款", "退还", "改期", "退团"),
         notices_first=True,
         skip=("另行付费", "自费"),
@@ -1608,16 +1627,31 @@ def score(doc: RouteDoc) -> tuple[float, list[str]]:
     checks.append(
         (
             0.20,
-            bool(days) and len(days) == stated,
-            f"附件天数 {len(days)} 与 ERP 天数 {stated} 不一致",
+            bool(days) and [d.day for d in days] == list(range(1, stated + 1)),
+            f"附件天号不连续或天数 {len(days)} 与 ERP 天数 {stated} 不一致",
         )
     )
-    hotel_ok = [d for d in days if d.overnight != "unknown"]
+    hotel_ok = [
+        d
+        for d in days
+        if d.overnight != "unknown"
+        and (d.overnight != "hotel" or (d.hotel is not None and d.hotel.name.strip()))
+    ]
     checks.append((0.15, bool(days) and len(hotel_ok) == len(days), "有的天没有读到住宿"))
     fed = [d for d in days if d.overnight != "home"]
-    meals_ok = [d for d in fed if d.meals.breakfast.included is not None]
-    checks.append((0.15, bool(fed) and len(meals_ok) == len(fed), "有的天没有读到用餐"))
-    checks.append((0.10, bool(doc.transport), "没有读到参考航班"))
+    meals_ok = [
+        d
+        for d in fed
+        if all(
+            getattr(d.meals, meal).included is not None for meal in ("breakfast", "lunch", "dinner")
+        )
+    ]
+    checks.append((0.15, bool(days) and len(meals_ok) == len(fed), "有的天没有读到完整三餐"))
+    flight_evidence = bool(doc.cover.airline.strip()) or any(
+        d.overnight == "flight" or re.search(r"航班|机场", d.title + d.text) for d in days
+    )
+    if flight_evidence:
+        checks.append((0.10, bool(doc.transport), "没有读到参考航班"))
     checks.append((0.10, bool(doc.inclusions), "没有读到费用包含"))
     checks.append((0.10, bool(doc.exclusions), "没有读到费用不含"))
     middle = [d for d in days if d.overnight == "hotel"]
@@ -1637,7 +1671,7 @@ def score(doc: RouteDoc) -> tuple[float, list[str]]:
         )
     )
     checks.append((0.05, all(d.places for d in days) if days else False, "有的天标题没有读到地点"))
-    total = sum(weight for weight, ok, _ in checks if ok)
+    total = sum(weight for weight, ok, _ in checks if ok) / sum(weight for weight, _, _ in checks)
     return round(total, 2), [note for _, ok, note in checks if not ok]
 
 
@@ -1645,18 +1679,64 @@ def score(doc: RouteDoc) -> tuple[float, list[str]]:
 
 
 def parse_route(
-    record: RouteRecord, data: bytes, *, etag: str | None = None, sale_type: str = ""
+    record: RouteRecord, data: bytes, *, etag: str | None = None, sale_type: str = "", progress=None
 ) -> RouteDoc:
     """The 线路's attachment as a ``RouteDoc``. Raises ``ValueError`` for a document the
     reader cannot open, as ``itinerary_source.document_lines`` does. A .pdf is read in each
     of pdftotext's two orders and the more complete document is kept."""
     if data.startswith(PDF_MAGIC):
+        from .pdf_source import unread_image_pages
+
+        readings = [(mode, pdf_lines(data, mode)) for mode in PDF_MODES]
+        image_pages = unread_image_pages(data, readings[0][1])
         docs = [
-            _build(record, pdf_lines(data, mode), data, etag, sale_type, f"pdf-{mode}")
-            for mode in PDF_MODES
+            _build(record, lines, data, etag, sale_type, f"pdf-{mode}", progress)
+            for mode, lines in readings
         ]
-        return max(docs, key=lambda d: d.quality.completeness)
-    return _build(record, document_lines(data), data, etag, sale_type, "docx")
+        selected = max(
+            docs,
+            key=lambda d: (
+                bool(d.days) and [day.day for day in d.days] == list(range(1, d.summary.days + 1)),
+                d.quality.completeness,
+            ),
+        )
+        selected.source.unread_image_pages = image_pages
+        selected.quality.needs_review.extend(
+            f"第 {page} 页含图片且文字很少，图片中文字未读取，请核对封面的酒店标准和航空公司"
+            for page in image_pages
+        )
+        return selected
+    return _build(record, document_lines(data), data, etag, sale_type, "docx", progress)
+
+
+def parse_extracted_lines(record, data, lines, *, etag=None, reading="external"):
+    """Reuse the same business rules for a separately retained extraction."""
+    return _build(record, lines, data, etag, "", reading)
+
+
+def _page_locations(cover: list[str], days: list[str], terms: list[str]) -> list[PageLocation]:
+    """Locate original blocks by retained page evidence, never by text similarity."""
+    locations = []
+
+    def add(section, lines, day=None):
+        pages = sorted({page for line in lines for page in getattr(line, "pages", ())})
+        if pages:
+            locations.append(PageLocation(section=section, day=day, pages=pages))
+
+    add("cover", cover)
+    chinese = any(_header(line, True) for line in days)
+    grouped: dict[int, list[str]] = {}
+    current = None
+    for line in days:
+        header = _header(line, chinese)
+        if header:
+            current = header[0]
+        if current is not None:
+            grouped.setdefault(current, []).append(line)
+    for day, lines in grouped.items():
+        add("itinerary", lines, day)
+    add("terms", terms)
+    return locations
 
 
 def _build(
@@ -1666,12 +1746,17 @@ def _build(
     etag: str | None,
     sale_type: str,
     reading: str,
+    progress=None,
 ) -> RouteDoc:
+    if progress:
+        progress("segment")
     cover_lines, day_lines, term_lines = _split(lines)
     raw_by_day = _day_raw_lines(day_lines)
     overview = _overview(cover_lines)
     records = split_days(day_lines)
     cover = _cover(cover_lines)
+    if progress:
+        progress("days")
     days = [
         _day(
             d,
@@ -1682,6 +1767,8 @@ def _build(
         )
         for i, d in enumerate(records)
     ]
+    if progress:
+        progress("terms")
     inclusions, exclusions, shopping, optional, notices = _terms(term_lines)
     _apply_ticket_list(days, inclusions)
     for day in days:
@@ -1712,6 +1799,8 @@ def _build(
     # own reading, held against the countries the document names, is what the field keeps.
     named_region = normalize((), name=record.route_name).region
     nights = sum(1 for d in days if d.overnight in ("hotel", "ship")) or None
+    if progress:
+        progress("validation")
     doc = RouteDoc(
         route_id=record.route_id,
         route_code=record.route_code,
@@ -1734,7 +1823,7 @@ def _build(
         shopping=shopping,
         optional=optional,
         policies=_policies(exclusions, inclusions, notices),
-        notices=notices[:40],
+        notices=notices,
         source=Source(
             attachment_name=record.attachment_name or "",
             attachment_url=record.attachment_url or "",
@@ -1742,9 +1831,15 @@ def _build(
             bytes=len(data),
             parsed_at=datetime.now(UTC),
             parser=f"{PARSER_VERSION}/{reading}",
+            page_locations=_page_locations(cover_lines, day_lines, term_lines),
         ),
         quality=Quality(completeness=0.0),
     )
+    from .route_fields import enrich
+
+    enrich(doc, lines, overview)
     completeness, notes = score(doc)
     doc.quality = Quality(completeness=completeness, needs_review=notes + _doubts(days, cover))
-    return doc
+    from cloud_warehouse.route_content import candidate
+
+    return candidate(doc.model_dump(mode="json"))

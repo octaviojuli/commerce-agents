@@ -1,0 +1,11 @@
+[Unit]
+Description=Tour warehouse backup schedule
+
+[Timer]
+OnCalendar=*-*-* *:0/15:00
+Persistent=true
+AccuracySec=1min
+Unit=tour-warehouse-backup.service
+
+[Install]
+WantedBy=timers.target

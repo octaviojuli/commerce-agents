@@ -1,0 +1,27 @@
+# Build on a separate Linux build host from the repository root.
+ARG PYTHON_IMAGE=python:3.12-slim-bookworm
+FROM ${PYTHON_IMAGE}
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends poppler-utils tesseract-ocr build-essential tzdata \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 warehouse \
+    && useradd --uid 10001 --gid 10001 --no-create-home warehouse
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 PYTHONPATH=/app/examples
+COPY requirements.txt ./
+COPY examples/tour/skills/tour-route-parser ./examples/tour/skills/tour-route-parser
+COPY commerce-common ./commerce-common
+COPY cloud-warehouse ./cloud-warehouse
+COPY shopping-agent ./shopping-agent
+COPY merchant-agent ./merchant-agent
+RUN pip install --no-cache-dir -r requirements.txt \
+    && python -c "from zoneinfo import ZoneInfo; ZoneInfo('Asia/Shanghai'); ZoneInfo('America/New_York')"
+COPY examples/tour/api ./examples/tour/api
+COPY examples/demo_common ./examples/demo_common
+COPY examples/tour/data/tag-rules.json ./examples/tour/data/tag-rules.json
+RUN mkdir -p /route-kit-cache && chown 10001:10001 /route-kit-cache && chmod 700 /route-kit-cache
+USER 10001:10001
+EXPOSE 8005
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8005/health',timeout=3)"
+CMD ["uvicorn", "tour.api.warehouse_app:application", "--factory", "--host", "0.0.0.0", "--port", "8005", "--workers", "1", "--no-proxy-headers", "--no-access-log"]

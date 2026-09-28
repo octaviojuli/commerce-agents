@@ -1,0 +1,4 @@
+interface:
+  display_name: "线路文件解析清洗"
+  short_description: "解析旅游 PDF 与 Word，核对逐日行程并生成带原文证据的云仓候选稿"
+  default_prompt: "使用 $route-document-cleaning 解析并核对这份线路附件，保留原文证据，列出待核对项并生成云仓候选稿。"

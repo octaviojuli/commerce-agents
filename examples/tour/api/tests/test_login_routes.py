@@ -151,3 +151,46 @@ def test_a_route_that_needs_a_login_says_so_instead_of_reporting_an_outage(guard
     ``/api/advisor``."""
     answered = guarded.get("/api/orders")
     assert answered.status_code == 401 and answered.json() == {"detail": NEED_LOGIN}
+
+
+@pytest.mark.parametrize("path", ["/api/products", "/api/products/RT-1", "/api/sessions"])
+def test_live_employee_routes_require_a_current_erp_login(main, monkeypatch, path):
+    """A public URL must not expose employee data through the demo's public catalog."""
+    from types import SimpleNamespace
+
+    from demo_common import UnknownSessionError
+
+    app = FastAPI()
+
+    @app.get(path)
+    async def employee_data():
+        return {"private_data": True}
+
+    def require(session_id):
+        if session_id != "known-session":
+            raise UnknownSessionError(session_id)
+        return SimpleNamespace(user_id="employee")
+
+    monkeypatch.setattr(main.host.sessions, "require", require)
+    monkeypatch.setattr(main.registry, "get", lambda user_id: None)
+    install_login_guard(app)
+    with TestClient(app) as guarded_client:
+        assert guarded_client.get(path).status_code == 401
+        assert guarded_client.get(path, headers={SESSION_HEADER: "invented"}).status_code == 401
+        headers = {SESSION_HEADER: "known-session"}
+        assert guarded_client.get(path, headers=headers).status_code == 401
+        monkeypatch.setattr(main.registry, "get", lambda user_id: SimpleNamespace())
+        assert guarded_client.get(path, headers=headers).json() == {"private_data": True}
+
+
+@pytest.mark.parametrize("path", ["/api/health", "/api/share/plan/opaque-token"])
+def test_live_public_routes_do_not_require_employee_login(path):
+    app = FastAPI()
+
+    @app.get(path)
+    async def public_data():
+        return {"public": True}
+
+    install_login_guard(app)
+    with TestClient(app) as guarded_client:
+        assert guarded_client.get(path).json() == {"public": True}

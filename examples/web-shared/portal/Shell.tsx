@@ -3,7 +3,8 @@
 
 "use client";
 
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
+import { type Copy, CopyProvider, mergeCopy } from "../copy";
 import { Icon, type IconName } from "../icons";
 import { Avatar } from "../ui";
 
@@ -28,7 +29,8 @@ interface PortalBrand {
  * The merchant portals' frame: a sidebar with the store, the views, the assistant entry and the
  * signed-in operator; the page; and the assistant rail beside it. Below `lg` the sidebar becomes a
  * top bar with tabs. Every color comes from the app's tokens; a vertical that draws on the page
- * ground targets `.portal-main`.
+ * ground targets `.portal-main`. The frame provides the chrome's copy to everything inside it, the
+ * rail included; an overlay a page mounts outside the frame reads the English default.
  */
 export function PortalShell<V extends string>({
   brand,
@@ -40,6 +42,7 @@ export function PortalShell<V extends string>({
   assistantBusy = false,
   onToggleAssistant,
   rail,
+  copy: verticalCopy,
   children,
 }: {
   brand: PortalBrand;
@@ -51,9 +54,13 @@ export function PortalShell<V extends string>({
   assistantBusy?: boolean;
   onToggleAssistant: () => void;
   rail: ReactNode;
+  /** The vertical's chrome copy, laid over the English `DEFAULT_COPY`; the frame's one entry point for it. */
+  copy?: Partial<Copy>;
   children: ReactNode;
 }) {
+  const copy = useMemo(() => mergeCopy(verticalCopy), [verticalCopy]);
   return (
+    <CopyProvider value={copy}>
     <div className="flex h-dvh bg-(--ground) text-(--ink)">
       <aside className="hidden w-16 shrink-0 flex-col border-r border-(--line) bg-(--chrome) px-2 py-3.5 lg:flex xl:w-[220px] xl:px-3">
         <div className="flex items-center gap-2.5 px-1 pb-4 xl:px-2">
@@ -63,7 +70,7 @@ export function PortalShell<V extends string>({
             <div className="truncate text-[12px] text-(--ink-soft)">{brand.detail}</div>
           </div>
         </div>
-        <nav className="flex flex-col gap-0.5" aria-label="Portal views">
+        <nav className="flex flex-col gap-0.5" aria-label={copy.portalViews}>
           {nav.map((item) => {
             const active = item.id === view;
             return (
@@ -97,8 +104,8 @@ export function PortalShell<V extends string>({
           type="button"
           onClick={onToggleAssistant}
           aria-pressed={assistantOpen}
-          aria-label={assistantOpen ? "Hide assistant" : "Show assistant"}
-          title={assistantOpen ? "Hide assistant" : "Show assistant"}
+          aria-label={assistantOpen ? copy.hideAssistant : copy.showAssistant}
+          title={assistantOpen ? copy.hideAssistant : copy.showAssistant}
           className={`mt-3 flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-[14px] font-semibold transition-colors ${
             assistantOpen
               ? "bg-(--accent-soft) text-(--accent-ink)"
@@ -106,9 +113,9 @@ export function PortalShell<V extends string>({
           }`}
         >
           <Icon name="spark" className="text-(--accent)" />
-          <span className="hidden flex-1 xl:block">Assistant</span>
+          <span className="hidden flex-1 xl:block">{copy.assistant}</span>
           {assistantBusy ? (
-            <span className="relative hidden h-2 w-2 xl:flex" aria-label="Working">
+            <span className="relative hidden h-2 w-2 xl:flex" aria-label={copy.workingStatus}>
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-(--accent) opacity-60" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-(--accent)" />
             </span>
@@ -128,7 +135,7 @@ export function PortalShell<V extends string>({
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center gap-3 border-b border-(--line) bg-(--chrome) px-3 py-2 lg:hidden">
           {brand.mark}
-          <nav className="panel-scroll flex min-w-0 flex-1 gap-1 overflow-x-auto" aria-label="Portal views">
+          <nav className="panel-scroll flex min-w-0 flex-1 gap-1 overflow-x-auto" aria-label={copy.portalViews}>
             {nav.map((item) => (
               <button
                 key={item.id}
@@ -155,7 +162,7 @@ export function PortalShell<V extends string>({
             }`}
           >
             <Icon name="spark" size={15} />
-            Assistant
+            {copy.assistant}
           </button>
         </header>
 
@@ -167,5 +174,6 @@ export function PortalShell<V extends string>({
         </div>
       </div>
     </div>
+    </CopyProvider>
   );
 }

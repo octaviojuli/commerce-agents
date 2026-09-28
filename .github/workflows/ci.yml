@@ -31,6 +31,76 @@ jobs:
       - name: Repo consistency checks
         run: python scripts/check.py
 
+  warehouse-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_USER: warehouse_ci_admin
+          POSTGRES_PASSWORD: ACME_CI_ONLY
+          POSTGRES_DB: postgres
+        ports:
+          - 127.0.0.1:55433:5432
+        options: >-
+          --health-cmd "pg_isready -U warehouse_ci_admin -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install PostgreSQL clients and PDF parser
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16 poppler-utils
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
+      - name: Install repository dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Annotated native parser fields do not regress
+        run: python scripts/eval_route_parser.py
+      - name: Migrations, RLS, sync, inventory and recovery without skipped tests
+        env:
+          # This password belongs only to the disposable service above; no repository secrets.
+          WAREHOUSE_CI_ADMIN_URL: postgresql+psycopg://warehouse_ci_admin:ACME_CI_ONLY@127.0.0.1:55433/postgres
+        run: python cloud-warehouse/scripts/ci_database.py
+
+  warehouse-monitoring:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Prometheus recording and alerting rule contracts
+        run: >-
+          docker run --rm --network none --entrypoint /bin/promtool
+          -v "$PWD/cloud-warehouse/deploy:/work:ro" -w /work
+          prom/prometheus:v3.14.0 test rules warehouse-rules.test.yml
+
+  warehouse-images:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build Linux API and both standalone web images
+        run: |
+          docker build --platform linux/amd64 -f cloud-warehouse/deploy/Dockerfile.api -t local/warehouse-ci-api:smoke .
+          docker build --platform linux/amd64 -f cloud-warehouse/deploy/Dockerfile.web --build-arg TOUR_WEB_APP=storefront-web -t local/warehouse-ci-advisor:smoke .
+          docker build --platform linux/amd64 -f cloud-warehouse/deploy/Dockerfile.web --build-arg TOUR_WEB_APP=merchant-web -t local/warehouse-ci-merchant:smoke .
+      - name: Migrate, authenticate, proxy and restart inside isolated containers
+        run: >-
+          python3 cloud-warehouse/scripts/container_smoke.py
+          --api-image local/warehouse-ci-api:smoke
+          --advisor-image local/warehouse-ci-advisor:smoke
+          --merchant-image local/warehouse-ci-merchant:smoke
+          --report output/warehouse-container-smoke.json
+
   no-pypi-fallback:
     runs-on: ubuntu-latest
     steps:
@@ -79,5 +149,7 @@ jobs:
           cache-dependency-path: examples/package-lock.json
       - name: Install
         run: npm ci
+      - name: Cloud warehouse proxy contracts
+        run: node --experimental-strip-types --test web-shared/warehouse-proxy.test.mjs
       - name: Build every app
         run: npm run build

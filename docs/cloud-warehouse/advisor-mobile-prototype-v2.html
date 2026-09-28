@@ -1,0 +1,829 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>顾问端手机原型 v2</title>
+<style>
+:root{
+  --font:"PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",ui-sans-serif,system-ui,sans-serif;
+  --ground:#f4f2ec;--card:#fff;--well:#eeebe3;--well-2:#f8f6f1;
+  --ink:#23332e;--ink-2:#3c4f48;--ink-soft:#5d6f68;--ink-faint:#97a49e;
+  --line:rgba(35,51,46,.12);--line-strong:rgba(35,51,46,.2);
+  --accent:#1f7a8c;--accent-strong:#186b7c;--accent-soft:#dfeef1;--accent-ink:#135463;--on-accent:#fff;
+  --ok:#2f7a50;--ok-soft:#e0efe4;--warn:#9a6b12;--warn-soft:#f6ead0;--danger:#b3402a;--danger-soft:#f7ded8;
+  --violet:#6650b0;--violet-soft:#e7e0f1;--star:#c99a4b;
+  --shadow:0 1px 2px rgba(35,51,46,.06),0 4px 14px -6px rgba(35,51,46,.16);
+  --shadow-lg:0 12px 40px -12px rgba(35,51,46,.3),0 2px 6px rgba(35,51,46,.08);
+  --r:12px;--r-lg:16px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#e9e6de;color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.55}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;padding:0}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---------- gallery ---------- */
+.intro{max-width:1260px;margin:0 auto;padding:28px 20px 8px}
+.intro h1{font-size:24px;margin:0 0 6px}
+.intro p{margin:0;color:var(--ink-soft);max-width:760px}
+.flow{position:sticky;top:0;z-index:20;background:rgba(233,230,222,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.flow div{max-width:1260px;margin:0 auto;padding:10px 20px;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.flow a{flex:0 0 auto;text-decoration:none;color:var(--ink-2);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:13px;white-space:nowrap}
+.flow a b{color:var(--accent);margin-right:4px}
+.stage{max-width:1260px;margin:0 auto;padding:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(375px,1fr));gap:36px 28px}
+.screen{display:flex;flex-direction:column;gap:12px;scroll-margin-top:60px;min-width:0}
+.screen>h2{font-size:15px;margin:0;display:flex;align-items:baseline;gap:8px}
+.screen>h2 span{font-size:12px;color:var(--accent);font-weight:700;letter-spacing:.06em}
+.notes{margin:0;padding:0 0 0 18px;color:var(--ink-soft);font-size:12.5px;display:flex;flex-direction:column;gap:3px}
+.phone{width:375px;height:780px;margin:0 auto;border-radius:38px;background:#11181a;padding:10px;box-shadow:var(--shadow-lg)}
+.device{position:relative;height:100%;border-radius:30px;overflow:hidden;background:var(--ground);display:flex;flex-direction:column}
+.sbar{flex:0 0 auto;height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 22px 0 26px;font-size:12.5px;font-weight:600;background:inherit}
+.sbar i{font-style:normal;letter-spacing:1px}
+.scroll{flex:1;overflow-y:auto;overflow-x:hidden;scrollbar-width:none}
+.scroll::-webkit-scrollbar{display:none}
+@media (max-width:420px){.stage{padding:12px 0;grid-template-columns:minmax(0,1fr)}.phone{width:100%;height:auto;border-radius:0;padding:0;box-shadow:none;background:none}.device{border-radius:0;height:760px}.screen>h2,.notes{padding-left:16px;padding-right:16px}.notes{padding-left:32px}}
+
+/* ---------- app chrome ---------- */
+.appbar{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:6px 14px 8px;background:var(--card);border-bottom:1px solid var(--line)}
+.appbar .back{font-size:20px;color:var(--ink-soft);width:24px}
+.appbar .t{flex:1;min-width:0}
+.appbar .t b{display:block;font-size:15.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.appbar .t small{display:block;font-size:11.5px;color:var(--ink-soft)}
+.appbar .more{font-size:18px;color:var(--ink-soft)}
+.tabbar{flex:0 0 auto;display:grid;grid-template-columns:repeat(5,1fr);background:var(--card);border-top:1px solid var(--line);padding:6px 4px 16px}
+.tabbar a{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10.5px;color:var(--ink-faint);text-decoration:none;position:relative}
+.tabbar a.on{color:var(--accent);font-weight:600}
+.tabbar svg{width:22px;height:22px}
+.tabbar .dot{position:absolute;top:-2px;right:calc(50% - 16px);min-width:15px;height:15px;border-radius:8px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;display:grid;place-items:center;padding:0 4px}
+.pad{padding:12px 14px 18px;display:flex;flex-direction:column;gap:12px}
+.card{background:var(--card);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:13px 14px}
+.label{font-size:11.5px;color:var(--ink-soft);letter-spacing:.02em}
+.h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:2px 2px -2px}
+.h b{font-size:15px}.h a{font-size:12.5px;color:var(--accent);text-decoration:none}
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;border-radius:999px;padding:1px 8px;white-space:nowrap}
+.p-ok{background:var(--ok-soft);color:var(--ok)}.p-warn{background:var(--warn-soft);color:var(--warn)}.p-danger{background:var(--danger-soft);color:var(--danger)}
+.p-acc{background:var(--accent-soft);color:var(--accent-ink)}.p-gray{background:var(--well);color:var(--ink-2)}.p-vio{background:var(--violet-soft);color:var(--violet)}
+.p-line{border:1px solid var(--line-strong);color:var(--ink-2);font-weight:500}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:40px;border-radius:12px;padding:0 14px;font-weight:600;font-size:14px}
+.btn-p{background:var(--accent-strong);color:var(--on-accent)}
+.btn-s{background:var(--accent-soft);color:var(--accent-ink)}
+.btn-g{border:1px solid var(--line-strong);color:var(--ink-2);background:var(--card)}
+.btn-w{background:var(--warn);color:#fff}
+.row{display:flex;align-items:center;gap:8px}
+.grow{flex:1;min-width:0}
+.sep{height:1px;background:var(--line);margin:8px 0}
+.kv{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:3px 0}
+.kv span:first-child{color:var(--ink-soft)}
+.money{font-weight:700;color:var(--accent);font-variant-numeric:tabular-nums}
+
+/* ---------- workbench ---------- */
+.hello{padding:4px 16px 2px}
+.hello small{color:var(--ink-soft);font-size:12px}
+.hello h3{margin:2px 0 0;font-size:20px}
+.paste{background:linear-gradient(135deg,#1f7a8c,#2a8f79);color:#fff;border-radius:var(--r-lg);padding:14px;box-shadow:var(--shadow)}
+.paste b{font-size:15.5px}
+.paste p{margin:4px 0 10px;font-size:12.5px;opacity:.88}
+.paste .box{background:rgba(255,255,255,.16);border-radius:12px;padding:10px 12px;font-size:13px;color:rgba(255,255,255,.85);display:flex;align-items:center;gap:8px}
+.paste .box span{flex:1}
+.paste .tools{display:flex;gap:8px;margin-top:10px}
+.paste .tools button{flex:1;background:rgba(255,255,255,.18);color:#fff;border-radius:10px;padding:7px 0;font-size:12.5px;font-weight:600}
+.todo{display:flex;flex-direction:column}
+.todo a{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line);text-decoration:none;color:inherit}
+.todo a:first-child{border-top:0;padding-top:2px}
+.todo .ic{flex:0 0 30px;height:30px;border-radius:10px;display:grid;place-items:center;font-size:13px;font-weight:700}
+.todo .tx{flex:1;min-width:0}
+.todo .tx b{display:block;font-size:13.5px}
+.todo .tx small{display:block;font-size:12px;color:var(--ink-soft)}
+.todo .due{font-size:12px;font-weight:700;white-space:nowrap;padding-top:2px}
+.funnel{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.funnel a{background:var(--card);border-radius:12px;padding:9px 6px;text-align:center;text-decoration:none;color:inherit;box-shadow:var(--shadow)}
+.funnel b{display:block;font-size:19px;font-variant-numeric:tabular-nums}
+.funnel small{font-size:11px;color:var(--ink-soft)}
+.hscroll{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:2px 14px 6px;scroll-snap-type:x mandatory}
+.hscroll::-webkit-scrollbar{display:none}
+.mini{flex:0 0 232px;scroll-snap-align:start;background:var(--card);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden}
+.mini .cv{height:78px}
+.mini .in{padding:9px 11px 11px;display:flex;flex-direction:column;gap:5px}
+.mini b{font-size:13.5px;line-height:1.35}
+.bar{height:6px;border-radius:3px;background:var(--well);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--warn);border-radius:3px}
+
+/* ---------- covers ---------- */
+.cv{position:relative;overflow:hidden;color:#fff}
+.cv::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.45))}
+.cv svg{position:absolute;inset:0;width:100%;height:100%}
+.cv .cvt{position:absolute;left:10px;bottom:7px;z-index:1;font-size:12px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.cv .cvb{position:absolute;left:8px;top:8px;z-index:1;display:flex;gap:4px}
+.cv .cvb span{background:rgba(255,255,255,.92);color:var(--ink);font-size:10.5px;font-weight:700;border-radius:6px;padding:1px 6px}
+.alps{background:linear-gradient(180deg,#8fb8d6,#d8e6ee 60%,#9fb99a)}
+.lanka{background:linear-gradient(180deg,#f2b77a,#f7d9a8 55%,#4f9a86)}
+.nordic{background:linear-gradient(180deg,#0e2640,#1d4a6b 60%,#2c6b7d)}
+.iberia{background:linear-gradient(180deg,#f0c27b,#e89f6a 55%,#b86a4b)}
+
+/* ---------- chat ---------- */
+.need{flex:0 0 auto;display:flex;gap:6px;align-items:center;padding:7px 12px;background:var(--card);border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.need .pill{font-weight:500}
+.need .st{margin-left:auto;flex:0 0 auto}
+.chat{padding:12px 12px 16px;display:flex;flex-direction:column;gap:12px}
+.me{align-self:flex-end;max-width:84%;background:var(--accent);color:#fff;border-radius:16px 16px 4px 16px;padding:9px 12px;font-size:13.5px}
+.me small{display:block;opacity:.75;font-size:11px;margin-bottom:2px}
+.ai{display:flex;flex-direction:column;gap:8px}
+.ai .who{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-soft)}
+.ai .who i{width:18px;height:18px;border-radius:6px;background:var(--accent);color:#fff;font-style:normal;font-size:10px;font-weight:700;display:grid;place-items:center}
+.ai .say{background:var(--card);border-radius:4px 16px 16px 16px;padding:9px 12px;font-size:13.5px;box-shadow:var(--shadow);max-width:92%}
+.ai .say b{color:var(--accent-ink)}
+.sys{align-self:center;font-size:11.5px;color:var(--ink-soft);background:var(--well);border-radius:999px;padding:3px 10px}
+.needcard{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px}
+.needcard div{font-size:13px}
+.needcard .label{display:flex;align-items:center;gap:4px}
+.src{width:6px;height:6px;border-radius:50%;display:inline-block}
+.src.said{background:var(--ok)}.src.inf{background:var(--warn)}.src.adv{background:var(--violet)}
+.missing{grid-column:1/-1;display:flex;align-items:center;gap:8px;background:var(--warn-soft);border-radius:10px;padding:7px 10px;font-size:12.5px;color:var(--warn)}
+.missing button{margin-left:auto;background:var(--card);color:var(--warn);border-radius:8px;padding:3px 10px;font-weight:600;font-size:12px}
+.routes{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;margin:0 -12px;padding:2px 12px 8px;scroll-snap-type:x mandatory}
+.routes::-webkit-scrollbar{display:none}
+.rc{flex:0 0 288px;scroll-snap-align:start;background:var(--card);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
+.rc .cv{height:112px}
+.rc .in{padding:10px 12px 12px;display:flex;flex-direction:column;gap:7px}
+.rc h4{margin:0;font-size:15px;line-height:1.35}
+.rc .meta{font-size:12px;color:var(--ink-soft)}
+.facts3{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--well-2);border-radius:10px;padding:7px 4px;text-align:center}
+.facts3 div{font-size:12.5px;font-weight:600}
+.facts3 small{display:block;font-size:10.5px;color:var(--ink-soft);font-weight:400}
+.why{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12px}
+.why .y{color:var(--ok)}.why .n{color:var(--danger)}.why .q{color:var(--warn)}
+.dates{display:flex;gap:5px;flex-wrap:wrap}
+.dp{font-size:11.5px;border-radius:8px;padding:3px 7px;font-weight:600;font-variant-numeric:tabular-nums;border:1px solid transparent}
+.dp small{font-weight:500;margin-left:3px}
+.dp.ok{background:var(--ok-soft);color:var(--ok)}.dp.warn{background:var(--warn-soft);color:var(--warn)}.dp.full{background:var(--well);color:var(--ink-faint);text-decoration:line-through}.dp.go{background:var(--ok);color:#fff}
+.price{display:flex;align-items:baseline;justify-content:space-between;border-top:1px dashed var(--line);padding-top:8px}
+.price .big{font-size:20px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums}
+.price small{font-size:11.5px;color:var(--ink-soft)}
+.acts{display:grid;grid-template-columns:auto 1fr;gap:8px}
+.acts .btn{min-height:38px;font-size:13.5px}
+.next{display:flex;flex-direction:column;gap:6px;background:var(--well-2);border:1px solid var(--line);border-radius:14px;padding:9px 10px}
+.next .label{display:flex;align-items:center;gap:5px}
+.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:1px}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;min-height:34px;display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:0 12px;font-size:13px;border:1px solid var(--line-strong);background:var(--card);color:var(--ink-2);white-space:nowrap}
+.chip.pri{background:var(--accent-strong);border-color:var(--accent-strong);color:#fff;font-weight:600}
+.chip.ask{border-style:dashed;color:var(--violet);border-color:rgba(102,80,176,.35)}
+.composer{flex:0 0 auto;display:flex;align-items:flex-end;gap:8px;padding:8px 10px 18px;background:var(--card);border-top:1px solid var(--line)}
+.composer .plus{width:36px;height:36px;border-radius:12px;background:var(--well);display:grid;place-items:center;font-size:20px;color:var(--ink-soft)}
+.composer .field{flex:1;min-height:36px;border-radius:12px;background:var(--well-2);border:1px solid var(--line);padding:7px 11px;font-size:15px;color:var(--ink-faint)}
+.composer .send{width:36px;height:36px;border-radius:12px;background:var(--accent-strong);color:#fff;display:grid;place-items:center;font-size:16px}
+
+/* ---------- comparison ---------- */
+.cmp{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+.cmp th{position:sticky;top:0;background:var(--card);text-align:left;font-size:12.5px;padding:0 6px 8px;vertical-align:bottom}
+.cmp th .cv{height:46px;border-radius:10px;margin-bottom:6px}
+.cmp td{padding:7px 6px;border-top:1px solid var(--line);vertical-align:top}
+.cmp td:first-child{color:var(--ink-soft);width:58px;padding-left:0;font-size:12px}
+.cmp tr.diff td:not(:first-child){background:linear-gradient(0deg,rgba(246,234,208,.55),rgba(246,234,208,.55))}
+.cmp .best{color:var(--ok);font-weight:700}
+.verdict{background:var(--accent-soft);border-radius:12px;padding:10px 12px;font-size:13px;color:var(--accent-ink)}
+.verdict b{display:block;margin-bottom:2px}
+
+/* ---------- route detail ---------- */
+.hero .cv{height:190px}
+.hero .cv .cvt{font-size:20px;font-weight:800;bottom:12px;left:14px}
+.stats{display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
+.stats b{font-size:18px;font-variant-numeric:tabular-nums}
+.stats small{color:var(--ink-soft);font-size:12px;margin-left:2px}
+.points{display:flex;flex-wrap:wrap;gap:6px}
+.eat{display:grid;grid-template-columns:36px 1fr;gap:6px 8px;font-size:13px}
+.eat dt{color:var(--ink-soft);font-size:12px}
+.eat dd{margin:0}
+.daytabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.daytabs span{flex:0 0 auto;border:1px solid var(--line-strong);border-radius:999px;padding:3px 11px;font-size:12.5px}
+.daytabs span.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.tl{list-style:none;margin:0;padding:0}
+.tl li{position:relative;padding:4px 0 8px 30px}
+.tl li::before{content:"";position:absolute;left:11px;top:0;bottom:0;width:2px;background:var(--line)}
+.tl .ic{position:absolute;left:0;top:5px;width:24px;height:24px;border-radius:50%;background:var(--card);border:2px solid var(--accent);color:var(--accent);font-size:11px;font-weight:700;display:grid;place-items:center}
+.tl .ic.g{border-color:var(--ink-faint);color:var(--ink-soft)}.tl .ic.w{border-color:var(--warn);color:var(--warn)}.tl .ic.v{border-color:var(--violet);color:var(--violet)}
+.tl .box{background:var(--well-2);border:1px solid var(--line);border-radius:10px;padding:7px 10px;display:flex;flex-direction:column;gap:4px}
+.tl .box b{font-size:13.5px}
+.tl .box.w{background:var(--warn-soft);border-color:transparent}
+.bottombar{flex:0 0 auto;display:grid;grid-template-columns:auto 1fr 1fr;gap:8px;padding:9px 12px 18px;background:var(--card);border-top:1px solid var(--line);align-items:center}
+.bottombar .ico{display:flex;flex-direction:column;align-items:center;font-size:10.5px;color:var(--ink-soft);gap:1px;padding:0 4px}
+.bottombar .ico span{font-size:17px;line-height:1}
+
+/* ---------- departures ---------- */
+.seg{display:flex;background:var(--well);border-radius:10px;padding:3px;gap:3px}
+.seg span{flex:1;text-align:center;border-radius:8px;padding:5px 0;font-size:12.5px;color:var(--ink-soft)}
+.seg span.on{background:var(--card);color:var(--ink);font-weight:600;box-shadow:var(--shadow)}
+.dep{display:grid;grid-template-columns:52px 1fr;gap:10px;align-items:start}
+.dep .d{text-align:center;border-radius:12px;background:var(--well-2);padding:6px 0;border:1px solid var(--line)}
+.dep .d b{display:block;font-size:19px;line-height:1.1;font-variant-numeric:tabular-nums}
+.dep .d small{font-size:11px;color:var(--ink-soft)}
+.dep.sel .d{background:var(--accent);border-color:var(--accent);color:#fff}
+.dep.sel .d small{color:rgba(255,255,255,.8)}
+.dep .body{display:flex;flex-direction:column;gap:5px}
+.dep .top{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.dep .top b{font-size:13.5px}
+.dep .pr{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px}
+.dep.off{opacity:.55}
+.fold{display:flex;align-items:center;justify-content:center;gap:6px;font-size:12.5px;color:var(--ink-soft);border:1px dashed var(--line-strong);border-radius:12px;padding:8px}
+
+/* ---------- quote & share ---------- */
+.qline{display:grid;grid-template-columns:1fr auto auto;gap:4px 10px;font-size:13px;padding:5px 0;border-bottom:1px dashed var(--line)}
+.qline span:nth-child(2){color:var(--ink-soft)}
+.qline span:last-child{font-variant-numeric:tabular-nums;text-align:right;min-width:74px}
+.qline.extra span:first-child::after{content:" 另付";font-size:10.5px;color:var(--warn);font-weight:700}
+.tot{display:flex;justify-content:space-between;align-items:baseline;padding-top:8px}
+.tot .big{font-size:22px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.duo>div{border-radius:12px;padding:8px 10px;background:var(--well-2);border:1px solid var(--line)}
+.duo b{display:block;font-size:16px;font-variant-numeric:tabular-nums}
+.fresh{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ok)}
+.wx{background:#ededed;border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.wx .bub{align-self:flex-end;background:#95ec69;border-radius:8px;padding:7px 10px;font-size:13px;max-width:86%}
+.wx .lk{align-self:flex-end;width:236px;background:#fff;border-radius:8px;padding:9px 10px;display:grid;grid-template-columns:1fr 52px;gap:8px}
+.wx .lk b{font-size:13px;line-height:1.35}
+.wx .lk small{grid-column:1/-1;font-size:10.5px;color:#999;border-top:1px solid #eee;padding-top:5px}
+.wx .lk .cv{height:52px;border-radius:4px}
+
+/* ---------- hold ---------- */
+.ring{width:118px;height:118px;border-radius:50%;background:conic-gradient(var(--warn) 0 72%,var(--well) 72% 100%);display:grid;place-items:center;margin:4px auto}
+.ring div{width:96px;height:96px;border-radius:50%;background:var(--card);display:grid;place-items:center;text-align:center}
+.ring b{font-size:21px;font-variant-numeric:tabular-nums;display:block}
+.ring small{font-size:11px;color:var(--ink-soft)}
+.check{display:flex;flex-direction:column}
+.check div{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:13.5px}
+.check div:first-child{border-top:0}
+.check i{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:12px;font-weight:700;flex:0 0 22px}
+.check .done{background:var(--ok);color:#fff}.check .todo1{border:2px solid var(--warn);color:var(--warn)}.check .lock{background:var(--well);color:var(--ink-faint)}
+.check span{flex:1}
+.check small{color:var(--ink-soft);font-size:12px}
+
+/* ---------- travelers ---------- */
+.prog{display:flex;align-items:center;gap:10px}
+.prog .bar{flex:1;height:8px}
+.prog .bar i{background:var(--accent)}
+.trav{display:flex;flex-direction:column;gap:8px}
+.trav .top{display:flex;align-items:center;gap:10px}
+.av{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;font-weight:700;font-size:14px;flex:0 0 36px}
+.av.a{background:var(--accent-soft);color:var(--accent-ink)}.av.c{background:var(--violet-soft);color:var(--violet)}.av.e{background:var(--well);color:var(--ink-faint);border:1.5px dashed var(--line-strong)}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px}
+.fields div{font-size:12.5px}
+.fields .label{display:block;font-size:11px}
+.warnline{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--danger);background:var(--danger-soft);border-radius:8px;padding:5px 8px}
+.ocr{display:flex;gap:8px}
+.ocr button{flex:1}
+.rooms{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.room{border:1.5px dashed var(--line-strong);border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:5px}
+.room b{font-size:12px;color:var(--ink-soft)}
+.room span{background:var(--well-2);border-radius:8px;padding:3px 8px;font-size:12.5px}
+
+/* ---------- order ---------- */
+.steps{display:flex;align-items:flex-start;justify-content:space-between;position:relative;margin:4px 2px 2px}
+.steps::before{content:"";position:absolute;left:12px;right:12px;top:10px;height:2px;background:var(--line)}
+.steps .s{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;color:var(--ink-faint);width:44px;text-align:center}
+.steps .s i{width:22px;height:22px;border-radius:50%;background:var(--card);border:2px solid var(--line-strong);display:grid;place-items:center;font-style:normal;font-size:11px;font-weight:700}
+.steps .s.done{color:var(--ink-2)}.steps .s.done i{background:var(--ok);border-color:var(--ok);color:#fff}
+.steps .s.now{color:var(--accent);font-weight:700}.steps .s.now i{border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.log{list-style:none;margin:0;padding:0;font-size:12.5px}
+.log li{display:grid;grid-template-columns:70px 1fr;gap:8px;padding:5px 0;border-top:1px solid var(--line)}
+.log li:first-child{border-top:0}
+.log time{color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.files{display:flex;flex-direction:column;gap:6px}
+.files div{display:flex;align-items:center;gap:10px;font-size:13px}
+.files i{width:30px;height:34px;border-radius:6px;background:var(--danger-soft);color:var(--danger);font-style:normal;font-size:10px;font-weight:700;display:grid;place-items:center}
+.files i.w{background:var(--accent-soft);color:var(--accent)}
+
+/* ---------- lists ---------- */
+.search{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;color:var(--ink-faint);font-size:14px}
+.filters{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.filters span{flex:0 0 auto;border-radius:999px;padding:4px 12px;font-size:12.5px;background:var(--card);border:1px solid var(--line)}
+.filters span.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.filters span b{margin-left:3px;font-variant-numeric:tabular-nums}
+.cust{display:grid;grid-template-columns:40px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid var(--line)}
+.cust:first-child{border-top:0}
+.cust b{font-size:14px}
+.cust small{display:block;font-size:12px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cust .r{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.cust .r small{font-size:11px}
+.ord{display:flex;flex-direction:column;gap:6px}
+.ord .top{display:flex;justify-content:space-between;align-items:center}
+.ord .top small{font-size:11.5px;color:var(--ink-soft)}
+.ord b{font-size:14px}
+.ord .meta{font-size:12px;color:var(--ink-soft)}
+.ord .foot{display:flex;justify-content:space-between;align-items:center;border-top:1px dashed var(--line);padding-top:7px;font-size:12.5px}
+</style>
+</head>
+<body>
+
+<header class="intro">
+  <h1>顾问端手机原型 v2（草稿）</h1>
+  <p>按顾问一天的工作组织：先看今天要处理的事，再处理客人的需求，从找线、对比、看团期、报价、发给客人，一直到占位、收证件、转订单。每张卡片只做一件事，底部固定一个主操作；助手每次回复后给出“接下来”的操作和“客人可能会问”的问题。数据均为虚构。</p>
+</header>
+
+<nav class="flow"><div>
+  <a href="#s1"><b>1</b>工作台</a><a href="#s2"><b>2</b>客人</a><a href="#s3"><b>3</b>对话找线</a><a href="#s4"><b>4</b>线路对比</a><a href="#s5"><b>5</b>线路详情</a><a href="#s6"><b>6</b>团期</a><a href="#s7"><b>7</b>报价单</a><a href="#s8"><b>8</b>发给客人</a><a href="#s9"><b>9</b>占位</a><a href="#s10"><b>10</b>客户信息</a><a href="#s11"><b>11</b>订单详情</a><a href="#s12"><b>12</b>订单</a>
+</div></nav>
+
+<main class="stage">
+
+<!-- ============ 1 工作台 ============ -->
+<section class="screen" id="s1">
+  <h2><span>01</span>工作台</h2>
+  <div class="phone"><div class="device">
+    <div class="sbar"><span>9:41</span><i>●●● ▮</i></div>
+    <div class="scroll">
+      <div class="hello"><small>周二 · 11月24日</small><h3>早上好，林顾问</h3></div>
+      <div class="pad">
+        <div class="paste">
+          <b>来了新客人？</b>
+          <p>把客人的微信原话粘贴过来，助手整理成需求单并找线路。</p>
+          <div class="box"><span>粘贴客人消息，或直接说需求…</span>⌘V</div>
+          <div class="tools"><button>🎙 语音</button><button>📷 截图识别</button><button>✎ 手动填</button></div>
+        </div>
+
+        <div class="h"><b>今天要处理 · 5</b><a href="#">全部</a></div>
+        <div class="card todo">
+          <a href="#s9"><span class="ic p-danger">占</span><span class="tx"><b>王女士 · 德法意瑞 12/11 占位</b><small>还差 2 位客人证件，到期自动释放</small></span><span class="due" style="color:var(--danger)">00:42:10</span></a>
+          <a href="#s8"><span class="ic p-warn">报</span><span class="tx"><b>李先生 · 斯里兰卡报价今晚失效</b><small>客人已读未回，可以跟进一下</small></span><span class="due" style="color:var(--warn)">今晚 22:00</span></a>
+          <a href="#s11"><span class="ic p-acc">款</span><span class="tx"><b>陈家 · 北欧极光 尾款 ¥38,400</b><small>12/05 出发，供应商要求 11/28 前付清</small></span><span class="due">4 天</span></a>
+          <a href="#s10"><span class="ic p-danger">证</span><span class="tx"><b>赵阿姨护照不足 6 个月</b><small>2027-03 到期，出行 12/19，需尽快换证</small></span><span class="due" style="color:var(--danger)">紧急</span></a>
+          <a href="#s11"><span class="ic p-ok">通</span><span class="tx"><b>周先生 · 出团通知已到</b><small>核对后一键发给客人</small></span><span class="due">待发</span></a>
+        </div>
+
+        <div class="h"><b>我的客人</b><a href="#s2">客人列表</a></div>
+        <div class="funnel">
+          <a href="#s2"><b>3</b><small>找线中</small></a>
+          <a href="#s2"><b>5</b><small>已报价</small></a>
+          <a href="#s2"><b style="color:var(--warn)">2</b><small>已占位</small></a>
+          <a href="#s12"><b style="color:var(--ok)">7</b><small>已下单</small></a>
+        </div>
+
+        <div class="h"><b>差几人就成团</b><a href="#">更多</a></div>
+        <div class="hscroll">
+          <div class="mini"><div class="cv alps"><svg viewBox="0 0 232 78" preserveAspectRatio="none"><path d="M0 60 L40 30 L70 48 L110 14 L150 44 L190 24 L232 50 L232 78 L0 78Z" fill="#fff" opacity=".55"/></svg><span class="cvt">德法意瑞 · 12天</span></div>
+            <div class="in"><b>ACME 经典德法意瑞 12/11 上海</b><div class="row"><div class="bar grow"><i style="width:80%"></i></div><span class="pill p-warn">差 2 人</span></div><small class="label">16/20 人 · 收客截止 11/30 · 同业 ¥12,800</small></div></div>
+          <div class="mini"><div class="cv nordic"><svg viewBox="0 0 232 78" preserveAspectRatio="none"><path d="M0 20 C60 5 120 40 232 12" stroke="#7fffd4" stroke-width="6" fill="none" opacity=".6"/><path d="M0 62 L60 46 L110 58 L170 40 L232 56 L232 78 L0 78Z" fill="#0b1a2a" opacity=".7"/></svg><span class="cvt">北欧极光 · 11天</span></div>
+            <div class="in"><b>ACME 罗弗敦极光 12/19 上海</b><div class="row"><div class="bar grow"><i style="width:60%"></i></div><span class="pill p-warn">差 4 人</span></div><small class="label">6/10 人 · 截止 12/05 · 同业 ¥16,900</small></div></div>
+        </div>
+
+        <div class="h"><b>商户主推</b><a href="#">线路库</a></div>
+        <div class="card row" style="gap:12px">
+          <div class="cv lanka" style="width:64px;height:64px;border-radius:12px;flex:0 0 64px"></div>
+          <div class="grow"><b style="font-size:13.5px">ACME 斯里兰卡 7 天纯玩含观鲸</b><div class="label">上海 · 11–1 月每周五 · 同业 ¥6,980 起</div><div class="row" style="margin-top:4px;gap:4px"><span class="pill p-ok">纯玩</span><span class="pill p-vio">含观鲸</span><span class="pill p-acc">佣金 ↑</span></div></div>
+        </div>
+      </div>
+    </div>
+    <nav class="tabbar">
+      <a class="on" href="#s1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>工作台</a>
+      <a href="#s2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 010 7M18 14.8c1.9.8 3.1 2.6 3.5 5.2"/></svg>客人<span class="dot">3</span></a>
+      <a href="#s5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>线路</a>
+      <a href="#s12"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>订单</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.3-6 8-6s7 2 8 6"/></svg>我的</a>
+    </nav>
+  </div></div>
+  <ul class="notes">
+    <li>首屏回答“今天先做什么”：按紧急程度排待办，占位倒计时、报价失效、尾款、证件、出团通知。</li>
+    <li>新需求入口放在最显眼处：粘贴微信原话、语音、截图识别。</li>
+    <li>“差几人就成团”和“商户主推”帮顾问主动推团。</li>
+  </ul>
+</section>
+
+<!-- ============ 2 客人 ============ -->
+<section class="screen" id="s2">
+  <h2><span>02</span>客人</h2>
+  <div class="phone"><div class="device">
+    <div class="sbar"><span>9:41</span><i>●●● ▮</i></div>
+    <div class="appbar"><div class="t"><b>我的客人</b><small>按下一步排序：最急的在最上面</small></div><button class="btn btn-p" style="min-height:32px;font-size:13px">＋ 新客人</button></div>
+    <div class="scroll"><div class="pad">
+      <div class="search">⌕ 搜姓名、手机号、目的地</div>
+      <div class="filters"><span class="on">全部<b>17</b></span><span>找线中<b>3</b></span><span>已报价<b>5</b></span><span>已占位<b>2</b></span><span>已下单<b>7</b></span></div>
+      <div class="card">
+        <a class="cust" href="#s3" style="text-decoration:none;color:inherit"><span class="av a">王</span><span style="min-width:0"><b>王女士</b><small>2大2小 · 德法意瑞 · 12月中下旬 · 上海</small></span><span class="r"><span class="pill p-danger">占位 00:42</span><small>补证件 2/4</small></span></a>
+        <a class="cust" href="#s8" style="text-decoration:none;color:inherit"><span class="av a">李</span><span style="min-width:0"><b>李先生</b><small>4大 · 斯里兰卡 · 11月下旬 · 7天</small></span><span class="r"><span class="pill p-warn">报价今晚失效</span><small>已读未回 · 2 小时</small></span></a>
+        <div class="cust"><span class="av a">刘</span><span style="min-width:0"><b>刘先生夫妇</b><small>2大 · 冰岛极光 · 12月 · 11天</small></span><span class="r"><span class="pill p-acc">已发 2 条方案</span><small>客人在看 · 10 分钟前</small></span></div>
+        <div class="cust"><span class="av c">吴</span><span style="min-width:0"><b>吴家</b><small>2大2老 · 欧洲看雪山 · 元旦前后</small></span><span class="r"><span class="pill p-gray">缺：房型</span><small>昨天</small></span></div>
+        <div class="cust"><span class="av a">陈</span><span style="min-width:0"><b>陈家</b><small>北欧极光 · 12/05 出发 · 订单 #2611</small></span><span class="r"><span class="pill p-ok">已下单</span><small>尾款 4 天后</small></span></div>
+        <div class="cust"><span class="av a">周</span><span style="min-width:0"><b>周先生</b><small>西葡 12 天 · 12/02 出发</small></span><span class="r"><span class="pill p-ok">出团通知待发</span><small>今天</small></span></div>
+      </div>
+      <p class="label" style="text-align:center">已完成出行的客人自动归档到“老客户”，下次可以一键带出证件</p>
+    </div></div>
+    <nav class="tabbar">
+      <a href="#s1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>工作台</a>
+      <a class="on" href="#s2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 010 7M18 14.8c1.9.8 3.1 2.6 3.5 5.2"/></svg>客人</a>
+      <a href="#s5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>线路</a>
+      <a href="#s12"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>订单</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.3-6 8-6s7 2 8 6"/></svg>我的</a>
+    </nav>
+  </div></div>
+  <ul class="notes">
+    <li>一个客人一个会话，右侧直接写下一步和期限，不用点进去就知道要做什么。</li>
+    <li>“客人在看”来自对客链接的打开记录，方便趁热跟进。</li>
+  </ul>
+</section>
+
+<!-- ============ 3 对话找线 ============ -->
+<section class="screen" id="s3">
+  <h2><span>03</span>对话 · 找线路</h2>
+  <div class="phone"><div class="device">
+    <div class="sbar" style="background:var(--card)"><span>9:41</span><i>●●● ▮</i></div>
+    <div class="appbar" style="border-bottom:0"><span class="back">‹</span><div class="t"><b>王女士 · 一家四口</b><small>找线中 · 刚刚</small></div><span class="more">⋯</span></div>
+    <div class="need"><span class="pill p-warn">缺：房型</span><span class="pill p-gray">2大2小</span><span class="pill p-gray">德法意瑞</span><span class="pill p-gray">12/11–12/31</span><span class="pill p-gray">11–13天</span><span class="pill p-gray">上海</span><span class="label st">需求单 ›</span></div>
+    <div class="scroll"><div class="chat">
+      <div class="me"><small>客人原话</small>我们一家四口，2个大人2个小孩，孩子8岁和5岁都要占床，想12月中下旬去德法意瑞，上海走，12天左右，别太累，每人2万以内</div>
+      <div class="ai">
+        <div class="who"><i>助</i>助手</div>
+        <div class="say">需求整理好了。找到 <b>6 条</b>合适的线路，先给你看最贴近的 3 条：都在 12 月中下旬有团，其中两条是纯玩。</div>
+        <div class="card needcard">
+          <div><span class="label"><i class="src said"></i>人数</span>2 大 2 小（8 岁、5 岁，占床）</div>
+          <div><span class="label"><i class="src inf"></i>时间</span>2026/12/11–12/31</div>
+          <div><span class="label"><i class="src said"></i>目的地</span>德国 · 法国 · 意大利 · 瑞士</div>
+          <div><span class="label"><i class="src said"></i>预算</span>每人 ≤ ¥20,000</div>
+          <div><span class="label"><i class="src said"></i>出发</span>上海 · 12 天左右</div>
+          <div><span class="label"><i class="src said"></i>偏好</span>节奏别太累</div>
+          <div class="missing">询价前还需要：房型<button>2 间双人房</button></div>
+        </div>
+        <div class="routes">
+          <div class="rc">
+            <div class="cv alps"><svg viewBox="0 0 288 112" preserveAspectRatio="none"><path d="M0 84 L50 44 L86 66 L136 20 L186 62 L236 34 L288 70 L288 112 L0 112Z" fill="#fff" opacity=".6"/><path d="M0 96 L70 74 L140 92 L210 70 L288 90 L288 112 L0 112Z" fill="#6f8f68" opacity=".7"/></svg><div class="cvb"><span>纯玩</span><span>已复核</span></div><span class="cvt">卢浮宫入内 · 新天鹅堡 · 少女峰</span></div>
+            <div class="in">
+              <h4>ACME 经典德法意瑞 12 天</h4>
+              <div class="meta">DE-12A · 上海往返 · ACME 航空直飞</div>
+              <div class="facts3"><div>4 星<small>酒店</small></div><div>18 餐<small>含餐</small></div><div>0 店<small>购物</small></div></div>
+              <div class="why"><span class="y">✓ 德法意瑞</span><span class="y">✓ 12 天</span><span class="y">✓ 纯玩</span><span class="q">? 预算需询价</span></div>
+              <div><div class="label" style="margin-bottom:4px">12 月中下旬团期</div><div class="dates"><span class="dp ok">12/11<small>有位</small></span><span class="dp warn">12/15<small>紧张</small></span><span class="dp go">12/25<small>已成团</small></span></div></div>
+              <div class="price"><small>同业起价 · 市场价 ¥15,999</small><span><span class="big">¥12,800</span><small>/人</small></span></div>
+              <div class="acts"><a class="btn btn-g" href="#s5">行程</a><a class="btn btn-p" href="#s6">看团期</a></div>
+            </div>
+          </div>
+          <div class="rc">
+            <div class="cv alps" style="background:linear-gradient(180deg,#9cc3a0,#e0ecd8 60%,#7ba374)"><svg viewBox="0 0 288 112" preserveAspectRatio="none"><path d="M0 80 L60 36 L110 70 L170 28 L230 64 L288 40 L288 112 L0 112Z" fill="#fff" opacity=".55"/></svg><div class="cvb"><span>一价全含</span></div><span class="cvt">科尔马 · 吉维尼 · 双宫</span></div>
+            <div class="in">
+              <h4>ACME 慢游德法意瑞+小镇 13 天</h4>
+              <div class="meta">DE-13S · 上海往返 · 小镇连住 2 晚</div>
+              <div class="facts3"><div>4 星<small>酒店</small></div><div>20 餐<small>含餐</small></div><div>1 店<small>购物</small></div></div>
+              <div class="why"><span class="y">✓ 节奏慢</span><span class="y">✓ 13 天</span><span class="n">✕ 1 个购物店</span></div>
+              <div><div class="label" style="margin-bottom:4px">12 月中下旬团期</div><div class="dates"><span class="dp ok">12/18<small>有位</small></span><span class="dp full">12/22</span></div></div>
+              <div class="price"><small>同业起价</small><span><span class="big">¥13,600</span><small>/人</small></span></div>
+              <div class="acts"><a class="btn btn-g" href="#s5">行程</a><a class="btn btn-p" href="#s6">看团期</a></div>
+            </div>
+          </div>
+        </div>
+        <div class="next">
+          <span class="label">接下来</span>
+          <div class="chips"><a class="chip pri" href="#s4">⇆ 对比前两条</a><a class="chip" href="#s6">看第 1 条团期</a><span class="chip">只看纯玩</span><span class="chip">再看 3 条</span></div>
+          <span class="label" style="margin-top:2px">客人可能会问</span>
+          <div class="chips"><span class="chip ask">5 岁孩子怎么算价？</span><span class="chip ask">签证要准备什么？</span><span class="chip ask">行程累不累？</span></div>
+        </div>
+      </div>
+    </div></div>
+    <div class="composer"><span class="plus">＋</span><span class="field">继续说，或粘贴客人的回复…</span><span class="send">↑</span></div>
+  </div></div>
+  <ul class="notes">
+    <li>顶部需求条随时可点，展开完整需求单；颜色点区分“客人说的 / 推断 / 顾问改”。</li>
+    <li>线路卡沿用原仓库的卡片：封面、编号、3 个关键数字、匹配理由、窗口内团期状态、同业价和市场价。</li>
+    <li>“接下来”给主操作（实心）和备选；“客人可能会问”提前备好答案，一点就生成可以转发的话术。</li>
+  </ul>
+</section>
+
+<!-- ============ 4 线路对比 ============ -->
+<section class="screen" id="s4">
+  <h2><span>04</span>线路对比</h2>
+  <div class="phone"><div class="device">
+    <div class="sbar" style="background:var(--card)"><span>9:41</span><i>●●● ▮</i></div>
+    <div class="appbar"><span class="back">‹</span><div class="t"><b>对比 2 条线路</b><small>只高亮不同的地方</small></div><span class="more">⋯</span></div>
+    <div class="scroll"><div class="pad">
+      <div class="card" style="padding:12px 10px">
+        <table class="cmp">
+          <thead><tr><th></th><th><div class="cv alps"></div>经典德法意瑞 12 天</th><th><div class="cv alps" style="background:linear-gradient(180deg,#9cc3a0,#e0ecd8 60%,#7ba374)"></div>慢游德法意瑞+小镇 13 天</th></tr></thead>
+          <tbody>
+            <tr class="diff"><td>同业价</td><td class="best">¥12,800</td><td>¥13,600</td></tr>
+            <tr><td>市场价</td><td>¥15,999</td><td>¥16,999</td></tr>
+            <tr class="diff"><td>天数</td><td>12 天 10 晚</td><td>13 天 11 晚</td></tr>
+            <tr><td>航班</td><td>ACME 航空直飞</td><td>ACME 航空直飞</td></tr>
+            <tr class="diff"><td>节奏</td><td>每天换城市 6 次</td><td class="best">小镇连住 2 晚</td></tr>
+            <tr><td>酒店</td><td>4 星</td><td>4 星</td></tr>
+            <tr class="diff"><td>含餐</td><td>18 餐</td><td class="best">20 餐</td></tr>
+            <tr class="diff"><td>购物</td><td class="best">0 店 · 纯玩</td><td>1 店（约 60 分钟）</td></tr>
+            <tr><td>自费</td><td>推荐 2 项</td><td>推荐 2 项</td></tr>
+            <tr class="diff"><td>亮点</td><td>卢浮宫入内、少女峰</td><td>科尔马、吉维尼、双宫</td></tr>
+            <tr class="diff"><td>儿童</td><td>占床同成人价</td><td>12 岁以下占床 -¥800</td></tr>
+            <tr class="diff"><td>团期</td><td>12/11 有位 · 12/15 紧张 · 12/25 已成团</td><td>12/18 有位 · 12/22 满</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="verdict"><b>带 8 岁、5 岁孩子，更推荐第 2 条</b>小镇连住 2 晚，换酒店次数少；儿童占床便宜 ¥800/人。第 2 条有 1 个购物店，客人如果介意，第 1 条是纯玩。<div class="label" style="margin-top:4px;color:var(--accent-ink)">依据：两条线路的已复核行程和价格政策</div></div>
+      <div class="next">
+        <span class="label">接下来</span>
+        <div class="chips"><a class="chip pri" href="#s8">把对比发给客人</a><a class="chip" href="#s6">看第 2 条团期</a><span class="chip">加一条对比</span></div>
+      </div>
+    </div></div>
+    <div class="bottombar" style="grid-template-columns:1fr 1fr"><a class="btn btn-g" href="#s8">发对比图给客人</a><a class="btn btn-p" href="#s6">选第 2 条 · 看团期</a></div>
+  </div></div>
+  <ul class="notes">
+    <li>顾问最常被问“这两条差在哪”：只高亮不同的行，价格最低或更适合的一格标绿。</li>
+    <li>助手根据这组客人（带孩子）给出结论，并注明依据。</li>
+    <li>对比可以直接生成图片发给客人，不带同业价。</li>
+  </ul>
+</section>
+
+<!-- ============ 5 线路详情 ============ -->
+<section class="screen" id="s5">
+  <h2><span>05</span>线路详情</h2>
+  <div class="phone"><div class="device">
+    <div class="sbar"><span>9:41</span><i>●●● ▮</i></div>
+    <div class="scroll">
+      <div class="hero"><div class="cv alps"><svg viewBox="0 0 355 190" preserveAspectRatio="none"><path d="M0 140 L60 80 L110 118 L180 40 L250 110 L300 70 L355 120 L355 190 L0 190Z" fill="#fff" opacity=".6"/><path d="M0 160 L90 130 L180 156 L270 126 L355 150 L355 190 L0 190Z" fill="#6f8f68" opacity=".75"/></svg><div class="cvb"><span>纯玩</span><span>已复核</span></div><span class="cvt">ACME 经典德法意瑞 12 天</span></div></div>
+      <div class="pad" style="margin-top:-18px;position:relative">
+        <div class="card">
+          <div class="label">DE-12A · 上海往返 · ACME 航空直飞</div>
+          <div class="stats" style="margin-top:6px"><span><b>12</b><small>天</small></span><span><b>10</b><small>晚</small></span><span><b>4</b><small>国</small></span><span><b>0</b><small>购物</small></span></div>
+          <div class="points" style="margin-top:8px"><span class="pill p-acc">一价全含</span><span class="pill p-acc">卢浮宫入内</span><span class="pill p-acc">新天鹅堡</span><span class="pill p-acc">少女峰</span></div>
+          <div class="sep"></div>
+          <dl class="eat" style="margin:0"><dt>吃</dt><dd>中式 6 菜 1 汤，升级 3 顿特色餐（牛排、墨鱼面、瑞士火锅）</dd><dt>住</dt><dd>全程 4 星，市区 3 晚</dd><dt>行</dt><dd>法兰克福进、米兰出，不走回头路</dd></dl>
+        </div>
+        <div class="card">
+          <div class="h" style="margin:0 0 8px"><b>12 月团期</b><a href="#s6">全部团期 ›</a></div>
+          <div class="dates"><span class="dp ok">12/11<small>有位</small></span><span class="dp warn">12/15<small>紧张</small></span><span class="dp go">12/25<small>已成团</small></span><span class="dp ok">12/29<small>有位</small></span></div>
+          <div class="price" style="margin-top:8px"><small>同业 ¥12,800 · 市场 ¥15,999 · 单房差 ¥4,500</small></div>
+        </div>
+        <div class="card">
+          <div class="h" style="margin:0 0 8px"><b>逐日行程</b><span class="label">行程亮点 6 处</span></div>
+          <div class="daytabs"><span>D1</span><span>D2</span><span class="on">D3</span><span>D4</span><span>D5</span><span>D6</span><span>…</span></div>
+          <div style="margin:10px 0 6px"><b style="font-size:14.5px">巴黎</b><div class="label">早 酒店 · 午 中式 · 晚 牛排餐 · 住 巴黎 4 星</div></div>
+          <ul class="tl">
+            <li><span class="ic">景</span><div class="box"><b>卢浮宫</b><div class="row" style="gap:4px"><span class="pill p-acc">入内</span><span class="pill p-ok">含门票</span><span class="pill p-gray">约 2 小时</span></div></div></li>
+            <li><span class="ic">览</span><div class="box"><b>巴黎市区观光</b><span class="label">凯旋门（外观）· 香榭丽舍 · 协和广场</span></div></li>
+            <li><span class="ic w">费</span><div class="box w"><b>塞纳河游船 · 自费</b><span class="label" style="color:var(--warn)">约 €30/人，自愿参加</span></div></li>
+            <li><span class="ic v">拍</span><div class="box"><b>埃菲尔铁塔 · 打卡机位 2</b><span class="label">战神广场拍铁塔全身，约 15 分钟</span></div></li>
+          </ul>
+        </div>
+        <div class="card"><div class="h" style="margin:0 0 6px"><b>费用与须知</b></div>
+          <div class="kv"><span>费用包含</span><span>机票 · 酒店 · 18 餐 · 门票 · 用车 · 领队</span></div>
+          <div class="kv"><span>不含</span><span>签证 ¥1,200 · 司导费 €80</span></div>
+          <div class="kv"><span>儿童</span><span>占床同成人价</span></div>
+          <div class="kv"><span>退改</span><span>出发前 30 天退 · 损失 ¥3,000</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="bottombar"><span class="ico"><span>☆</span>收藏</span><a class="btn btn-g" href="#s8">发给客人</a><a class="btn btn-p" href="#s6">选团期询价</a></div>
+  </div></div>
+  <ul class="notes">
+    <li>沿用 route-kit 的线路详情设计：封面、卖点、吃住行、团期、逐日节点、费用与须知。</li>
+    <li>自费、购物用琥珀色，拍照点用紫色，一眼能看出哪里要另付钱。</li>
+    <li>底部固定两个动作：发给客人、选团期询价。</li>
+  </ul>
+</section>
+
+<!-- ============ 6 团期 ============ -->
+<section class="screen" id="s6">
+  <h2><span>06</span>团期列表</h2>
+  <div class="phone"><div class="device">
+    <div class="sbar" style="background:var(--card)"><span>9:41</span><i>●●● ▮</i></div>
+    <div class="appbar"><span class="back">‹</span><div class="t"><b>经典德法意瑞 12 天 · 团期</b><small>按 2大2小 计算 · 价格 3 分钟前核实</small></div></div>
+    <div class="scroll"><div class="pad">
+      <div class="seg"><span>11 月</span><span class="on">12 月 · 4</span><span>1 月</span><span>2 月</span></div>
+      <div class="card dep"><div class="d"><b>11</b><small>周五</small></div><div class="body"><div class="top"><b>12/11 → 12/22</b><span class="pill p-ok">有位</span></div><div class="row" style="gap:6px"><div class="bar grow"><i style="width:65%;background:var(--ok)"></i></div><span class="label">13/20 · 已成团</span></div><div class="pr"><span class="label">收客截止 11/30</span><span>同业 <b class="num">¥12,800</b></span></div><div class="pr"><span class="label">4 人合计（占床）</span><span class="money">¥51,200</span></div></div></div>
+      <div class="card dep sel"><div class="d"><b>15</b><small>周二</small></div><div class="body"><div class="top"><b>12/15 → 12/26</b><span class="pill p-warn">余位紧张</span></div><div class="row" style="gap:6px"><div class="bar grow"><i style="width:90%"></i></div><span class="label">18/20 · 已成团</span></div><div class="pr"><span class="label">收客截止 12/04</span><span>同业 <b class="num">¥13,200</b></span></div><div class="pr"><span class="label">4 人合计（占床）</span><span class="money">¥52,800</span></div><div class="row" style="gap:8px;margin-top:4px"><a class="btn btn-g grow" style="min-height:36px" href="#s7">询价</a><a class="btn btn-w grow" style="min-height:36px" href="#s9">占 4 位</a></div></div></div>
+      <div class="card dep"><div class="d"><b>25</b><small>周五</small></div><div class="body"><div class="top"><b>12/25 → 01/05</b><span class="pill p-ok">有位</span></div><div class="row" style="gap:6px"><div class="bar grow"><i style="width:40%;background:var(--warn)"></i></div><span class="label">8/20 · 待成团（16 人成团）</span></div><div class="pr"><span class="label">跨年团 · 截止 12/12</span><span>同业 <b class="num">¥14,600</b></span></div></div></div>
+      <div class="card dep off"><div class="d"><b>29</b><small>周二</small></div><div class="body"><div class="top"><b>12/29 → 01/09</b><span class="pill p-gray">满位 · 可候补</span></div><div class="pr"><span class="label">超出客人时间窗口</span><span>同业 ¥14,600</span></div></div></div>
+      <div class="fold">另有 6 个团期不在 12/11–12/31 内 · 展开</div>
+    </div></div>
+    <div class="bottombar" style="grid-template-columns:1fr auto"><span style="font-size:12.5px"><b>12/15</b> · 4 人 · <span class="money">¥52,800</span><br><small class="label">同业价，未含签证与司导费</small></span><a class="btn btn-p" href="#s7">生成报价单</a></div>
+  </div></div>
+  <ul class="notes">
+    <li>团期卡：日期块、有位/余位紧张/满位可候补、成团进度条、收客截止、这组客人的合计价。</li>
+    <li>不显示具体余位数，只给状态；成团进度来自供应商公布的已收人数。</li>
+    <li>选中后底部固定显示合计，主按钮生成报价单；急单可以直接“占位”。</li>
+  </ul>
+</section>
+
+<!-- ============ 7 报价单 ============ -->
+<section class="screen" id="s7">
+  <h2><span>07</span>报价单</h2>
+  <div class="phone"><div class="device">
+    <div class="sbar" style="background:var(--card)"><span>9:41</span><i>●●● ▮</i></div>
+    <div class="appbar"><span class="back">‹</span><div class="t"><b>报价单 · 王女士</b><small>经典德法意瑞 12 天 · 12/15 出发</small></div><span class="more">⋯</span></div>
+    <div class="scroll"><div class="pad">
+      <div class="card">
+        <div class="row" style="justify-content:space-between"><b style="font-size:14px">2 大 2 小 · 2 间双人房</b><span class="fresh">● 3 分钟前核价</span></div>
+        <div style="margin-top:8px">
+          <div class="qline"><span>成人</span><span>¥13,200 × 2</span><span>¥26,400</span></div>
+          <div class="qline"><span>儿童 8 岁 · 占床</span><span>¥13,200 × 1</span><span>¥13,200</span></div>
+          <div class="qline"><span>儿童 5 岁 · 占床</span><span>¥13,200 × 1</span><span>¥13,200</span></div>
+          <div class="qline"><span>单房差</span><span>—</span><span>¥0</span></div>
+          <div class="qline extra"><span>签证费</span><span>¥1,200 × 4</span><span>¥4,800</span></div>
+          <div class="qline extra"><span>司导服务费</span><span>€80 × 4</span><span>约 ¥2,480</span></div>
+        </div>
+        <div class="tot"><span class="label">同业合计（团费）</span><span class="big">¥52,800</span></div>
+      </div>
+      <div class="duo">
+        <div><span class="label">建议卖价 · 市场价</span><b>¥63,996</b><span class="label">¥15,999 × 4</span></div>
+        <div style="background:var(--ok-soft);border-color:transparent"><span class="label" style="color:var(--ok)">预计毛利 · 仅你可见</span><b style="color:var(--ok)">¥11,196</b><span class="label" style="color:var(--ok)">17.5%</span></div>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;gap:6px">
+        <b style="font-size:13.5px">给客人的价格</b>
+        <div class="row"><span class="grow label">按市场价</span><span class="pill p-acc">¥15,999/人</span><span class="label">可改</span></div>
+        <div class="row"><span class="grow label">另付费用</span><span class="label">签证、司导费单列，不并入团费</span></div>
+        <div class="row"><span class="grow label">报价有效</span><span class="label">到 11/25 18:00（24 小时）</span></div>
+      </div>
+      <div class="card" style="font-size:12.5px;color:var(--ink-soft)">占位或下单前会自动重新核价；价格变了会提示差额。</div>
+      <div class="next"><span class="label">接下来</span><div class="chips"><a class="chip pri" href="#s8">发给客人</a><a class="chip" href="#s9">直接占 4 位</a><span class="chip">复制给计调</span><span class="chip">换 12/11 再算</span></div></div>
+    </div></div>
+    <div class="bottombar" style="grid-template-columns:1fr 1fr"><a class="btn btn-g" href="#s9">占 4 位</a><a class="btn btn-p" href="#s8">发给客人</a></div>
+  </div></div>
+  <ul class="notes">
+    <li>报价单拆成每人每项，另付费用单列，不和团费相加。</li>
+    <li>同业价、卖价、毛利分开；毛利只有顾问自己看得到。</li>
+    <li>报价 24 小时有效，占位前自动重新核价（对应修复清单 N2）。</li>
+  </ul>
+</section>
+
+<!-- ============ 8 发给客人 ============ -->
+<section class="screen" id="s8">
+  <h2><span>08</span>发给客人</h2>
+  <div class="phone"><div class="device">
+    <div class="sbar" style="background:var(--card)"><span>9:41</span><i>●●● ▮</i></div>
+    <div class="appbar"><span class="back">‹</span><div class="t"><b>发给客人</b><small>客人看到的是市场价，不含同业价和供应商</small></div></div>
+    <div class="scroll"><div class="pad">
+      <div class="seg"><span class="on">方案链接</span><span>行程海报</span><span>对比图</span><span>文字版</span></div>
+      <div class="card" style="display:flex;flex-direction:column;gap:8px">
+        <b style="font-size:13.5px">附一句话（可改）</b>
+        <div style="background:var(--well-2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13.5px">王姐，按您说的 12 月中下旬、孩子都占床，给您挑了一条纯玩的：12/15 出发 12 天，一家四口 ¥63,996。行程和费用都在链接里，您先看看～</div>
+        <div class="label">助手根据需求单和报价生成，发出前可以修改</div>
+      </div>
+      <div class="label" style="margin:2px 2px -4px">预览 · 客人在微信里看到的样子</div>
+      <div class="wx">
+        <div class="bub">王姐，按您说的 12 月中下旬、孩子都占床，给您挑了一条纯玩的…</div>
+        <div class="lk"><div><b>经典德法意瑞 12 天 · 12/15 出发 · 一家四口方案</b></div><div class="cv alps"></div><small>ACME 旅行 · 林顾问</small></div>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;gap:6px">
+        <div class="kv"><span>链接有效期</span><span>7 天，需求一改自动失效</span></div>
+        <div class="kv"><span>打开提醒</span><span>客人打开时通知我</span></div>
+        <div class="kv"><span>客人可以</span><span>看行程 · 点“就选这个” · 留言</span></div>
+      </div>
+    </div></div>
+    <div class="bottombar" style="grid-template-columns:auto 1fr 1fr"><span class="ico"><span>⎘</span>复制</span><a class="btn btn-g" href="#">存图</a><a class="btn btn-p" href="#">复制并打开微信</a></div>
+  </div></div>
+  <ul class="notes">
+    <li>一次提供四种形式：链接、行程海报、对比图、纯文字，适合不同的客人。</li>
+    <li>话术由助手起草，顾问改一改就能发；预览就是微信里的样子。</li>
+    <li>客人点“就选这个”后，客人列表会提示“客人已选择”，接着占位。</li>
+  </ul>
+</section>
+
+<!-- ============ 9 占位 ============ -->
+<section class="screen" id="s9">
+  <h2><span>09</span>占位</h2>
+  <div class="phone"><div class="device">
+    <div class="sbar" style="background:var(--card)"><span>9:41</span><i>●●● ▮</i></div>
+    <div class="appbar"><span class="back">‹</span><div class="t"><b>已占 4 位 · 王女士</b><small>预留单 R-261124-0815 · 12/15 出发</small></div><span class="more">⋯</span></div>
+    <div class="scroll"><div class="pad">
+      <div class="card" style="text-align:center">
+        <div class="ring"><div><span><b>00:42:10</b><small>后自动释放</small></span></div></div>
+        <div style="font-size:13px;color:var(--ink-2)">供应商保留 4 个位置到 <b>今天 10:24</b>。转成正式订单前，需要补齐下面 3 件事。</div>
+        <div class="row" style="justify-content:center;gap:8px;margin-top:8px"><span class="pill p-ok">价格已锁定 ¥52,800</span><span class="pill p-gray">可延长 1 次</span></div>
+      </div>
+      <div class="card check">
+        <div><i class="done">✓</i><span>人数和房型<br><small>2 大 2 小 · 2 间双人房</small></span></div>
+        <div><i class="todo1">2</i><span>客人证件 2/4<br><small>还差 2 位儿童的护照</small></span><a class="btn btn-s" style="min-height:32px;font-size:12.5px" href="#s10">去补</a></div>
+        <div><i class="todo1">3</i><span>联系人和紧急联系人<br><small>王女士 138****6612</small></span><a class="btn btn-s" style="min-height:32px;font-size:12.5px" href="#s10">确认</a></div>
+        <div><i class="lock">4</i><span>转为正式订单<br><small>补齐后可用；定金 ¥20,000</small></span></div>
+      </div>
+      <div class="card" style="font-size:12.5px;color:var(--ink-soft);display:flex;flex-direction:column;gap:4px">
+        <b style="color:var(--ink);font-size:13px">占位规则</b>
+        <span>· 到期不转订单，位置自动释放，不产生费用。</span>
+        <span>· 可以提前释放；释放后其他顾问能占。</span>
+        <span>· 余位紧张的团期只能延长 1 次。</span>
+      </div>
+      <div class="next"><span class="label">接下来</span><div class="chips"><a class="chip pri" href="#s10">让客人自己填证件</a><span class="chip">延长 30 分钟</span><span class="chip">释放占位</span></div></div>
+    </div></div>
+    <div class="bottombar" style="grid-template-columns:1fr 1fr"><a class="btn btn-g" href="#s10">补客人信息</a><a class="btn btn-p" style="opacity:.45" href="#s11">转正式订单</a></div>
+  </div></div>
+  <ul class="notes">
+    <li>占位 = 向供应商预留位置，有倒计时；工作台和客人列表同步显示。</li>
+    <li>把“转正式订单”要补的东西做成清单，全部补齐后按钮才可用。</li>
+    <li>“让客人自己填证件”生成一个填写链接，客人拍护照上传，省得顾问一个个打字。</li>
+  </ul>
+</section>
+
+<!-- ============ 10 客户信息 ============ -->
+<section class="screen" id="s10">
+  <h2><span>10</span>客户信息</h2>
+  <div class="phone"><div class="device">
+    <div class="sbar" style="background:var(--card)"><span>9:41</span><i>●●● ▮</i></div>
+    <div class="appbar"><span class="back">‹</span><div class="t"><b>出行人 · 2/4 已齐</b><small>德法意瑞 12/15 · 按护照信息填写</small></div></div>
+    <div class="scroll"><div class="pad">
+      <div class="prog"><div class="bar"><i style="width:50%"></i></div><span class="label">2/4</span></div>
+      <div class="ocr"><button class="btn btn-p">📷 拍护照识别</button><button class="btn btn-g">发链接让客人填</button></div>
+      <div class="card trav">
+        <div class="top"><span class="av a">王</span><div class="grow"><b>王丽 · WANG LI</b><div class="label">成人 · 联系人 · 女</div></div><span class="pill p-ok">已齐</span></div>
+        <div class="fields"><div><span class="label">护照号</span>E12****89</div><div><span class="label">有效期</span>2031-05-20 ✓</div><div><span class="label">出生日期</span>1988-03-12</div><div><span class="label">手机</span>138****6612</div></div>
+      </div>
+      <div class="card trav">
+        <div class="top"><span class="av a">张</span><div class="grow"><b>张强 · ZHANG QIANG</b><div class="label">成人 · 男 · 从老客户带出</div></div><span class="pill p-warn">待核对</span></div>
+        <div class="fields"><div><span class="label">护照号</span>E98****21</div><div><span class="label">有效期</span>2026-12-30</div></div>
+        <div class="warnline">⚠ 护照在回程前 6 个月内到期，多数国家会拒绝入境，请客人换证</div>
+      </div>
+      <div class="card trav">
+        <div class="top"><span class="av e">+</span><div class="grow"><b>儿童 1 · 8 岁</b><div class="label">占床 · 需要护照首页</div></div><span class="pill p-gray">待补</span></div>
+      </div>
+      <div class="card trav">
+        <div class="top"><span class="av e">+</span><div class="grow"><b>儿童 2 · 5 岁</b><div class="label">占床 · 需要护照首页</div></div><span class="pill p-gray">待补</span></div>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;gap:8px">
+        <b style="font-size:13.5px">分房</b>
+        <div class="rooms"><div class="room"><b>房间 1 · 双人</b><span>王丽</span><span>儿童 1</span></div><div class="room"><b>房间 2 · 双人</b><span>张强</span><span>儿童 2</span></div></div>
+        <div class="label">拖动调整；分房会随订单一起发给供应商</div>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;gap:4px">
+        <b style="font-size:13.5px">特殊需求</b>
+        <div class="row" style="gap:6px;flex-wrap:wrap"><span class="chip" style="min-height:30px">儿童餐</span><span class="chip" style="min-height:30px">素食</span><span class="chip" style="min-height:30px">靠窗</span><span class="chip" style="min-height:30px">＋ 其他</span></div>
+      </div>
+    </div></div>
+    <div class="bottombar" style="grid-template-columns:1fr"><a class="btn btn-p" href="#s9">保存（占位还剩 00:42:10）</a></div>
+  </div></div>
+  <ul class="notes">
+    <li>拍护照自动识别；老客户一键带出证件；也可以发链接让客人自己填。</li>
+    <li>自动检查护照有效期、姓名拼音、儿童年龄是否和报价一致。</li>
+    <li>证件号默认打码，只在点开时显示完整号码。</li>
+  </ul>
+</section>
+
+<!-- ============ 11 订单详情 ============ -->
+<section class="screen" id="s11">
+  <h2><span>11</span>订单详情</h2>
+  <div class="phone"><div class="device">
+    <div class="sbar" style="background:var(--card)"><span>9:41</span><i>●●● ▮</i></div>
+    <div class="appbar"><span class="back">‹</span><div class="t"><b>订单 #2611 · 陈家</b><small>北欧罗弗敦极光 11 天 · 12/05 出发</small></div><span class="more">⋯</span></div>
+    <div class="scroll"><div class="pad">
+      <div class="card">
+        <div class="steps">
+          <div class="s done"><i>✓</i>占位</div><div class="s done"><i>✓</i>下单</div><div class="s done"><i>✓</i>定金</div><div class="s now"><i>4</i>尾款</div><div class="s"><i>5</i>出团通知</div><div class="s"><i>6</i>出行</div>
+        </div>
+        <div class="row" style="margin-top:12px;background:var(--warn-soft);border-radius:10px;padding:8px 10px;font-size:12.5px;color:var(--warn)"><span class="grow">尾款 ¥38,400 需在 <b>11/28</b> 前付给供应商</span><a class="btn btn-w" style="min-height:30px;font-size:12px" href="#">提醒客人</a></div>
+      </div>
+      <div class="card">
+        <div class="h" style="margin:0 0 6px"><b>金额</b><span class="label">仅你可见</span></div>
+        <div class="kv"><span>应收客人</span><span class="num">¥67,600</span></div>
+        <div class="kv"><span>已收</span><span class="num" style="color:var(--ok)">¥29,200</span></div>
+        <div class="kv"><span>待收</span><span class="num" style="color:var(--warn);font-weight:700">¥38,400</span></div>
+        <div class="sep"></div>
+        <div class="kv"><span>应付供应商（同业）</span><span class="num">¥56,400</span></div>
+        <div class="kv"><span>毛利</span><span class="num" style="color:var(--ok);font-weight:700">¥11,200</span></div>
+      </div>
+      <div class="card">
+        <div class="h" style="margin:0 0 8px"><b>出行人 · 4</b><a href="#s10">查看</a></div>
+        <div class="row" style="gap:6px;flex-wrap:wrap"><span class="pill p-gray">陈明（联系人）</span><span class="pill p-gray">李娟</span><span class="pill p-gray">陈小雨 · 12 岁</span><span class="pill p-gray">李桂芳 · 67 岁</span></div>
+        <div class="kv" style="margin-top:6px"><span>分房</span><span>2 间双床</span></div>
+      </div>
+      <div class="card">
+        <div class="h" style="margin:0 0 8px"><b>文件</b></div>
+        <div class="files"><div><i>PDF</i><span class="grow">旅游合同 · 已签</span><span class="label">11/20</span></div><div><i>PDF</i><span class="grow">行程单</span><span class="label">11/20</span></div><div><i class="w">待</i><span class="grow">出团通知书</span><span class="label">供应商出团前 3 天发</span></div></div>
+      </div>
+      <div class="card">
+        <div class="h" style="margin:0 0 6px"><b>记录</b></div>
+        <ul class="log">
+          <li><time>11/21 16:02</time><span>收到定金 ¥29,200（微信转账截图）</span></li>
+          <li><time>11/20 11:30</time><span>供应商确认订单，团号 NO-1205-03</span></li>
+          <li><time>11/20 10:05</time><span>由占位 R-261120-0332 转为订单</span></li>
+        </ul>
+      </div>
+    </div></div>
+    <div class="bottombar" style="grid-template-columns:1fr 1fr"><a class="btn btn-g" href="#">登记收款</a><a class="btn btn-p" href="#">发出团提醒</a></div>
+  </div></div>
+  <ul class="notes">
+    <li>6 步进度条回答“这单到哪一步了”，当前卡住的事放在最上面。</li>
+    <li>应收、已收、应付、毛利分开；收款登记可以上传转账截图。</li>
+    <li>合同、行程单、出团通知集中存放，出团通知到了自动提醒顾问转发。</li>
+  </ul>
+</section>
+
+<!-- ============ 12 订单 ============ -->
+<section class="screen" id="s12">
+  <h2><span>12</span>订单</h2>
+  <div class="phone"><div class="device">
+    <div class="sbar"><span>9:41</span><i>●●● ▮</i></div>
+    <div class="appbar"><div class="t"><b>订单</b><small>本月已下单 7 · 应收 ¥412,600</small></div></div>
+    <div class="scroll"><div class="pad">
+      <div class="filters"><span class="on">进行中<b>9</b></span><span>待收款<b>3</b></span><span>待出团<b>4</b></span><span>已完成</span><span>已取消</span></div>
+      <div class="card ord"><div class="top"><span class="pill p-danger">占位 00:42</span><small>R-261124-0815</small></div><b>王女士 · 经典德法意瑞 12 天</b><div class="meta">12/15 出发 · 2大2小 · 证件 2/4</div><div class="foot"><span class="label">同业 ¥52,800</span><a class="btn btn-s" style="min-height:30px;font-size:12px" href="#s9">补证件</a></div></div>
+      <div class="card ord"><div class="top"><span class="pill p-warn">待收尾款</span><small>#2611</small></div><b>陈家 · 北欧罗弗敦极光 11 天</b><div class="meta">12/05 出发 · 4 人 · 尾款 11/28 截止</div><div class="foot"><span>待收 <b class="num" style="color:var(--warn)">¥38,400</b></span><a class="btn btn-s" style="min-height:30px;font-size:12px" href="#s11">详情</a></div></div>
+      <div class="card ord"><div class="top"><span class="pill p-acc">出团通知待发</span><small>#2598</small></div><b>周先生 · 西葡 12 天</b><div class="meta">12/02 出发 · 2 人 · 已付清</div><div class="foot"><span class="label">集合：浦东 T2 · 12/02 07:30</span><a class="btn btn-s" style="min-height:30px;font-size:12px" href="#">转发客人</a></div></div>
+      <div class="card ord"><div class="top"><span class="pill p-ok">已确认</span><small>#2587</small></div><b>孙女士 · 斯里兰卡 7 天纯玩</b><div class="meta">12/18 出发 · 3 人 · 已付清</div><div class="foot"><span class="label">出团通知预计 12/15</span><span class="label">毛利 ¥4,860</span></div></div>
+    </div></div>
+    <nav class="tabbar">
+      <a href="#s1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-7 9 7v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>工作台</a>
+      <a href="#s2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 010 7M18 14.8c1.9.8 3.1 2.6 3.5 5.2"/></svg>客人</a>
+      <a href="#s5"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>线路</a>
+      <a class="on" href="#s12"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>订单</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.3-6 8-6s7 2 8 6"/></svg>我的</a>
+    </nav>
+  </div></div>
+  <ul class="notes">
+    <li>按“下一步要做的事”筛选：待收款、待出团，而不是按系统状态码。</li>
+    <li>每张订单卡只给一个最该做的操作。</li>
+  </ul>
+</section>
+
+</main>
+</body>
+</html>

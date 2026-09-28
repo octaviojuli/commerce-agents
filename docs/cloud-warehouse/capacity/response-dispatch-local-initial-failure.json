@@ -1,0 +1,8 @@
+{
+  "boundary": "Local macOS, sequential forward/reverse exploratory runs. No application credentials in child, no upstream APIs. Not ECS performance or production acceptance.",
+  "scratch": "/var/folders/4x/2k5t_mgx7cz1lw8nm4qc78yh0000gn/T/warehouse-dispatch-m63fwpsy",
+  "results": [],
+  "resources_restored": true,
+  "failure_stage": "diagnostic helper import before fixture database creation",
+  "error_code": "MISSING_TIMED_APPLICATION_EXPORT"
+}

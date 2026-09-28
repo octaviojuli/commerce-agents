@@ -73,7 +73,10 @@ _SECTION = re.compile(
 # A 温馨提示 or 注意事项 is a note inside a day as often as the head of the terms: a .pdf
 # reading writes one on a line of its own in the middle of the itinerary. It ends the days
 # only where no day header follows it; the 费用/包含 family ends them wherever it stands.
-_SOFT_SECTIONS = ("温馨提示", "注意事项")
+_SOFT_SECTIONS = ("温馨提示", "注意事项", "自费", "购物", "另行付费")
+# A recommendation inside a day is programme content even on the final day. The
+# mandatory fee headings still end the itinerary, including before a later day.
+_DAY_RECOMMENDATION = re.compile(r"^(?:自费|购物|另行付费)(?:推荐|建议)")
 # The 住宿 and 用餐 labels of the .docx rows, and the 酒店：/餐食：/住：/餐： of the .pdf ones.
 # A label is written with a space between it and its colon as often as without (``餐饮 ：早餐：
 # 酒店内``), and is the same label either way.
@@ -234,7 +237,8 @@ def split_days(lines: list[str]) -> list[ItineraryDay]:
         elif not days:
             continue
         elif _SECTION.match(line) and not (
-            index < last and _SPACES.sub("", line).startswith(_SOFT_SECTIONS)
+            _DAY_RECOMMENDATION.match(_SPACES.sub("", line))
+            or (index < last and _SPACES.sub("", line).startswith(_SOFT_SECTIONS))
         ):
             break
         else:

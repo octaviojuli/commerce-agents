@@ -23,6 +23,21 @@ export function formatMoney(
 
 const plain = new Intl.NumberFormat("en-US");
 
+/**
+ * The locale dates render in. English by default; a vertical in another language sets its own
+ * once, at module load in its app (travel's `lib/copy.ts` sets `zh-CN`), before any date renders.
+ */
+let dateLocale = "en-US";
+
+export function setDateLocale(locale: string): void {
+  dateLocale = locale;
+}
+
+/** True for Chinese, whose day-of-month carries its own suffix ("25日"). */
+function cjkDates(): boolean {
+  return dateLocale.toLowerCase().startsWith("zh");
+}
+
 export function formatNumber(value: number): string {
   return plain.format(value);
 }
@@ -46,31 +61,31 @@ const ISO_DAY = /\d{4}-\d{2}-\d{2}/g;
 function dayLabel(value: string): string {
   const date = parseDate(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return date.toLocaleDateString(dateLocale, { month: "short", day: "numeric", year: "numeric" });
 }
 
-/** "Jun 24, 2026"; dates inside a trailing note ("(revised from ...)") are formatted too. */
+/** "Jun 24, 2026" (or "2026年6月24日"); dates inside a trailing note ("(revised from ...)") are formatted too. */
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "";
   if (/^\d{4}-\d{2}-\d{2}(?!T)/.test(value)) return value.replace(ISO_DAY, dayLabel);
   return dayLabel(value);
 }
 
-/** "Jun 24" */
+/** "Jun 24" (or "6月24日") */
 export function formatDayMonth(value: string | null | undefined): string {
   if (!value) return "";
   const date = parseDate(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return date.toLocaleDateString(dateLocale, { month: "short", day: "numeric" });
 }
 
-/** "Fri, Aug 21", or "Fri, Jan 2, 2027" outside the current year. */
+/** "Fri, Aug 21" (or "8月21日周五"), with the year outside the current one. */
 export function formatWeekday(value: string | null | undefined): string {
   if (!value) return "";
   const date = parseDate(value);
   if (Number.isNaN(date.getTime())) return value;
   const year = date.getFullYear() === new Date().getFullYear() ? undefined : "numeric";
-  return date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year });
+  return date.toLocaleDateString(dateLocale, { weekday: "short", month: "short", day: "numeric", year });
 }
 
 /** "1 order", "3 orders". */
@@ -160,7 +175,7 @@ export function formatFieldValue(field: string, value: unknown, kinds: FieldKind
 
 const ISO_RANGE = /^(\d{4}-\d{2}-\d{2})\s*\/\s*(\d{4}-\d{2}-\d{2})$/;
 
-/** "2026-06-19/2026-06-25" as "Jun 19–25". */
+/** "2026-06-19/2026-06-25" as "Jun 19–25" (or "6月19日–25日"). */
 export function formatPeriodLabel(value: string | null | undefined): string {
   if (!value) return "";
   const match = ISO_RANGE.exec(value.trim());
@@ -174,13 +189,20 @@ export function formatPeriodLabel(value: string | null | undefined): string {
   if (start.getMonth() !== end.getMonth()) {
     return `${formatDayMonth(match[1])} – ${formatDayMonth(match[2])}`;
   }
-  return `${formatDayMonth(match[1])}–${end.getDate()}`;
+  return `${formatDayMonth(match[1])}–${end.getDate()}${cjkDates() ? "日" : ""}`;
+}
+
+/** The words for an abutting comparison window of the same length; a vertical passes its own. */
+export interface ComparisonLabels {
+  week: string;
+  period: string;
 }
 
 /** "prior week"/"prior period" when the windows abut at equal length; else the window's label. */
 export function formatComparisonLabel(
   period: string | null | undefined,
   compareTo: string | null | undefined,
+  labels: ComparisonLabels = { week: "prior week", period: "prior period" },
 ): string {
   if (!compareTo) return "";
   const primary = ISO_RANGE.exec(period?.trim() ?? "");
@@ -192,7 +214,7 @@ export function formatComparisonLabel(
     const compareEnd = parseDate(compare[2]).getTime();
     const compareDays = Math.round((compareEnd - parseDate(compare[1]).getTime()) / dayMs);
     if (primaryDays === compareDays && Math.round((primaryStart - compareEnd) / dayMs) === 1) {
-      return primaryDays === 6 ? "prior week" : "prior period";
+      return primaryDays === 6 ? labels.week : labels.period;
     }
   }
   return formatPeriodLabel(compareTo);

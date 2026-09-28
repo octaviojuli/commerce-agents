@@ -1,0 +1,135 @@
+{
+  "profile": "smoke",
+  "transport": "http",
+  "observed_at": "2026-09-24T19:34:06.133309+00:00",
+  "scale": {
+    "suppliers": 2,
+    "products_per_supplier": 10,
+    "departures_per_product": 5,
+    "concurrency": 4,
+    "requests": 40
+  },
+  "buyers": 4,
+  "counts": {
+    "supplier_product": 20,
+    "departure": 100,
+    "inventory_pool": 50,
+    "contract_price": 50
+  },
+  "environment": {
+    "os": "Linux",
+    "architecture": "x86_64",
+    "cpu_count": 4,
+    "python": "3.12.14",
+    "postgres": "16.15 (Debian 16.15-1.pgdg12+2)",
+    "database_max_connections": 30,
+    "database_pool_limit": 8,
+    "database_pool": "psycopg_pool",
+    "auth_pool_limit": 8,
+    "http_server_processes": 1,
+    "database_pool_limit_per_server": 8,
+    "auth_pool_limit_per_server": 8,
+    "http_client_connection_limit": 5,
+    "http_client_pool": "per-thread",
+    "http_topology": "client threads and server in separate processes"
+  },
+  "setup_seconds": 1.02,
+  "boundary": "real loopback TCP/HTTP including fixture-session authentication, request queueing, serialization, RLS, pool wait and quote writes; excludes login issuance, TLS/proxy, browser, LLM and upstream APIs",
+  "http_server_stopped": true,
+  "inventory_unchanged": true,
+  "quote_snapshots_created": 11,
+  "distinct_quote_count_matches": true,
+  "disposable_resources_cleaned": true,
+  "operations": {
+    "catalog": {
+      "requests": 10,
+      "errors": {},
+      "p50_ms": 49.34,
+      "p95_ms": 82.55,
+      "p99_ms": 82.55,
+      "max_ms": 82.55,
+      "target_p95_ms": 800,
+      "passed": true,
+      "server_timing_samples": 10,
+      "server_process_requests": {
+        "0": 10
+      },
+      "server_p95_to_headers_ms": 74.25
+    },
+    "departures": {
+      "requests": 10,
+      "errors": {},
+      "p50_ms": 68.54,
+      "p95_ms": 104.4,
+      "p99_ms": 104.4,
+      "max_ms": 104.4,
+      "target_p95_ms": 800,
+      "passed": true,
+      "server_timing_samples": 10,
+      "server_process_requests": {
+        "0": 10
+      },
+      "server_p95_to_headers_ms": 91.05
+    },
+    "managed_stock": {
+      "requests": 10,
+      "errors": {},
+      "p50_ms": 45.11,
+      "p95_ms": 82.41,
+      "p99_ms": 82.41,
+      "max_ms": 82.41,
+      "target_p95_ms": 300,
+      "passed": true,
+      "server_timing_samples": 10,
+      "server_process_requests": {
+        "0": 10
+      },
+      "server_p95_to_headers_ms": 74.24
+    },
+    "managed_quote": {
+      "requests": 10,
+      "errors": {},
+      "p50_ms": 166.79,
+      "p95_ms": 258.0,
+      "p99_ms": 258.0,
+      "max_ms": 258.0,
+      "target_p95_ms": 500,
+      "passed": true,
+      "server_timing_samples": 10,
+      "server_process_requests": {
+        "0": 10
+      },
+      "server_p95_to_headers_ms": 246.85
+    }
+  },
+  "elapsed_seconds": 0.97,
+  "passed": true,
+  "cgroup_cpu_measurement": {
+    "boundary": "warmup plus measured requests; excludes fixture creation and service startup",
+    "elapsed_seconds": 1.2361,
+    "delta": {
+      "database": {
+        "usage_usec": 1412153,
+        "user_usec": 1240870,
+        "system_usec": 171284,
+        "core_sched.force_idle_usec": 0,
+        "nr_periods": 12,
+        "nr_throttled": 0,
+        "throttled_usec": 0,
+        "nr_bursts": 0,
+        "burst_usec": 0
+      },
+      "client_and_server": {
+        "usage_usec": 1790350,
+        "user_usec": 1615890,
+        "system_usec": 174460,
+        "core_sched.force_idle_usec": 0,
+        "nr_periods": 12,
+        "nr_throttled": 0,
+        "throttled_usec": 0,
+        "nr_bursts": 0,
+        "burst_usec": 0
+      }
+    }
+  }
+}

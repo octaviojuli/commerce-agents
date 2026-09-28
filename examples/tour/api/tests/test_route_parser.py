@@ -144,7 +144,7 @@ def test_layout_one_reads_flights_places_sights_meals_hotels_and_terms():
     assert [(s.name, s.kind, s.duration, s.ticket_included) for s in d2.sights] == [
         ("狮子岩", "景点", "2H", None),
         ("著名品牌宝石店", "购物", "60分钟", None),
-        ("龙达斗牛场", "外观", "", False),
+        ("龙达斗牛场", "外观", "", None),
     ]
     assert d2.meals.breakfast.included and d2.meals.lunch.text == "当地餐食"
     assert not d1.meals.breakfast.included and d1.meals.breakfast.text == "X"
@@ -165,7 +165,26 @@ def test_layout_one_reads_flights_places_sights_meals_hotels_and_terms():
     )
     assert doc.notices[0] == "旅行团须知"
     assert doc.quality.completeness == 1.0 and doc.quality.needs_review == []
-    assert doc.source.parser == "docx-rules-4/docx" and doc.source.bytes == len(LAYOUT_ONE)
+    assert doc.source.parser == "docx-rules-8/docx" and doc.source.bytes == len(LAYOUT_ONE)
+    assert doc.source.page_locations == []  # DOCX has no stable physical pages.
+
+
+def test_pdf_original_blocks_keep_their_pages_separate_from_terms(monkeypatch):
+    monkeypatch.setattr("tour.api.pdf_source.unread_image_pages", lambda *args: [])
+    monkeypatch.setattr("tour.api.pdf_source.MIN_TEXT_CHARS", 0)
+    monkeypatch.setattr(
+        "tour.api.pdf_source.pdf_text",
+        lambda data, mode: (
+            "ACME 封面\n第1天 城市集合\n集合。\f\f第一天补充。\n第2天 城市返程\n返程。\f费用包含\n接待服务。\f"
+        ),
+    )
+    doc = parse_route(record(2), b"%PDF-ACME")
+    assert [(loc.section, loc.day, loc.pages) for loc in doc.source.page_locations] == [
+        ("cover", None, [1]),
+        ("itinerary", 1, [1, 3]),
+        ("itinerary", 2, [3]),
+        ("terms", None, [4]),
+    ]
 
 
 def test_layout_two_reads_inline_cover_km_figures_and_the_overview_fallback():
@@ -180,7 +199,7 @@ def test_layout_two_reads_inline_cover_km_figures_and_the_overview_fallback():
     assert d2.hotel is not None and d2.hotel.name == "巴塞罗那或周边" and not d2.hotel.or_similar
     assert d2.meals.dinner.text == "<伊比利亚火腿餐>" and d2.meals.dinner.included
     names = [(s.name, s.kind, s.ticket_included) for s in d2.sights]
-    assert ("圣家族大教堂", "景点", True) in names and ("米拉之家", "外观", False) in names
+    assert ("圣家族大教堂", "景点", True) in names and ("米拉之家", "外观", None) in names
     assert ("McArthurGlen Malaga购物村", "购物", None) in names
     assert d3.places == ["巴塞罗那", "瓦伦西亚"] and d3.distances_km == [350]
     assert d4.overnight == "home"
@@ -197,8 +216,8 @@ def test_layout_two_reads_inline_cover_km_figures_and_the_overview_fallback():
 def test_a_document_that_names_no_day_scores_zero_and_says_why():
     doc = parse_route(record(7), docx(paragraph("这是一份没有行程的文件")))
     assert doc.days == [] and doc.quality.completeness == 0.0
-    assert "附件天数 0 与 ERP 天数 7 不一致" in doc.quality.needs_review
-    assert "没有读到参考航班" in doc.quality.needs_review
+    assert "附件天号不连续或天数 0 与 ERP 天数 7 不一致" in doc.quality.needs_review
+    assert "没有读到参考航班" not in doc.quality.needs_review
 
 
 def test_the_score_names_each_missing_field():
@@ -298,9 +317,9 @@ def test_the_rules_the_first_review_round_added():
     ]
     assert [(s.name, s.kind, s.ticket_included) for s in d3.sights] == [
         ("上午自由活动", "自由活动", None),
-        ("独立广场", "外观", False),
-        ("印度教寺庙", "外观", False),
-        ("会议中心", "外观", False),
+        ("独立广场", "外观", None),
+        ("印度教寺庙", "外观", None),
+        ("会议中心", "外观", None),
     ]
     assert d3.overnight == "ship" and doc.summary.nights == 3 and d4.overnight == "home"
     assert [(o.name, o.price, o.day) for o in doc.optional] == [
@@ -395,7 +414,7 @@ def test_a_ticket_is_the_门票_and_never_the_官导():
     assert by_name["卡斯蒂亚老城"].ticket_included is True  # named in the 首道门票 list
     assert by_name["石桥公园"].kind == "景点" and by_name["石桥公园"].ticket_included is False
     assert by_name["圣谷修道院"].ticket_included is True
-    assert by_name["钟塔"].kind == "外观" and by_name["钟塔"].ticket_included is False
+    assert by_name["钟塔"].kind == "外观" and by_name["钟塔"].ticket_included is None
 
 
 def test_a_首道门票_list_and_a_prose_均外观_group_reach_the_sights():
@@ -406,7 +425,7 @@ def test_a_首道门票_list_and_a_prose_均外观_group_reach_the_sights():
         for s in d1.sights
         if s.name.endswith(("场", "塔", "门"))
     ]
-    assert ("议会广场", "外观", False) in prose and ("老港灯塔", "外观", False) in prose
+    assert ("议会广场", "外观", None) in prose and ("老港灯塔", "外观", None) in prose
     # The list says 其余景点均为外观, so a 景点 it does not name is one.
     assert [s.name for s in d1.sights if s.kind == "外观"] != []
 
@@ -778,3 +797,144 @@ def test_an_empty_住宿_row_takes_no_hotel_from_the_day_before():
     d1, d2, _ = doc.days
     assert d1.hotel is not None and d1.hotel.name == "都柏林精选酒店 4星"
     assert d2.hotel is None and d2.overnight == "unknown"
+
+
+def test_optional_day_recommendations_preserve_later_days_and_flight_numbers():
+    body = docx(
+        paragraph("第一天 ACME 机场"),
+        paragraph("参考航班：3U1234 1105-0500+1"),
+        paragraph("自费推荐行程："),
+        paragraph("【ACME 山谷】自愿参加，费用另付。"),
+        paragraph("餐：早、/、晚 || 住：飞机上 || 行：飞机"),
+        paragraph("第二天 ACME 城市"),
+        paragraph("自费推荐项目："),
+        paragraph("【ACME 花园】自费，若关闭则退门票。"),
+        paragraph("餐：/ || 住：温暖的家 || 行：无"),
+        paragraph("费用包含"),
+        paragraph("ACME 服务"),
+        paragraph("费用不含"),
+        paragraph("自费项目"),
+    )
+    result = parse_route(record(2, "ACME 两天"), body)
+    assert [day.day for day in result.days] == [1, 2]
+    assert "自费推荐行程" in result.days[0].text
+    assert "若关闭则退门票" in result.days[1].text
+    assert result.days[1].overnight == "home"
+    assert result.days[0].flights[0].flight_no == "3U1234"
+    assert result.days[0].flights[0].times == "1105-0500+1"
+    assert result.summary.nights is None
+    assert result.inclusions == ["ACME 服务"]
+    assert "ACME 服务" not in result.days[1].text
+
+
+def test_notices_are_not_silently_cut_after_forty_items():
+    body = docx(
+        paragraph("第一天 ACME 城市"),
+        paragraph("游览 ACME 景点。"),
+        paragraph("旅行团须知"),
+        *(paragraph(f"ACME 提示第 {n} 项须保留") for n in range(45)),
+    )
+    result = parse_route(record(1, "ACME 一天"), body)
+    assert any("第 44 项" in item for item in result.notices)
+
+
+def test_overview_column_names_and_repeated_flights_are_not_cover_facts():
+    body = docx(
+        paragraph("天数 行程 餐食 住宿"),
+        paragraph("参考航班 ZZ1001 0800-1000"),
+        paragraph("参考航班 ZZ1002 1800-2000"),
+        paragraph("航空公司 ACME 航空"),
+        paragraph("第一天 ACME 城市"),
+        paragraph("参考航班：ZZ1001 0800-1000"),
+        paragraph("游览 ACME 景点。"),
+    )
+    result = parse_route(record(1, "ACME 一天"), body)
+    assert "天数" not in result.cover.fields and "参考航班" not in result.cover.fields
+    assert result.cover.airline == "ACME 航空"
+    assert result.days[0].flights[0].flight_no == "ZZ1001"
+
+
+def _acme_bus():
+    from cloud_warehouse.route_doc import (
+        Cover,
+        Day,
+        Hotel,
+        Meal,
+        Meals,
+        Quality,
+        RouteDoc,
+        Sight,
+        Source,
+        Summary,
+    )
+
+    return RouteDoc(
+        route_id=1,
+        route_code="ACME",
+        name="ACME 巴士两日游",
+        department="ACME",
+        summary=Summary(days=2),
+        cover=Cover(hotel_standard="ACME 酒店"),
+        days=[
+            Day(
+                day=n,
+                title="甲城 → 乙城",
+                places=["甲城", "乙城"],
+                overnight="hotel",
+                hotel=Hotel(name="ACME 酒店"),
+                text="游览【ACME 公园】。",
+                meals=Meals(
+                    **{m: Meal(text="含", included=True) for m in ("breakfast", "lunch", "dinner")}
+                ),
+                sights=[Sight(name="ACME 公园")],
+            )
+            for n in (1, 2)
+        ],
+        inclusions=["巴士接送"],
+        exclusions=["个人消费"],
+        source=Source(
+            attachment_name="ACME.docx", attachment_url="", bytes=1, parsed_at=None, parser="test"
+        ),
+        quality=Quality(completeness=0),
+    )
+
+
+def test_bus_without_flight_evidence_redistributes_score_weight():
+    doc = _acme_bus()
+    assert score(doc) == (1.0, [])
+    doc.days[0].text += "送往机场。"
+    value, notes = score(doc)
+    assert value == 0.9 and "没有读到参考航班" in notes
+
+
+def test_each_non_home_day_requires_lunch_and_dinner():
+    for meal in ("lunch", "dinner"):
+        doc = _acme_bus()
+        getattr(doc.days[0].meals, meal).included = None
+        value, notes = score(doc)
+        assert value < 1 and "有的天没有读到完整三餐" in notes
+        doc.days[0].overnight = "home"
+        assert "有的天没有读到完整三餐" not in score(doc)[1]
+
+
+def test_hotel_type_without_a_name_is_missing_accommodation():
+    for hotel in (None, {"name": "  "}):
+        doc = _acme_bus()
+        from cloud_warehouse.route_doc import Hotel
+
+        doc.days[0].hotel = Hotel(**hotel) if hotel is not None else None
+        assert "有的天没有读到住宿" in score(doc)[1]
+
+
+def test_pdf_contiguous_days_outrank_more_fields_in_broken_order(monkeypatch):
+    monkeypatch.setattr("tour.api.pdf_source.unread_image_pages", lambda *args: [])
+    good, broken = _acme_bus(), _acme_bus()
+    good.quality.completeness = 0.5
+    broken.days[1].day = 3
+    broken.quality.completeness = 1
+    monkeypatch.setattr("tour.api.route_parser.pdf_lines", lambda body, mode: [mode])
+    monkeypatch.setattr(
+        "tour.api.route_parser._build",
+        lambda record, lines, *args: good if lines == ["default"] else broken,
+    )
+    assert parse_route(record(2, "ACME 巴士两日游"), b"%PDF-ACME") is good

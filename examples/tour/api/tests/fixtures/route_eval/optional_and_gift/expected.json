@@ -1,0 +1,67 @@
+{
+  "file": "ACME.docx",
+  "record": {
+    "route_id": 1,
+    "route_code": "ACME",
+    "route_name": "ACME 巴士两日游",
+    "days": 2,
+    "depart_city": "甲城",
+    "company_name": "ACME",
+    "from_price": 0,
+    "tags": [],
+    "itinerary_tags": [],
+    "price_tags": [],
+    "features": [],
+    "image_url": null,
+    "attachment_name": "ACME.docx",
+    "attachment_url": "https://files.example/ACME.docx"
+  },
+  "fields": {
+    "days": {
+      "/summary/days": 2,
+      "/days/0/day": 1,
+      "/days/1/day": 2,
+      "/days/0/title": "甲城-乙城",
+      "/days/1/title": "乙城-甲城"
+    },
+    "meals": {
+      "/days/0/meals/breakfast/included": true,
+      "/days/0/meals/lunch/included": false,
+      "/days/0/meals/dinner/included": true,
+      "/days/1/meals/breakfast/included": true,
+      "/days/1/meals/lunch/included": false,
+      "/days/1/meals/dinner/included": false
+    },
+    "lodging": {
+      "/days/0/overnight": "hotel",
+      "/days/0/hotel/name": "ACME 酒店",
+      "/days/0/hotel/or_similar": true,
+      "/days/1/overnight": "home"
+    },
+    "flights": {
+      "/transport": []
+    },
+    "sights": {
+      "/days/0/sights/0/name": "ACME 宫",
+      "/days/0/sights/0/kind": "外观",
+      "/days/0/sights/0/ticket_included": false
+    },
+    "inclusions": {
+      "/inclusions/0": "巴士接送；ACME 酒店住宿。",
+      "/inclusions/1": null
+    },
+    "exclusions": {
+      "/exclusions/0": "个人消费。"
+    },
+    "optional": {
+      "/optional/0/name": "ACME 游船",
+      "/optional/0/price": "120美元/人"
+    },
+    "shopping": {
+      "/shopping": []
+    },
+    "policies": {
+      "/policies/cancellation": "退团政策：出发前7天取消，收取20%。"
+    }
+  }
+}

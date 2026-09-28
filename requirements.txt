@@ -1,15 +1,16 @@
 # Copyright 2026 Anthropic PBC
 # SPDX-License-Identifier: Apache-2.0
 #
-# The seven packages of this repository, editable from their directories, and every
+# The eight packages of this repository, editable from their directories, and every
 # third-party package they need at run time, pinned to the versions the release was
 # tested against. Install with `pip install -r requirements.txt` inside a virtualenv;
 # `scripts/install.sh` runs that line. Nothing here resolves a repository package from
-# the package index: the seven names are unregistered there, and each pyproject pins its
+# the package index: the eight names are unregistered there, and each pyproject pins its
 # sibling dependencies to a version no index carries. To move a pin, edit it here and in
 # the pyproject that declares the range, then run the verify line in the README.
 
 -e ./commerce-common[examples]
+-e ./cloud-warehouse
 -e ./shopping-agent/core
 -e ./shopping-agent/runtime-messages-api
 -e ./shopping-agent/runtime-agent-sdk
@@ -55,3 +56,15 @@ starlette==1.6.0
 typing-extensions==4.16.0
 typing-inspection==0.4.4
 uvicorn==0.52.3
+SQLAlchemy==2.0.54
+alembic==1.20.0
+psycopg[binary]==3.3.6
+psycopg_pool==3.3.3
+openpyxl==3.1.5
+defusedxml==0.7.1
+prometheus-client==0.26.0
+Mako==1.4.3
+MarkupSafe==3.0.3
+et-xmlfile==2.0.0
+
+-e ./examples/tour/skills/tour-route-parser[vision]

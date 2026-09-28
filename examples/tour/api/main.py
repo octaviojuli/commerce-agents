@@ -210,13 +210,14 @@ app = host.app
 
 
 def install_login_guard(current: FastAPI) -> None:
-    """The two things a live deployment adds around the login.
+    """The live deployment's login and employee-data boundary.
 
     The demo's own session start goes. ``POST /api/session`` binds a session to whatever
     principal the caller names, which is the demo's stand-in for a credential, and against the
     agency's own ERP the principal is the employee behind a login. So that one route answers 403
-    and the workbench signs in through ``/api/login`` instead; every other route stands,
-    resuming a session by its id included.
+    and the workbench signs in through ``/api/login`` instead. Employee API routes require
+    a session with a live ERP login. Login status, health and token-based customer share
+    routes remain reachable without a live employee login.
 
     And a route that runs into a login the ERP no longer accepts answers 401 with the ERP's own
     words, rather than an outage, so the workbench asks ``/api/advisor`` and shows its sign-in
@@ -228,6 +229,23 @@ def install_login_guard(current: FastAPI) -> None:
     ) -> Response:
         if request.method == "POST" and request.url.path == "/api/session":
             return JSONResponse({"detail": LOGIN_FIRST}, status_code=403)
+        path = request.url.path
+        if (
+            path.startswith("/api/")
+            # A CORS preflight carries no header of the request it asks about, so it can
+            # carry no session id either; the CORS middleware answers it, and a guard that
+            # refuses it refuses every request behind it.
+            and request.method != "OPTIONS"
+            and path not in {"/api/login", "/api/health", "/api/advisor"}
+            and not path.startswith("/api/share/")
+        ):
+            session_id = request.headers.get("X-Session-Id", "")
+            try:
+                record = host.sessions.require(session_id)
+            except UnknownSessionError:
+                return JSONResponse({"detail": NEED_LOGIN}, status_code=401)
+            if registry.get(record.user_id) is None:
+                return JSONResponse({"detail": NEED_LOGIN}, status_code=401)
         return await call_next(request)
 
     @current.exception_handler(ErpAuth)

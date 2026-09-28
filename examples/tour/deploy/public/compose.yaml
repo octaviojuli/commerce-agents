@@ -1,0 +1,63 @@
+name: tour-internal
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: local/tour-api:20260914-public-01
+    network_mode: host
+    restart: unless-stopped
+    env_file: /opt/tour-agent/config/runtime.env
+    environment:
+      TOUR_STATE_DIR: /state
+      DEMO_LOG_LEVEL: INFO
+    volumes:
+    - /opt/tour-agent/state:/state
+    mem_limit: 384m
+    memswap_limit: 768m
+    cpus: 0.75
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:18004/api/health')
+      interval: 30s
+      timeout: 5s
+      start_period: 120s
+    logging: &id001
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  web:
+    image: docker.m.daocloud.io/library/node@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5
+    network_mode: host
+    restart: unless-stopped
+    user: node
+    working_dir: /app/tour/storefront-web
+    command:
+    - node
+    - server.js
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: '1'
+      HOSTNAME: 127.0.0.1
+      PORT: '18084'
+      NODE_OPTIONS: --max-old-space-size=160
+    volumes:
+    - /opt/tour-agent/releases/20260913-public-02/web:/app:ro
+    mem_limit: 224m
+    memswap_limit: 448m
+    cpus: 0.5
+    logging: *id001
+  proxy:
+    image: caddy:2.8-alpine
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+    - /opt/tour-agent/releases/20260913-public-02/Caddyfile:/etc/caddy/Caddyfile:ro
+    mem_limit: 48m
+    memswap_limit: 96m
+    cpus: 0.25
+    logging: *id001

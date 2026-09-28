@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from tour.api.route_doc import (
     SCHEMA_VERSION,
     Day,
+    PageLocation,
     Quality,
     RouteDoc,
     Source,
@@ -64,3 +65,18 @@ def test_a_field_the_schema_does_not_name_is_refused():
         RouteDoc.model_validate({**_doc().model_dump(mode="json"), "price": 1})
     with pytest.raises(ValidationError):
         Day(day=1, title="x", overnight="boat")
+
+
+@pytest.mark.parametrize("pages", [[], [0], [-1], [True], [1.5], ["1"], [2, 1], [1, 1]])
+def test_page_evidence_requires_positive_ordered_physical_pages(pages):
+    with pytest.raises(ValidationError):
+        PageLocation(section="itinerary", day=1, pages=pages)
+
+
+def test_page_evidence_is_optional_for_historical_documents_and_has_explicit_scope():
+    raw = _doc().model_dump(mode="json")
+    raw["source"].pop("page_locations")
+    assert RouteDoc.model_validate(raw).source.page_locations == []
+    for values in [{"section": "itinerary"}, {"section": "terms", "day": 1}]:
+        with pytest.raises(ValidationError):
+            PageLocation(**values, pages=[1])

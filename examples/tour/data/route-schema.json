@@ -1,5 +1,138 @@
 {
   "$defs": {
+    "Applicability": {
+      "additionalProperties": false,
+      "properties": {
+        "raw": {
+          "default": "",
+          "title": "Raw",
+          "type": "string"
+        },
+        "source_lines": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": "Source Lines",
+          "type": "array"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        },
+        "end": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "departure_cities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Departure Cities",
+          "type": "array"
+        },
+        "version_label": {
+          "default": "",
+          "title": "Version Label",
+          "type": "string"
+        }
+      },
+      "title": "Applicability",
+      "type": "object"
+    },
+    "CancellationTier": {
+      "additionalProperties": false,
+      "properties": {
+        "raw": {
+          "default": "",
+          "title": "Raw",
+          "type": "string"
+        },
+        "source_lines": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": "Source Lines",
+          "type": "array"
+        },
+        "days_before_min": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Days Before Min"
+        },
+        "days_before_max": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Days Before Max"
+        },
+        "penalty_percent": {
+          "anyOf": [
+            {
+              "maximum": 100.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Penalty Percent"
+        },
+        "penalty_money": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "CancellationTier",
+      "type": "object"
+    },
     "Cover": {
       "additionalProperties": false,
       "description": "The attachment's front matter: the labelled rows (航空公司, 酒店标准, 用餐安排, 吃/住/行)\nand the ★ highlights, as written.",
@@ -68,6 +201,48 @@
           "title": "Transport",
           "type": "string"
         },
+        "travel_reference": {
+          "default": "",
+          "maxLength": 4000,
+          "title": "Travel Reference",
+          "type": "string"
+        },
+        "countries": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Countries",
+          "type": "array"
+        },
+        "cities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Cities",
+          "type": "array"
+        },
+        "location_raw": {
+          "default": "",
+          "title": "Location Raw",
+          "type": "string"
+        },
+        "vehicle_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vehicle Type"
+        },
+        "vehicle_raw": {
+          "default": "",
+          "title": "Vehicle Raw",
+          "type": "string"
+        },
         "overnight": {
           "default": "unknown",
           "enum": [
@@ -112,6 +287,31 @@
           "default": "",
           "title": "Text",
           "type": "string"
+        },
+        "day_id": {
+          "default": "",
+          "maxLength": 80,
+          "title": "Day Id",
+          "type": "string"
+        },
+        "summary": {
+          "default": "",
+          "maxLength": 800,
+          "title": "Summary",
+          "type": "string"
+        },
+        "blocks": {
+          "items": {
+            "$ref": "#/$defs/ItineraryBlock"
+          },
+          "maxItems": 150,
+          "title": "Blocks",
+          "type": "array"
+        },
+        "summary_basis_hash": {
+          "default": "",
+          "title": "Summary Basis Hash",
+          "type": "string"
         }
       },
       "required": [
@@ -119,6 +319,26 @@
         "title"
       ],
       "title": "Day",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "raw": {
+          "default": "",
+          "title": "Raw",
+          "type": "string"
+        },
+        "source_lines": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": "Source Lines",
+          "type": "array"
+        }
+      },
+      "title": "Evidence",
       "type": "object"
     },
     "Flight": {
@@ -157,6 +377,44 @@
         "raw": {
           "title": "Raw",
           "type": "string"
+        },
+        "departure_local_time": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Departure Local Time"
+        },
+        "arrival_local_time": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Arrival Local Time"
+        },
+        "arrival_day_offset": {
+          "anyOf": [
+            {
+              "maximum": 3,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Arrival Day Offset"
         }
       },
       "required": [
@@ -164,6 +422,49 @@
         "raw"
       ],
       "title": "Flight",
+      "type": "object"
+    },
+    "Formation": {
+      "additionalProperties": false,
+      "properties": {
+        "raw": {
+          "default": "",
+          "title": "Raw",
+          "type": "string"
+        },
+        "source_lines": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": "Source Lines",
+          "type": "array"
+        },
+        "minimum_travelers": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum Travelers"
+        },
+        "failure_action": {
+          "default": "",
+          "title": "Failure Action",
+          "type": "string"
+        },
+        "booking_deadline": {
+          "default": "",
+          "title": "Booking Deadline",
+          "type": "string"
+        }
+      },
+      "title": "Formation",
       "type": "object"
     },
     "Hotel": {
@@ -183,6 +484,46 @@
           "default": "",
           "title": "Grade",
           "type": "string"
+        },
+        "grade_basis": {
+          "default": "unknown",
+          "enum": [
+            "supplier_description",
+            "official_rating",
+            "unknown"
+          ],
+          "title": "Grade Basis",
+          "type": "string"
+        },
+        "room_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Room Type"
+        },
+        "consecutive_nights": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Consecutive Nights"
+        },
+        "raw": {
+          "default": "",
+          "title": "Raw",
+          "type": "string"
         }
       },
       "required": [
@@ -191,9 +532,112 @@
       "title": "Hotel",
       "type": "object"
     },
+    "Insurance": {
+      "additionalProperties": false,
+      "properties": {
+        "raw": {
+          "default": "",
+          "title": "Raw",
+          "type": "string"
+        },
+        "source_lines": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": "Source Lines",
+          "type": "array"
+        },
+        "included": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Included"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "title": "Insurance",
+      "type": "object"
+    },
+    "ItineraryBlock": {
+      "additionalProperties": false,
+      "description": "Ordered presentation content. Evidence remains in the immutable original parse.",
+      "properties": {
+        "block_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Block Id",
+          "type": "string"
+        },
+        "type": {
+          "default": "programme",
+          "enum": [
+            "programme",
+            "transport",
+            "visit",
+            "free_time",
+            "shopping",
+            "optional",
+            "notice"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "title": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Title",
+          "type": "string"
+        },
+        "paragraphs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100,
+          "title": "Paragraphs",
+          "type": "array"
+        },
+        "visit_mode": {
+          "default": "unknown",
+          "enum": [
+            "inside",
+            "outside",
+            "passing",
+            "unknown"
+          ],
+          "title": "Visit Mode",
+          "type": "string"
+        },
+        "ticket_status": {
+          "default": "unknown",
+          "enum": [
+            "included",
+            "excluded",
+            "unknown"
+          ],
+          "title": "Ticket Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "block_id"
+      ],
+      "title": "ItineraryBlock",
+      "type": "object"
+    },
     "Meal": {
       "additionalProperties": false,
-      "description": "One meal: the text as written and whether the price includes it (X, ×, 自理 and an\nempty cell all mean it does not).",
+      "description": "An explicit meal statement; an empty cell remains unknown.",
       "properties": {
         "text": {
           "default": "",
@@ -232,6 +676,100 @@
       "title": "Meals",
       "type": "object"
     },
+    "Meeting": {
+      "additionalProperties": false,
+      "properties": {
+        "raw": {
+          "default": "",
+          "title": "Raw",
+          "type": "string"
+        },
+        "source_lines": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": "Source Lines",
+          "type": "array"
+        },
+        "location": {
+          "default": "",
+          "title": "Location",
+          "type": "string"
+        },
+        "time": {
+          "default": "",
+          "title": "Time",
+          "type": "string"
+        },
+        "domestic_connection": {
+          "default": "",
+          "title": "Domestic Connection",
+          "type": "string"
+        }
+      },
+      "title": "Meeting",
+      "type": "object"
+    },
+    "Money": {
+      "additionalProperties": false,
+      "properties": {
+        "raw": {
+          "default": "",
+          "title": "Raw",
+          "type": "string"
+        },
+        "source_lines": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": "Source Lines",
+          "type": "array"
+        },
+        "amount": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Amount"
+        },
+        "currency": {
+          "default": "",
+          "title": "Currency",
+          "type": "string"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "enum": [
+                "person",
+                "room",
+                "night"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        }
+      },
+      "title": "Money",
+      "type": "object"
+    },
     "OptionalItem": {
       "additionalProperties": false,
       "description": "A 自费项目 with the price as written (``120 美金/人``).",
@@ -256,12 +794,121 @@
           ],
           "default": null,
           "title": "Day"
+        },
+        "money": {
+          "$ref": "#/$defs/Money"
+        },
+        "raw": {
+          "default": "",
+          "title": "Raw",
+          "type": "string"
         }
       },
       "required": [
         "name"
       ],
       "title": "OptionalItem",
+      "type": "object"
+    },
+    "PageLocation": {
+      "additionalProperties": false,
+      "description": "Physical PDF pages of a parsed source block, not proof of every derived field.\n\nDay numbering refers to the original parse. Human revisions do not move these\nlocators. DOCX and historical parses without location evidence leave them absent.",
+      "properties": {
+        "section": {
+          "enum": [
+            "cover",
+            "itinerary",
+            "terms"
+          ],
+          "title": "Section",
+          "type": "string"
+        },
+        "day": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Day"
+        },
+        "pages": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "minItems": 1,
+          "title": "Pages",
+          "type": "array"
+        }
+      },
+      "required": [
+        "section",
+        "pages"
+      ],
+      "title": "PageLocation",
+      "type": "object"
+    },
+    "PassengerRule": {
+      "additionalProperties": false,
+      "properties": {
+        "raw": {
+          "default": "",
+          "title": "Raw",
+          "type": "string"
+        },
+        "source_lines": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": "Source Lines",
+          "type": "array"
+        },
+        "minimum_age": {
+          "anyOf": [
+            {
+              "maximum": 120,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum Age"
+        },
+        "maximum_age": {
+          "anyOf": [
+            {
+              "maximum": 120,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Age"
+        },
+        "bed_policy": {
+          "default": "",
+          "title": "Bed Policy",
+          "type": "string"
+        },
+        "conditions": {
+          "default": "",
+          "title": "Conditions",
+          "type": "string"
+        }
+      },
+      "title": "PassengerRule",
       "type": "object"
     },
     "Policies": {
@@ -331,12 +978,52 @@
           ],
           "default": null,
           "title": "Reviewed At"
+        },
+        "resolutions": {
+          "items": {
+            "$ref": "#/$defs/ReviewResolution"
+          },
+          "maxItems": 200,
+          "title": "Resolutions",
+          "type": "array"
         }
       },
       "required": [
         "completeness"
       ],
       "title": "Quality",
+      "type": "object"
+    },
+    "ReviewResolution": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "basis_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Basis Hash",
+          "type": "string"
+        },
+        "note": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "path",
+        "basis_hash",
+        "note"
+      ],
+      "title": "ReviewResolution",
       "type": "object"
     },
     "ShoppingStop": {
@@ -362,6 +1049,18 @@
           "default": "",
           "title": "Duration",
           "type": "string"
+        },
+        "categories": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Categories",
+          "type": "array"
+        },
+        "raw": {
+          "default": "",
+          "title": "Raw",
+          "type": "string"
         }
       },
       "required": [
@@ -372,7 +1071,7 @@
     },
     "Sight": {
       "additionalProperties": false,
-      "description": "One named stop of a day: a 【景点】, a 购物店, a 自费项目 or a 赠送 item. ``kind`` is\nwhat the words around it say; ``ticket_included`` is True on 含门票/入内, False on 外观,\nNone where the text says neither.",
+      "description": "One named stop of a day: a 【景点】, a 购物店, a 自费项目 or a 赠送 item. ``kind`` is\nwhat the words around it say; ``ticket_included`` follows explicit fee statements. Visiting inside or outside\ndoes not establish whether a ticket is included.",
       "properties": {
         "name": {
           "title": "Name",
@@ -407,6 +1106,11 @@
           ],
           "default": null,
           "title": "Ticket Included"
+        },
+        "raw": {
+          "default": "",
+          "title": "Raw",
+          "type": "string"
         }
       },
       "required": [
@@ -443,12 +1147,73 @@
           "type": "integer"
         },
         "parsed_at": {
-          "format": "date-time",
-          "title": "Parsed At",
-          "type": "string"
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Parsed At"
         },
         "parser": {
           "title": "Parser",
+          "type": "string"
+        },
+        "page_locations": {
+          "items": {
+            "$ref": "#/$defs/PageLocation"
+          },
+          "title": "Page Locations",
+          "type": "array"
+        },
+        "unread_image_pages": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": "Unread Image Pages",
+          "type": "array"
+        },
+        "lines": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 15000,
+          "title": "Lines",
+          "type": "array"
+        },
+        "variants": {
+          "items": {
+            "$ref": "#/$defs/SourceVariant"
+          },
+          "maxItems": 100,
+          "title": "Variants",
+          "type": "array"
+        },
+        "overview_meals": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Meals"
+          },
+          "title": "Overview Meals",
+          "type": "object"
+        },
+        "extraction_method": {
+          "default": "native",
+          "enum": [
+            "native",
+            "mineru",
+            "hybrid"
+          ],
+          "title": "Extraction Method",
+          "type": "string"
+        },
+        "extraction_hash": {
+          "default": "",
+          "pattern": "^(?:[a-f0-9]{64})?$",
+          "title": "Extraction Hash",
           "type": "string"
         }
       },
@@ -460,6 +1225,32 @@
         "parser"
       ],
       "title": "Source",
+      "type": "object"
+    },
+    "SourceVariant": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "start_line": {
+          "minimum": 1,
+          "title": "Start Line",
+          "type": "integer"
+        },
+        "end_line": {
+          "minimum": 1,
+          "title": "End Line",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "label",
+        "start_line",
+        "end_line"
+      ],
+      "title": "SourceVariant",
       "type": "object"
     },
     "Summary": {
@@ -504,6 +1295,76 @@
       ],
       "title": "Summary",
       "type": "object"
+    },
+    "TravelerRequirements": {
+      "additionalProperties": false,
+      "properties": {
+        "child": {
+          "$ref": "#/$defs/PassengerRule"
+        },
+        "senior": {
+          "$ref": "#/$defs/PassengerRule"
+        },
+        "pregnancy": {
+          "$ref": "#/$defs/Evidence"
+        },
+        "visa": {
+          "$ref": "#/$defs/VisaRule"
+        },
+        "insurance": {
+          "$ref": "#/$defs/Insurance"
+        }
+      },
+      "title": "TravelerRequirements",
+      "type": "object"
+    },
+    "VisaRule": {
+      "additionalProperties": false,
+      "properties": {
+        "raw": {
+          "default": "",
+          "title": "Raw",
+          "type": "string"
+        },
+        "source_lines": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": "Source Lines",
+          "type": "array"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "enum": [
+                "schengen",
+                "electronic",
+                "on_arrival",
+                "exempt"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Type"
+        },
+        "submission_deadline": {
+          "default": "",
+          "title": "Submission Deadline",
+          "type": "string"
+        },
+        "passport_validity": {
+          "default": "",
+          "title": "Passport Validity",
+          "type": "string"
+        }
+      },
+      "title": "VisaRule",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -511,6 +1372,11 @@
   "properties": {
     "schema_version": {
       "default": "1.0",
+      "enum": [
+        "1.0",
+        "2.0",
+        "3.0"
+      ],
       "title": "Schema Version",
       "type": "string"
     },
@@ -604,6 +1470,44 @@
       },
       "title": "Notices",
       "type": "array"
+    },
+    "applicability": {
+      "$ref": "#/$defs/Applicability"
+    },
+    "formation": {
+      "$ref": "#/$defs/Formation"
+    },
+    "service_fee": {
+      "$ref": "#/$defs/Money"
+    },
+    "single_room_supplement": {
+      "$ref": "#/$defs/Money"
+    },
+    "cancellation_tiers": {
+      "items": {
+        "$ref": "#/$defs/CancellationTier"
+      },
+      "title": "Cancellation Tiers",
+      "type": "array"
+    },
+    "traveler_requirements": {
+      "$ref": "#/$defs/TravelerRequirements"
+    },
+    "meeting": {
+      "$ref": "#/$defs/Meeting"
+    },
+    "shopping_total": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Shopping Total"
     },
     "source": {
       "$ref": "#/$defs/Source"

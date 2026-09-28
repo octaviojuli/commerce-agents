@@ -8,7 +8,7 @@ import type { ItineraryPayload } from "@/lib/types";
 import { CARD, DISPLAY, META, display } from "./shared";
 import { TravelCard } from "./TravelCarousel";
 
-/** travel_dates is free text: "2026-09-14 to 2026-09-17", "Oct 12 to Oct 16", "12-16 Oct", or no range. */
+/** travel_dates is free text: "2026-09-14 to 2026-09-17", "10月12日至16日", "12-16 Oct", or no range. */
 function parseNights(travelDates?: string): number | null {
   if (!travelDates) return null;
   const isoDates = travelDates.match(/\d{4}-\d{2}-\d{2}/g);
@@ -18,9 +18,10 @@ function parseNights(travelDates?: string): number | null {
     );
     return nights > 0 && nights <= 30 ? nights : null;
   }
-  const dayPair = /(\d{1,2})(?:\s+[A-Za-z]+)?\s*[–—-]\s*(?:[A-Za-z]+\s+)*(\d{1,2})/.exec(
-    travelDates,
-  );
+  const dayPair =
+    /(\d{1,2})\s*日?(?:\s*[（(][^）)]*[）)])?(?:\s+[A-Za-z]+)?\s*[–—~至到-]\s*(?:[A-Za-z]+\s+|\d{1,2}\s*月\s*)*(\d{1,2})/.exec(
+      travelDates,
+    );
   if (dayPair) {
     const nights = Number(dayPair[2]) - Number(dayPair[1]);
     return nights > 0 && nights <= 30 ? nights : null;
@@ -37,10 +38,10 @@ export default function ItineraryTimeline({
 }) {
   const days = payload.days ?? [];
 
-  // Day numbers parsed from labels ("Day 3 Evening" -> 3), else the sequence position.
+  // Day numbers parsed from labels ("第3天 傍晚" or "Day 3 Evening" -> 3), else the sequence position.
   const parsedDays = days.map((day, i) => {
-    const match = /day\s+(\d+)/i.exec(day.label);
-    return match ? Number(match[1]) : i + 1;
+    const match = /第\s*(\d+)\s*天|day\s+(\d+)/i.exec(day.label);
+    return match ? Number(match[1] ?? match[2]) : i + 1;
   });
 
   // The footer prices the stay as a total. Nights come from the plan's own day span, with
@@ -158,7 +159,6 @@ export default function ItineraryTimeline({
                     className="mt-1"
                     style={{
                       fontFamily: DISPLAY,
-                      fontStyle: "italic",
                       fontWeight: 400,
                       fontSize: 16,
                       lineHeight: 1.55,
@@ -225,10 +225,10 @@ export default function ItineraryTimeline({
       {partial ? (
         <p className="mt-3" style={{ ...META, fontSize: 11 }} aria-live="polite">
           {expectedDays == null
-            ? `Planning day ${days.length + 1}…`
+            ? `正在规划第 ${days.length + 1} 天…`
             : days.length < expectedDays
-              ? `Planning day ${days.length + 1} of ${expectedDays}…`
-              : "Finishing the plan…"}
+              ? `正在规划第 ${days.length + 1} 天（共 ${expectedDays} 天）…`
+              : "正在收尾…"}
         </p>
       ) : null}
 
@@ -241,26 +241,26 @@ export default function ItineraryTimeline({
             {stayGroups
               .map(
                 (group) =>
-                  `${group.nights} night${group.nights === 1 ? "" : "s"} · ${group.prices
+                  `${group.nights} 晚 · ${group.prices
                     .map((price) => formatPrice(price))
-                    .join(" or ")}/night`,
+                    .join(" 或 ")}/晚`,
               )
               .join(" + ")}
           </span>
           <span className="text-right">
             <span style={{ fontFamily: DISPLAY, fontSize: 20, fontWeight: 700, color: "var(--ink)" }}>
               {stayGroups.length === 1 && stayGroups[0].prices.length === 2
-                ? `${formatPrice(stayGroups[0].nights * stayGroups[0].prices[0])} or ${formatPrice(
+                ? `${formatPrice(stayGroups[0].nights * stayGroups[0].prices[0])} 或 ${formatPrice(
                     stayGroups[0].nights * stayGroups[0].prices[1],
                   )}`
                 : hasAlternatives
-                  ? `from ${formatPrice(stayTotal)}`
+                  ? `${formatPrice(stayTotal)} 起`
                   : formatPrice(stayTotal)}
             </span>
             <span style={{ ...META, fontSize: 11, marginLeft: 5 }}>
               {hasAlternatives
-                ? "stay total · your pick of stay · all-in"
-                : "stay total · all-in, fees included"}
+                ? "住宿合计 · 视你选的住宿而定 · 全含价"
+                : "住宿合计 · 全含价，已含税费"}
             </span>
           </span>
         </div>

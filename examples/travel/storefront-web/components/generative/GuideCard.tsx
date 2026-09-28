@@ -7,7 +7,6 @@ import type { GuidePayload } from "@/lib/types";
 import {
   BODY,
   CARD,
-  DISPLAY,
   META,
   MiniProductCard,
   display,
@@ -17,19 +16,7 @@ function SectionBody({ body }: { body: string }) {
   if (!body) return null;
   return (
     <p className="mt-1" style={{ fontFamily: BODY, fontSize: 15, lineHeight: 1.6, color: "var(--ink)" }}>
-      <span
-        style={{
-          fontFamily: DISPLAY,
-          fontWeight: 600,
-          fontSize: 24,
-          lineHeight: 1,
-          marginRight: 1,
-          color: "var(--ink)",
-        }}
-      >
-        {body.charAt(0)}
-      </span>
-      {body.slice(1)}
+      {body}
     </p>
   );
 }
@@ -71,7 +58,7 @@ export default function GuideCard({ payload }: { payload: GuidePayload }) {
 
       {payload.sources?.length ? (
         <p className="mt-3 break-all" style={{ fontFamily: BODY, fontSize: 11, color: "var(--ink-soft)" }}>
-          Sources:{" "}
+          来源：{" "}
           {payload.sources.map((source, i) => (
             <span key={source}>
               {i ? " · " : ""}

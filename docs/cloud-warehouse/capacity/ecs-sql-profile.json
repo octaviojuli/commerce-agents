@@ -1,0 +1,282 @@
+{
+  "boundary": "fictional warmup and measured requests; profiling overhead included; nested statement and function timings overlap",
+  "statements": [
+    {
+      "query": "SELECT o.id AS offer_id,o.version AS offer_version,o.name AS offer_name,o.service_description,o.inventory_pool_id,o.supplier_org_id,o.connection_id,d.id AS departure_id,\n        d.external_id,d.company_id,d.depart_date,d.code AS departure_code,p.effective_name AS product_name,p.name_origin AS product_name_origin,c.name AS source_name,d.version AS departure_version,p.version AS product_version,p.display_version,\n        d.sales_paused,d.local_booking_deadline,\n        c.connector_type,COALESCE(c.capabilities->>$3,$1) AS business_timezone,\n        g.id AS grant_id,g.version AS grant_version,g.expires_at AS grant_expires_at\n        FROM offer o JOIN departure d ON d.id=o.departure_id JOIN product_listing p ON p.id=d.product_id\n        JOIN supplier_connection c ON c.id=o.connection_id\n        JOIN distribution_grant g ON g.connection_id=o.connection_id AND g.buyer_org_id=warehouse_org_id()\n        WHERE o.id=$2 AND o.active AND d.status=$4 AND p.status=$5 AND c.active AND warehouse_live_grant(g.id)",
+      "calls": 303,
+      "total_exec_time": 15566.053622000007,
+      "total_plan_time": 1463.3675409999998,
+      "rows": 303
+    },
+    {
+      "query": "SELECT c.id FROM supplier_connection c\n      JOIN distribution_grant g ON g.connection_id=c.id AND g.supplier_org_id=c.supplier_org_id\n      JOIN organization o ON o.id=c.supplier_org_id\n      WHERE c.active AND o.active AND g.active AND g.buyer_org_id=warehouse_org_id()\n        AND g.valid_from<=now() AND (g.expires_at IS NULL OR g.expires_at>now())\n        AND (SELECT warehouse_has_org(warehouse_org_id()))",
+      "calls": 5454,
+      "total_exec_time": 13130.420574999987,
+      "total_plan_time": 15483.492111999964,
+      "rows": 10908
+    },
+    {
+      "query": "SELECT p.id,p.supplier_org_id,p.effective_name AS name,p.days,p.gateway,p.effective_description AS description,p.name_origin,p.description_origin,p.version,c.name AS source_name\n                FROM product_listing p JOIN supplier_connection c ON c.id=p.connection_id LEFT JOIN product_search s ON s.product_id=p.id WHERE p.status=$9\n                AND (CAST($1 AS uuid) IS NULL OR p.id>$1)\n                AND ($2=$10 OR (CASE WHEN s.product_version=p.version AND s.display_version=p.display_version THEN s.document ELSE lower(p.effective_name||$11||p.name||$12||p.code||$13||COALESCE(p.gateway,$14)) END)\n    LIKE $3 ESCAPE $15)\n                AND (CAST($4 AS integer) IS NULL OR p.days=$4)\n                AND ($5=$16 OR p.gateway=$5)\n                AND ((CAST($6 AS date) IS NULL AND CAST($7 AS date) IS NULL) OR EXISTS(\n                    SELECT $17 FROM departure d WHERE d.product_id=p.id AND d.status=$18\n                    AND (CAST($6 AS date) IS NULL OR d.depart_date>=$6)\n                    AND (CAST($7 AS date) IS NULL OR d.depart_date<=$7)))\n                ORDER BY p.id LIMIT $8",
+      "calls": 101,
+      "total_exec_time": 10041.253762999999,
+      "total_plan_time": 931.2122889999997,
+      "rows": 2626
+    },
+    {
+      "query": "SELECT EXISTS (\n        SELECT $2 FROM distribution_grant g WHERE g.id=grant_uuid AND g.active\n          AND g.valid_from<=now() AND (g.expires_at IS NULL OR g.expires_at>now())\n          AND (\n            (g.supplier_org_id=warehouse_org_id()\n              AND (SELECT warehouse_has_org(warehouse_org_id())))\n            OR (g.buyer_org_id=warehouse_org_id()\n              AND g.connection_id IN (SELECT warehouse_buyer_connections()))\n          )\n      )",
+      "calls": 909,
+      "total_exec_time": 7869.846861000006,
+      "total_plan_time": 1660.7510909999996,
+      "rows": 909
+    },
+    {
+      "query": "INSERT INTO quote_snapshot(id,buyer_org_id,actor_id,offer_id,grant_id,idempotency_key,request_hash,body,fresh_until) VALUES($1,$2,$3,$4,$5,$6,$7,CAST($8 AS jsonb),$9) ON CONFLICT(buyer_org_id,idempotency_key) DO NOTHING",
+      "calls": 101,
+      "total_exec_time": 6866.8388449999975,
+      "total_plan_time": 2334.6912030000003,
+      "rows": 101
+    },
+    {
+      "query": "WITH applicable AS MATERIALIZED (\n              SELECT * FROM warehouse_applicable_prices($1,$2)\n            )\n            SELECT p.*, boundary.next_start, grade.grade_id, grade.grade_version\n            FROM (SELECT min(valid_from) AS next_start FROM applicable WHERE valid_from>now()) boundary\n            LEFT JOIN LATERAL (\n              SELECT * FROM applicable WHERE valid_from<=now() AND valid_until>now()\n              ORDER BY CASE layer WHEN $3 THEN $4 WHEN $5 THEN $6 ELSE $7 END,id LIMIT $8\n            ) p ON $9\n            LEFT JOIN LATERAL (\n              SELECT b.id AS grade_id,b.version AS grade_version FROM buyer_price_grade b\n              JOIN offer o ON o.connection_id=b.connection_id\n              WHERE o.id=$1 AND b.buyer_org_id=$2\n            ) grade ON $10",
+      "calls": 303,
+      "total_exec_time": 6378.452940000003,
+      "total_plan_time": 1233.7189299999995,
+      "rows": 303
+    },
+    {
+      "query": "SELECT org = warehouse_org_id() AND EXISTS (\n   SELECT $2 FROM membership m JOIN warehouse_user u ON u.id=m.user_id\n   JOIN organization o ON o.id=m.organization_id\n   WHERE m.user_id=warehouse_user_id() AND m.organization_id=org AND m.active AND u.active AND o.active)",
+      "calls": 9797,
+      "total_exec_time": 5519.588958999979,
+      "total_plan_time": 8895.88988400004,
+      "rows": 9797
+    },
+    {
+      "query": "SELECT d.id,d.product_id,d.supplier_org_id,d.code,d.depart_date,d.return_date,\n          d.version,d.observed_at,d.sales_paused,d.local_booking_deadline,p.effective_name AS name,p.name_origin,o.id AS offer_id,c.name AS source_name,\n          COALESCE(c.capabilities->>$7,$8) AS business_timezone,\n          CASE WHEN i.id IS NOT NULL THEN i.total-i.sold-i.held-i.blocked\n            WHEN d.availability_expires_at>now() THEN d.available_seats END AS available,\n          CASE WHEN i.id IS NOT NULL THEN $9 WHEN d.availability_expires_at<=now() THEN $10\n            WHEN d.available_seats IS NULL THEN $11 ELSE $12 END AS availability_status\n          FROM departure d JOIN product_listing p ON p.id=d.product_id\n          JOIN supplier_connection c ON c.id=d.connection_id\n          LEFT JOIN inventory_pool i ON i.departure_id=d.id\n          LEFT JOIN offer o ON o.departure_id=d.id AND o.code=$13 AND o.active\n          WHERE d.status=$14 AND p.status=$15\n            AND (CAST($1 AS uuid) IS NULL OR d.product_id=$1)\n            AND (CAST($2 AS uuid) IS NULL OR d.id=$2)\n            AND (CAST($3 AS uuid) IS NULL OR d.id>$3)\n            AND (CAST($4 AS date) IS NULL OR d.depart_date>=$4)\n            AND (CAST($5 AS date) IS NULL OR d.depart_date<=$5)\n          ORDER BY d.id LIMIT $6",
+      "calls": 101,
+      "total_exec_time": 5334.3306379999985,
+      "total_plan_time": 2645.4763220000004,
+      "rows": 1010
+    },
+    {
+      "query": "SELECT d.id,d.product_id,d.code,d.depart_date,d.return_date,d.company_id,d.observed_at,\n            d.sales_paused,d.local_booking_deadline,COALESCE(c.capabilities->>$6,$7) AS business_timezone,\n            CASE WHEN i.id IS NULL THEN d.availability_expires_at ELSE $8 END AS availability_expires_at,\n            CASE WHEN i.id IS NOT NULL THEN i.total-i.sold-i.held-i.blocked WHEN d.availability_expires_at>now() THEN d.available_seats ELSE $9 END AS available_seats,\n            CASE WHEN i.id IS NOT NULL THEN $10 WHEN d.availability_expires_at<=now() THEN $11 WHEN d.available_seats IS NULL THEN $12 ELSE $13 END AS availability_status,\n            i.id AS inventory_pool_id,i.version AS inventory_version\n            FROM departure d JOIN supplier_product p ON p.id=d.product_id\n            JOIN supplier_connection c ON c.id=d.connection_id\n            LEFT JOIN inventory_pool i ON i.departure_id=d.id\n            WHERE (CAST($1 AS uuid) IS NULL OR d.product_id=$1) AND (CAST($2 AS date) IS NULL OR d.depart_date>=$2)\n            AND (CAST($3 AS date) IS NULL OR d.depart_date<=$3) AND p.status=$14 AND d.status=$15 AND NOT d.source_quarantined\n            ORDER BY d.depart_date,d.id LIMIT $4 OFFSET $5",
+      "calls": 101,
+      "total_exec_time": 3573.1245770000005,
+      "total_plan_time": 1570.6685479999999,
+      "rows": 1010
+    },
+    {
+      "query": "SELECT * FROM quote_snapshot WHERE (CAST($1 AS uuid) IS NULL OR id=$1) AND (CAST($2 AS text) IS NULL OR idempotency_key=$2)",
+      "calls": 202,
+      "total_exec_time": 3062.5345690000004,
+      "total_plan_time": 2811.052323000001,
+      "rows": 101
+    },
+    {
+      "query": "SELECT total-sold-held-blocked AS available FROM inventory_pool WHERE id=$1",
+      "calls": 101,
+      "total_exec_time": 1895.6531679999996,
+      "total_plan_time": 467.7334430000001,
+      "rows": 101
+    },
+    {
+      "query": "SELECT warehouse_has_role(CAST($1 AS text[]))",
+      "calls": 606,
+      "total_exec_time": 1608.2981449999986,
+      "total_plan_time": 1.8116510000000001,
+      "rows": 606
+    },
+    {
+      "query": "SELECT warehouse_has_org(warehouse_org_id()) AND EXISTS (\n   SELECT $2 FROM membership WHERE user_id=warehouse_user_id()\n   AND organization_id=warehouse_org_id() AND active AND roles && allowed)",
+      "calls": 707,
+      "total_exec_time": 1400.00583,
+      "total_plan_time": 360.2857280000002,
+      "rows": 707
+    },
+    {
+      "query": "SELECT public.warehouse_begin_context($1,$2)",
+      "calls": 505,
+      "total_exec_time": 781.4796239999998,
+      "total_plan_time": 3.8195470000000005,
+      "rows": 505
+    },
+    {
+      "query": "SELECT s.user_id, (CAST($1 AS uuid) IS NULL OR EXISTS (\n                  SELECT $3 FROM membership m JOIN organization o ON o.id=m.organization_id\n                  WHERE m.user_id=s.user_id AND m.organization_id=$1 AND m.active AND o.active\n                )) AS organization_allowed\n                FROM auth_session s JOIN warehouse_user u ON u.id=s.user_id\n                WHERE s.token_hash=$2 AND s.revoked_at IS NULL AND s.expires_at>now() AND u.active",
+      "calls": 404,
+      "total_exec_time": 222.32976100000022,
+      "total_plan_time": 402.51949699999994,
+      "rows": 404
+    },
+    {
+      "query": "INSERT INTO audit_event(id,organization_id,actor_id,action,resource_id,details) VALUES($1,$2,$3,$4,$5,CAST($6 AS jsonb))",
+      "calls": 101,
+      "total_exec_time": 172.94758899999997,
+      "total_plan_time": 9.244806999999998,
+      "rows": 101
+    },
+    {
+      "query": "SELECT $2 FROM ONLY \"public\".\"organization\" x WHERE \"id\" OPERATOR(pg_catalog.=) $1 FOR KEY SHARE OF x",
+      "calls": 202,
+      "total_exec_time": 19.28851999999999,
+      "total_plan_time": 6.095380000000003,
+      "rows": 202
+    },
+    {
+      "query": "SELECT pg_catalog.set_config($2,target_user::text,$3)",
+      "calls": 505,
+      "total_exec_time": 8.695102,
+      "total_plan_time": 9.181091,
+      "rows": 505
+    },
+    {
+      "query": "SELECT $2 FROM ONLY \"public\".\"distribution_grant\" x WHERE \"id\" OPERATOR(pg_catalog.=) $1 FOR KEY SHARE OF x",
+      "calls": 101,
+      "total_exec_time": 7.773046999999999,
+      "total_plan_time": 12.114469,
+      "rows": 101
+    },
+    {
+      "query": "SELECT $2 FROM ONLY \"public\".\"warehouse_user\" x WHERE \"id\" OPERATOR(pg_catalog.=) $1 FOR KEY SHARE OF x",
+      "calls": 202,
+      "total_exec_time": 5.0691939999999995,
+      "total_plan_time": 5.335575999999999,
+      "rows": 202
+    },
+    {
+      "query": "SELECT pg_catalog.set_config($3,target_organization::text,$4)",
+      "calls": 505,
+      "total_exec_time": 2.3838420000000022,
+      "total_plan_time": 0.309907,
+      "rows": 505
+    },
+    {
+      "query": "SELECT $2 FROM ONLY \"public\".\"offer\" x WHERE \"id\" OPERATOR(pg_catalog.=) $1 FOR KEY SHARE OF x",
+      "calls": 101,
+      "total_exec_time": 2.3590440000000004,
+      "total_plan_time": 6.502626,
+      "rows": 101
+    },
+    {
+      "query": "COMMIT",
+      "calls": 505,
+      "total_exec_time": 1.850546999999999,
+      "total_plan_time": 0.0,
+      "rows": 0
+    },
+    {
+      "query": "BEGIN",
+      "calls": 505,
+      "total_exec_time": 0.9408970000000004,
+      "total_plan_time": 0.0,
+      "rows": 0
+    },
+    {
+      "query": "BEGIN",
+      "calls": 404,
+      "total_exec_time": 0.8505729999999996,
+      "total_plan_time": 0.0,
+      "rows": 0
+    },
+    {
+      "query": "ROLLBACK",
+      "calls": 404,
+      "total_exec_time": 0.40041700000000024,
+      "total_plan_time": 0.0,
+      "rows": 0
+    },
+    {
+      "query": "BEGIN",
+      "calls": 1,
+      "total_exec_time": 0.0008,
+      "total_plan_time": 0.0,
+      "rows": 0
+    },
+    {
+      "query": "COMMIT",
+      "calls": 1,
+      "total_exec_time": 0.000624,
+      "total_plan_time": 0.0,
+      "rows": 0
+    },
+    {
+      "query": "public.warehouse_has_org(target_organization)",
+      "calls": 0,
+      "total_exec_time": 0.0,
+      "total_plan_time": 0.208991,
+      "rows": 0
+    }
+  ],
+  "functions": [
+    {
+      "funcname": "warehouse_buyer_connections",
+      "calls": 5299,
+      "total_time": 31579.789,
+      "self_time": 20941.793
+    },
+    {
+      "funcname": "warehouse_has_org",
+      "calls": 10335,
+      "total_time": 18892.152,
+      "self_time": 18892.152
+    },
+    {
+      "funcname": "warehouse_live_grant",
+      "calls": 874,
+      "total_time": 9803.946,
+      "self_time": 2404.535
+    },
+    {
+      "funcname": "warehouse_has_role",
+      "calls": 1092,
+      "total_time": 2060.131,
+      "self_time": 810.107
+    },
+    {
+      "funcname": "warehouse_begin_context",
+      "calls": 502,
+      "total_time": 771.492,
+      "self_time": 74.155
+    },
+    {
+      "funcname": "pg_stat_statements_reset",
+      "calls": 1,
+      "total_time": 0.384,
+      "self_time": 0.384
+    },
+    {
+      "funcname": "warehouse_default_offer",
+      "calls": 0,
+      "total_time": 0.0,
+      "self_time": 0.0
+    },
+    {
+      "funcname": "pg_stat_statements",
+      "calls": 0,
+      "total_time": 0.0,
+      "self_time": 0.0
+    },
+    {
+      "funcname": "warehouse_inventory_authority",
+      "calls": 0,
+      "total_time": 0.0,
+      "self_time": 0.0
+    },
+    {
+      "funcname": "warehouse_source_version",
+      "calls": 0,
+      "total_time": 0.0,
+      "self_time": 0.0
+    },
+    {
+      "funcname": "warehouse_bind_offer_pool",
+      "calls": 0,
+      "total_time": 0.0,
+      "self_time": 0.0
+    },
+    {
+      "funcname": "warehouse_record_product_revision",
+      "calls": 0,
+      "total_time": 0.0,
+      "self_time": 0.0
+    }
+  ]
+}
