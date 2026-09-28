@@ -52,8 +52,8 @@ export function QuoteCard({
   }, []);
   const stale =
     historical ||
-    quote.snapshot_stale ||
-    now >= new Date(quote.fresh_until).getTime();
+    (quote.quote_expired ?? quote.snapshot_stale) ||
+    now >= new Date(quote.quote_valid_until || quote.fresh_until).getTime();
   return (
     <article className={`${cardStyle} space-y-4`} aria-label="云仓报价结果">
       <div>
@@ -185,7 +185,8 @@ export function QuoteCard({
       </p>
       <div className="space-y-1 text-xs text-(--ink-soft)">
         <p>查询时间：{stamp(quote.observed_at)}</p>
-        <p>下次核价前最迟有效至：{stamp(quote.fresh_until)}</p>
+        <p>价格 {Math.max(0, Math.floor((now-new Date(quote.observed_at).getTime())/60000))} 分钟前核实</p>
+        <p>报价单有效至：{stamp(quote.quote_valid_until || quote.fresh_until)}</p>
         <p>来源价格有效期：{stamp(quote.expires_at)}</p>
         {quote.local_booking_deadline && (
           <p>云仓报名截止：{stamp(quote.local_booking_deadline)}</p>

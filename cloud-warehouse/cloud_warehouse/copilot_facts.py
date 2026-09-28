@@ -123,15 +123,22 @@ def read(engine, actor, product_id, departure_id=None, *, day=None):
 
 def adopted(engine, actor, identifier, version):
     with transaction(engine, actor) as conn:
+        brief, _ = copilot_records.trip_brief.load(conn, identifier)
         result = []
         for row in conn.execute(
             text(
-                "SELECT body FROM advisor_record WHERE deal_id=:id AND kind='inquiry_adoption' AND brief_version=:version ORDER BY created_at DESC LIMIT 12"
+                "SELECT body,brief_version FROM advisor_record WHERE deal_id=:id AND kind='inquiry_adoption' ORDER BY created_at DESC LIMIT 12"
             ),
             {"id": identifier, "version": version},
         ).mappings():
             body = row["body"]
             context = body["context"]
+            if "requirements" not in context and row["brief_version"] != version:
+                continue
+            if copilot_inquiries.dependency_reason(
+                conn, brief, {"context": context, "product_id": UUID(body["product_id"])}
+            ):
+                continue
             try:
                 current = copilot_inquiries.scope(
                     conn,
@@ -140,12 +147,16 @@ def adopted(engine, actor, identifier, version):
                 )
             except (ValueError, PermissionError):
                 continue
-            if current == context["source_versions"]:
+            if all(current.get(k) == v for k, v in context["source_versions"].items()):
                 result.append(
                     fact(
                         "本单商户回复：" + body["answer"],
                         "supplier_reply",
-                        {"reply_id": body["reply_id"], "deal_id": str(identifier)},
+                        {
+                            "reply_id": body["reply_id"],
+                            "deal_id": str(identifier),
+                            "product_id": "WP-" + body["product_id"],
+                        },
                     )
                 )
         return result

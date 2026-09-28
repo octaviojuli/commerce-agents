@@ -25,6 +25,8 @@ export type CustomerQuoteData = {
   snapshot_stale: boolean;
   observed_at: string;
   fresh_until: string;
+  quote_valid_until?: string;
+  quote_expired?: boolean;
   local_booking_deadline: string | null;
   share_expires_at?: string;
 };
@@ -42,7 +44,7 @@ export default function CustomerQuote({ quote }: { quote: CustomerQuoteData }) {
     return () => clearInterval(timer);
   }, []);
   const stale =
-    quote.snapshot_stale || now >= new Date(quote.fresh_until).getTime();
+    (quote.quote_expired ?? quote.snapshot_stale) || now >= new Date(quote.quote_valid_until || quote.fresh_until).getTime();
   if (
     quote.share_expires_at &&
     now >= new Date(quote.share_expires_at).getTime()
@@ -123,7 +125,7 @@ export default function CustomerQuote({ quote }: { quote: CustomerQuoteData }) {
       )}
       <div className="space-y-1 text-[15px] text-(--ink-soft)">
         <p>报价查询时间：{stamp(quote.observed_at)}（北京时间）</p>
-        <p>最迟重新核价时间：{stamp(quote.fresh_until)}（北京时间）</p>
+        <p>报价单有效至：{stamp(quote.quote_valid_until || quote.fresh_until)}（北京时间）</p>
         {quote.local_booking_deadline && (
           <p>云仓报名截止：{stamp(quote.local_booking_deadline)}（北京时间）</p>
         )}

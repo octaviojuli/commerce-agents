@@ -309,7 +309,7 @@ def list_deals(engine, actor, *, before=None, query="", limit=30):
 
 
 def detail(engine, actor, identifier):
-    from . import copilot_inquiries, copilot_sales, quotes
+    from . import copilot_engine, copilot_inquiries, copilot_sales, quotes
 
     with transaction(engine, actor) as conn:
         ensure(conn, actor, identifier)
@@ -351,6 +351,7 @@ def detail(engine, actor, identifier):
         if not available:
             records = [r for r in records if r["kind"] in PRIVATE_KINDS]
         for r in records:
+            r["stale_reason"] = ""
             if r["kind"] == "material_review" and r["body"].get("encrypted_candidates"):
                 from . import copilot_crypto
 
@@ -380,6 +381,16 @@ def detail(engine, actor, identifier):
                 "retail_quote",
                 "inquiry_adoption",
             }
+            if r["kind"] == "confirmation":
+                r["stale_reason"] = copilot_engine.confirmation_reason(r, brief, version)
+                r["stale"] = bool(r["stale_reason"])
+            if r["kind"] == "inquiry_adoption":
+                r["stale_reason"] = copilot_inquiries.dependency_reason(
+                    conn,
+                    brief,
+                    {"context": r["body"]["context"], "product_id": UUID(r["body"]["product_id"])},
+                )
+                r["stale"] = bool(r["stale_reason"])
             if r["kind"] == "retail_quote":
                 try:
                     r["stale"] = copilot_sales.current_retail(
@@ -408,6 +419,8 @@ def detail(engine, actor, identifier):
                             conn, UUID(scope["product_id"].removeprefix("WP-"))
                         )
                         r["stale"] |= any(current[k] != scope.get(k) for k in current)
+                        if r["stale"] and not r["stale_reason"]:
+                            r["stale_reason"] = "行程内容或适用条件已更新"
                     except (Forbidden, Conflict, ValueError):
                         r["stale"] = True
         customer = (

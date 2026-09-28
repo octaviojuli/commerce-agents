@@ -325,7 +325,13 @@ def save(conn, actor, identifier, brief, version):
             ),
             {"id": identifier, "departure": retained_departure},
         )
-    snapshot(conn, actor, identifier, brief, version)
+    if version != previous_version or not conn.scalar(
+        text(
+            "SELECT EXISTS(SELECT 1 FROM advisor_record WHERE deal_id=:id AND kind='state' AND brief_version=:version)"
+        ),
+        {"id": identifier, "version": version},
+    ):
+        snapshot(conn, actor, identifier, brief, version)
     return envelope(brief, version)
 
 
@@ -413,7 +419,6 @@ def patch(engine, actor, identifier, request: BriefPatch, *, model=False):
             updated.quote_fields_version = version + 1
             updated.share_token = None
             updated.offline_status = "none"
-            updated.offline_hold_note = ""
         if changed & ROUTE_FIELDS:
             # A new route search must not inherit a previously chosen route or
             # departure, including choices made by older automatic workflows.
@@ -422,6 +427,10 @@ def patch(engine, actor, identifier, request: BriefPatch, *, model=False):
             updated.departure_id = None
             updated.departure_title = None
             updated.offer_id = None
-        result = save(conn, actor, identifier, updated, version + 1)
+        result = (
+            save(conn, actor, identifier, updated, version + 1)
+            if changed
+            else envelope(brief, version)
+        )
         result["conflicts"] = conflicts
         return result

@@ -9,7 +9,7 @@ from starlette.concurrency import run_in_threadpool
 
 from shopping_agent import Product, SearchFilters
 
-from . import advisor_stages, quote_shares, trip_brief
+from . import advisor_stages, copilot_dependencies, quote_shares, trip_brief
 from .changes import Conflict
 from .integrations import fingerprint
 from .persistence import transaction
@@ -77,15 +77,20 @@ def snapshot(backend, session):
     return trip_brief.get(backend.engine, backend.actor, UUID(session.session_id))
 
 
-def _record(backend, session, version, updates):
+def _record(backend, session, version, updates, expected=None):
     identifier = UUID(session.session_id)
     with transaction(backend.engine, backend.actor) as conn:
         brief, current = trip_brief.load(conn, identifier, lock=True)
         if current != version:
             raise Conflict("需求单已变化，请重新读取后操作")
+        if expected and any(
+            getattr(brief, k) != getattr(expected, k)
+            for k in ("route_id", "departure_id", "offer_id", "quote_id")
+        ):
+            raise Conflict("所选方案或报价已变化，请重新读取后操作")
         for key, value in updates.items():
             setattr(brief, key, value)
-        return trip_brief.save(conn, backend.actor, identifier, brief, current + 1)
+        return trip_brief.save(conn, backend.actor, identifier, brief, current)
 
 
 async def perform(backend, session, state, command: Action):
@@ -159,7 +164,6 @@ async def perform(backend, session, state, command: Action):
                 quote=None,
                 share_token=None,
                 offline_status="none",
-                offline_hold_note="",
             )
         component, label = "warehouse_departures", "看团期：" + product.title
     elif command.action == "offers":
@@ -201,7 +205,6 @@ async def perform(backend, session, state, command: Action):
                 quote=None,
                 share_token=None,
                 offline_status="none",
-                offline_hold_note="",
             )
         component, label = "warehouse_offers", "查看方案：" + product.title
     elif command.action == "quote":
@@ -239,9 +242,12 @@ async def perform(backend, session, state, command: Action):
             quote_id=UUID(result["quote_id"]),
             quote_brief_version=saved["version"],
             quote=result,
-            share_token=None,
-            offline_status="none",
-            offline_hold_note="",
+            share_token=brief.share_token
+            if copilot_dependencies.same_quote(brief.quote, result)
+            else None,
+            offline_status=brief.offline_status
+            if copilot_dependencies.same_quote(brief.quote, result)
+            else "none",
         )
         component, label = "warehouse_quote", "询价：" + product.title
     elif command.action == "share_quote":
@@ -270,7 +276,7 @@ async def perform(backend, session, state, command: Action):
             "客人已确认" if command.action == "customer_confirmed" else "记录线下占位备注",
         )
     current = (
-        await run_in_threadpool(_record, backend, session, saved["version"], updates)
+        await run_in_threadpool(_record, backend, session, saved["version"], updates, brief)
         if updates
         else saved
     )

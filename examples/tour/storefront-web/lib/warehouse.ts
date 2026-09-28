@@ -57,6 +57,10 @@ export type Quote = {
   observed_at: string;
   expires_at: string | null;
   fresh_until: string;
+  quote_valid_until?: string;
+  quote_expired?: boolean;
+  price_stale?: boolean;
+  source_changed?: boolean;
 };
 
 /** Original chat shell, with warehouse identities and no legacy session/cart calls. */

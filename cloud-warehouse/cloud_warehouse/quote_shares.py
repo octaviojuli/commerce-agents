@@ -61,7 +61,8 @@ def create(engine, actor, quote_id, command: Create):
             ):
                 raise Conflict("相同请求编号不能用于不同分享条件")
             return {**existing, "token": None}
-        if quotes._display(conn, actor, row)["snapshot_stale"]:
+        view = quotes._display(conn, actor, row)
+        if view["quote_expired"]:
             raise Conflict("报价已失效，请重新询价后再创建分享")
         if command.advisor_record_id is not None:
             from . import copilot_records, copilot_sales
@@ -98,7 +99,13 @@ def create(engine, actor, quote_id, command: Create):
                     "hours": command.hours,
                     "hash": hashlib.sha256(token.encode()).hexdigest(),
                     "now": now,
-                    "expires": now + timedelta(hours=command.hours),
+                    "expires": min(
+                        now + timedelta(hours=command.hours),
+                        datetime.fromisoformat(view["quote_valid_until"]),
+                        datetime.fromisoformat(retail["body"]["expires_at"])
+                        if command.advisor_record_id
+                        else datetime.max.replace(tzinfo=UTC),
+                    ),
                     "retail": command.advisor_record_id,
                 },
             )

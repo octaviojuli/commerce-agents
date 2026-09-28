@@ -44,12 +44,40 @@ def scope(conn, product, departure=None):
     document = documents.current_in_transaction(
         conn, product, departure_id=departure, sales=departure is not None
     )
-    return {
+    result = {
         "product_version": current["version"],
         "display_version": current["display_version"],
         "connection_version": current["connection_version"],
         "publication_id": str(document["id"]) if document else None,
     }
+    if departure:
+        result["departure_version"] = conn.scalar(
+            text("SELECT version FROM departure WHERE id=:id AND product_id=:product"),
+            {"id": departure, "product": product},
+        )
+    return result
+
+
+def dependency_reason(conn, brief, inquiry):
+    context = inquiry["context"]
+    if context.get("departure_id") and brief.departure_id != "WD-" + context["departure_id"]:
+        return "所选团期已变化，请重新核实适用性"
+    expected = context.get("requirements")
+    if expected is not None:
+        current = brief.model_dump(mode="json")
+        if any(current[k]["value"] != value for k, value in expected.items()):
+            return "需求已变化：核实单中的出行条件需重新核实"
+    try:
+        current_scope = scope(
+            conn,
+            inquiry["product_id"],
+            UUID(context["departure_id"]) if context.get("departure_id") else None,
+        )
+        if any(current_scope.get(k) != value for k, value in context["source_versions"].items()):
+            return "线路、团期或行程内容已更新，请重新核实"
+    except (Forbidden, Conflict, ValueError):
+        return "线路授权已变化，请重新核实"
+    return ""
 
 
 def submit(engine, actor, identifier, request):
@@ -90,6 +118,10 @@ def submit(engine, actor, identifier, request):
             },
             "rooms": brief.rooms.model_dump(mode="json")["value"],
             "source_versions": scope(conn, product, departure),
+            "requirements": {
+                name: getattr(brief, name).model_dump(mode="json")["value"]
+                for name in ("window", "adults", "children", "seniors", "child_ages", "rooms")
+            },
         }
         return dict(
             conn.execute(
@@ -120,6 +152,7 @@ def page(engine, actor, *, deal_id=None, before=None, limit=30):
         require_role(conn, "advisor", "buyer_admin", "supplier_admin", "product_editor", "auditor")
         if deal_id:
             records.deal(conn, deal_id)
+            brief, version = records.trip_brief.load(conn, deal_id)
         rows = (
             conn.execute(
                 text("""SELECT id,deal_id,product_id,brief_version,question,context,created_at
@@ -160,6 +193,17 @@ def page(engine, actor, *, deal_id=None, before=None, limit=30):
                     else "replied"
                     if replies
                     else "submitted",
+                    "stale_reason": (
+                        dependency_reason(conn, brief, row)
+                        or (
+                            "需求已变化，请重新核实适用性"
+                            if "requirements" not in row["context"]
+                            and row["brief_version"] != version
+                            else ""
+                        )
+                    )
+                    if deal_id
+                    else "",
                 }
             )
         return {
@@ -217,7 +261,7 @@ def reply(engine, actor, identifier, request):
 
 def adopt(engine, actor, identifier, reply_id, request):
     with transaction(engine, actor) as conn:
-        _, version = records.checked(conn, identifier, request.expected_version)
+        brief, version = records.checked(conn, identifier, request.expected_version)
         row = (
             conn.execute(
                 text("""SELECT r.*,i.deal_id,i.brief_version,i.context,i.product_id,i.question
@@ -229,18 +273,12 @@ def adopt(engine, actor, identifier, reply_id, request):
         )
         if not row:
             raise Forbidden("回复不属于此跟单或授权已失效")
-        if row["brief_version"] != version:
+        if "requirements" not in row["context"] and row["brief_version"] != version:
             raise Conflict("需求已变化，请向商户重新核实适用性")
         context = row["context"]
-        if (
-            scope(
-                conn,
-                row["product_id"],
-                UUID(context["departure_id"]) if context.get("departure_id") else None,
-            )
-            != context["source_versions"]
-        ):
-            raise Conflict("线路或内容已更新，请重新核实")
+        reason = dependency_reason(conn, brief, row)
+        if reason:
+            raise Conflict(reason)
         result = records.append(
             conn,
             actor,

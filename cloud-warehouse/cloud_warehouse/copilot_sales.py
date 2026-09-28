@@ -1,6 +1,6 @@
 """Version-bound retail quotes and explicitly manual sales/receipt records."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -33,23 +33,28 @@ class Receipt(records.Command):
 
 
 def current_retail(conn, actor, identifier, record_id, *, require_fresh=True):
+    from . import copilot_dependencies
+
     record = records.record(conn, record_id, kind="retail_quote", deal_id=identifier)
     brief, version = records.trip_brief.load(conn, identifier)
     body = record["body"]
     stale = (
-        record["brief_version"] != version
-        or str(brief.quote_id) != body["quote_id"]
-        or datetime.fromisoformat(body["expires_at"]) <= datetime.now(UTC)
+        bool(copilot_dependencies.changed(body["dependencies"], brief))
+        if "dependencies" in body
+        else record["brief_version"] != version or str(brief.quote_id) != body["quote_id"]
     )
+    stale = stale or datetime.fromisoformat(body["expires_at"]) <= datetime.now(UTC)
     row = quotes._read(conn, UUID(body["quote_id"]))
     view = quotes._display(conn, actor, row) if row else None
-    stale = stale or view is None or view["snapshot_stale"]
+    stale = stale or view is None or view["quote_expired"]
     if require_fresh and stale:
         raise Conflict("报价或需求已经变化，请重新核价并确认")
     return record, view, stale
 
 
 def retail(engine, actor, identifier, request):
+    from . import copilot_dependencies, copilot_engine
+
     with transaction(engine, actor) as conn:
         previous = (
             conn.execute(
@@ -69,12 +74,7 @@ def retail(engine, actor, identifier, request):
                 raise Conflict("销售报价请求编号已用于其他内容")
             return dict(previous)
         brief, version = records.checked(conn, identifier, request.expected_version)
-        confirmation = conn.scalar(
-            text(
-                "SELECT EXISTS(SELECT 1 FROM advisor_record WHERE deal_id=:id AND kind='confirmation' AND brief_version=:version)"
-            ),
-            {"id": identifier, "version": version},
-        )
+        confirmation = copilot_engine.current_confirmation(conn, identifier, brief, version)
         if (
             not confirmation
             or brief.quote_id is None
@@ -86,7 +86,7 @@ def retail(engine, actor, identifier, request):
             raise Conflict("结算报价不可用，请重新询价")
         quote = quotes._display(conn, actor, row)
         if (
-            quote["snapshot_stale"]
+            quote["quote_expired"]
             or not quote.get("complete")
             or quote.get("settlement_total") is None
         ):
@@ -108,7 +108,8 @@ def retail(engine, actor, identifier, request):
             "profit": quotes._money(profit),
             "currency": quote["currency"],
             "loss_confirmed": request.loss_confirmed,
-            "expires_at": (datetime.now(UTC) + timedelta(hours=24)).isoformat(),
+            "expires_at": quote["quote_valid_until"],
+            "dependencies": copilot_dependencies.stamp(brief),
             "fresh_until": quote["fresh_until"],
             "product_name": quote["product_name"],
             "departure_date": quote["departure_date"],
@@ -141,6 +142,8 @@ def customer_projection(conn, actor, record_id, quote):
             "snapshot_stale": stale,
             "retail_quote": True,
             "retail_expires_at": body["expires_at"],
+            "quote_valid_until": body["expires_at"],
+            "quote_expired": stale,
         }
     )
     return result

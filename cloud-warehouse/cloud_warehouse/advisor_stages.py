@@ -11,8 +11,14 @@ def derive(brief):
     stale = bool(brief.quote_id and (brief.quote_brief_version or 0) < brief.quote_fields_version)
     if brief.quote_id:
         try:
-            fresh = datetime.fromisoformat((brief.quote or {})["fresh_until"])
-            stale = stale or fresh <= datetime.now(UTC) or bool(brief.quote.get("snapshot_stale"))
+            valid_until = datetime.fromisoformat(
+                (brief.quote or {}).get("quote_valid_until") or brief.quote["fresh_until"]
+            )
+            stale = (
+                stale
+                or valid_until <= datetime.now(UTC)
+                or bool(brief.quote.get("quote_expired", brief.quote.get("snapshot_stale")))
+            )
         except (KeyError, ValueError, TypeError):
             stale = True
     if not ready["search"]["ready"]:
@@ -55,7 +61,7 @@ def public_suggestions(brief, values, seen):
         if not isinstance(item, str) or not 1 <= len(item.strip()) <= 160:
             continue
         item = item.strip()
-        if not set(re.findall(r"\bW[PDO]-[A-Za-z0-9-]+", item)) <= set(seen):
+        if not set(re.findall(r"(?<![A-Za-z0-9])W[PDO]-[A-Za-z0-9-]+", item)) <= set(seen):
             continue
         if re.search(r"下单|支付|收款|自动占位|立即占位|锁位", item):
             continue

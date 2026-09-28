@@ -3,8 +3,8 @@
 from pydantic import Field
 from sqlalchemy import text
 
+from . import copilot_dependencies, trip_brief
 from . import copilot_records as records
-from . import trip_brief
 from .changes import Conflict
 from .integrations import fingerprint
 from .persistence import transaction
@@ -48,7 +48,9 @@ def material(brief):
 
 
 def invalidate(conn, identifier, previous, updated):
-    if fingerprint(material(previous)) == fingerprint(material(updated)):
+    if fingerprint(material(previous)) == fingerprint(
+        material(updated)
+    ) and copilot_dependencies.same_quote(previous.quote, updated.quote):
         return
     conn.execute(
         text("""UPDATE quote_share SET revoked_at=now() WHERE revoked_at IS NULL AND (
@@ -210,8 +212,14 @@ def revert(engine, actor, identifier, state_id, request):
 
 
 def confirm(engine, actor, identifier, request):
+    from . import quotes
+
     with transaction(engine, actor) as conn:
         brief, version = records.checked(conn, identifier, request.expected_version)
+        if brief.quote_id:
+            quote = quotes._read(conn, brief.quote_id)
+            if quote is None or quotes._display(conn, actor, quote)["quote_expired"]:
+                raise Conflict("报价已到期或适用条件变化，请重新询价")
         if not brief.offer_id or not trip_brief.readiness(brief)["quote"]["ready"]:
             raise Conflict("请先选定团期方案并补齐人数、年龄和房型")
         if set(request.confirmed_items) != set(CONFIRM_ITEMS):
@@ -225,10 +233,33 @@ def confirm(engine, actor, identifier, request):
                 "items": list(CONFIRM_ITEMS),
                 "evidence": request.evidence,
                 "material_hash": fingerprint(material(brief)),
+                "dependencies": copilot_dependencies.stamp(brief),
             },
             version,
             str(request.request_id),
         )
+
+
+def confirmation_reason(record, brief, version):
+    dependencies = record["body"].get("dependencies")
+    if dependencies is not None:
+        return copilot_dependencies.changed(dependencies, brief)
+    return (
+        "需求已变化，请重新核对确认单"
+        if record["brief_version"] != version
+        or record["body"].get("material_hash") != fingerprint(material(brief))
+        else ""
+    )
+
+
+def current_confirmation(conn, identifier, brief, version):
+    rows = conn.execute(
+        text(
+            "SELECT * FROM advisor_record WHERE deal_id=:id AND kind='confirmation' ORDER BY created_at DESC,id DESC"
+        ),
+        {"id": identifier},
+    ).mappings()
+    return next((row for row in rows if not confirmation_reason(row, brief, version)), None)
 
 
 def clarity(brief):

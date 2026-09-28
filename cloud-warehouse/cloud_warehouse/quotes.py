@@ -283,7 +283,8 @@ def _versions(context):
 
 
 def _display(conn, actor, row):
-    stale = row["fresh_until"] <= datetime.now(UTC)
+    price_stale = row["fresh_until"] <= datetime.now(UTC)
+    source_changed = False
     body = row["body"]
     try:
         current = _scope(
@@ -295,14 +296,25 @@ def _display(conn, actor, row):
                 party=body["party"],
             ),
         )
-        stale = (
-            stale
-            or _versions(current) != body["versions"]
-            or current["business_timezone"] != body.get("business_timezone")
-        )
+        source_changed = _versions(current) != body["versions"] or current[
+            "business_timezone"
+        ] != body.get("business_timezone")
     except Conflict:
-        stale = True
-    result = {**body, "snapshot_stale": stale, "fresh_until": row["fresh_until"].isoformat()}
+        source_changed = True
+    stale = price_stale or source_changed
+    import os
+
+    hours = min(168, max(1, int(os.environ.get("WAREHOUSE_ADVISOR_QUOTE_HOURS", "24"))))
+    valid_until = row["created_at"] + timedelta(hours=hours)
+    result = {
+        **body,
+        "snapshot_stale": stale,
+        "price_stale": price_stale,
+        "source_changed": source_changed,
+        "quote_valid_until": valid_until.isoformat(),
+        "quote_expired": source_changed or valid_until <= datetime.now(UTC),
+        "fresh_until": row["fresh_until"].isoformat(),
+    }
     if stale:
         result.update(
             {"available_seats": None, "availability_status": "stale", "capacity_sufficient": None}
@@ -567,6 +579,9 @@ def customer_view(quote: dict) -> dict:
             "expires_at",
             "fresh_until",
             "snapshot_stale",
+            "price_stale",
+            "quote_valid_until",
+            "quote_expired",
             "confirmation_required",
             "reservation_created",
         )
