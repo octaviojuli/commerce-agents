@@ -80,6 +80,17 @@ function RoutePage() {
           </div>
         </div>
         <div className="pad" style={{ paddingTop: 12 }}>
+          {route.published && (
+            <a
+              className="b b-br"
+              style={{ display: "block", textAlign: "center", marginBottom: 10 }}
+              href={`/api/routes/${pid}/page${deal ? `?deal=${deal}` : ""}`}
+              target="_blank"
+              rel="noopener"
+            >
+              看完整线路
+            </a>
+          )}
           {route.supplier.id && (
             <div className="card row" style={{ gap: 8, marginBottom: 10 }}>
               <span className="lbl">供应商</span>
@@ -167,7 +178,7 @@ function RoutePage() {
               <b>{route.days_outline.length} 天怎么走</b>
               {route.days_outline.length > 5 && (
                 <button className="linkish" onClick={() => setAll(!all)}>
-                  {all ? "收起" : "看完整行程"}
+                  {all ? "收起" : "展开全部天数"}
                 </button>
               )}
             </div>

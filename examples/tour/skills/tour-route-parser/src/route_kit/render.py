@@ -19,13 +19,19 @@ def _embed(data: dict) -> str:
     return json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")
 
 
-def page(content: dict, cover: bytes | None = None) -> str:
-    """The detail page; ``cover`` (JPEG) is embedded as the hero picture."""
+def page(content: dict, cover: bytes | None = None, *, audience: str = "review") -> str:
+    """The detail page; ``cover`` (JPEG) is embedded as the hero picture.
+
+    ``audience="customer"`` shows only the customer view, for published content that carries
+    no source evidence (a sales projection).
+    """
     template = (TEMPLATES / "route.html").read_text()
     head, _, rest = template.partition("__TITLE__")
     body, _, tail = rest.partition("__DATA__")
     title = html.escape(content.get("title") or "线路详情")
     data = dict(content)
+    if audience == "customer":
+        data["audience"] = "customer"
     if cover:
         data["cover_data"] = "data:image/jpeg;base64," + base64.b64encode(cover).decode()
     return head + title + body + _embed(data) + tail

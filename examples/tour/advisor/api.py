@@ -25,8 +25,9 @@ from fastapi import (
     Response,
     UploadFile,
 )
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
+from route_kit.render import page as route_page_html
 from sqlalchemy import text
 
 from . import closing, db, memory, papers, privacy, routes, selling, store, suppliers
@@ -554,6 +555,31 @@ def create_app(settings: Settings, *, model=None, transport=None, judge=None):
             "facts": len(view.facts()),
         }
 
+    @app.get("/api/routes/{product_id}/page")
+    async def route_page(product_id: str, session: Session, deal: UUID | None = None):
+        """The whole published route, drawn by the route kit's own page in its customer view."""
+        owner = owner_of(session)
+        departure = None
+        if deal:
+            with engine.connect() as conn:
+                d = store.deal(conn, owner, deal)
+                if (d.get("route") or {}).get("product_id") == product_id:
+                    departure = (d.get("departure") or {}).get("departure_id")
+        wh = warehouse(session)
+        try:
+            doc = await routes.document(wh, product_id, departure)
+            body = (doc or {}).get("body")
+            if not body or body.get("schema") != "route-kit/1":
+                raise HTTPException(404, "这条线路还没有发布完整行程")
+            cover = await wh.picture(body["cover_asset_id"]) if body.get("cover_asset_id") else None
+        finally:
+            await wh.aclose()
+        html = route_page_html(body, cover[0] if cover else None, audience="customer")
+        return HTMLResponse(
+            html,
+            headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+        )
+
     @app.post("/api/routes/{product_id}/ask")
     async def ask_route(product_id: str, body: Ask, session: Session):
         owner = owner_of(session)
@@ -638,6 +664,10 @@ def create_app(settings: Settings, *, model=None, transport=None, judge=None):
         )
 
     # ------------------------------------------------------------ closing
+
+    @app.delete("/api/deals/{deal_id}/route")
+    def release_route(deal_id: UUID, session: Session):
+        return closing.release_route(engine, owner_of(session), deal_id)
 
     @app.get("/api/deals/{deal_id}/dates")
     async def dates(deal_id: UUID, session: Session, compare: str = ""):

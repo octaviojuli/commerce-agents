@@ -83,6 +83,14 @@ class Warehouse:
             raise WarehouseError(response.status_code, _message(response))
         return response.json()
 
+    async def picture(self, asset_id, limit=5_000_000):
+        """A route's cover picture (bytes and type), or None; never more than ``limit`` bytes."""
+        response = await self.client.get(f"/v1/documents/{asset_id}/file", headers=self._headers())
+        kind = response.headers.get("content-type", "")
+        if response.status_code >= 400 or not kind.startswith("image/"):
+            return None
+        return (response.content, kind) if len(response.content) <= limit else None
+
     async def _post(self, path, body, headers=None):
         response = await self.client.post(path, headers=self._headers(headers), json=body)
         if response.status_code >= 400:

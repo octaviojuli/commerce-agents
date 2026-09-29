@@ -120,6 +120,12 @@ export default function DealPage() {
       case "plan":
         router.push(`/deals/${id}/plan?ids=${ids.join(",")}`);
         break;
+      case "release_route":
+        // Taking the route back voids its sheets and prices; the deal returns to choosing.
+        await api.del(`/deals/${id}/route`);
+        toast("已退回这条线，可以重新选线");
+        await load();
+        break;
       default:
         router.push(`/deals/${id}/${{ dates: "dates", confirm: "confirm", qa: "qa" }[chip.action] ?? chip.action}`);
     }

@@ -75,7 +75,22 @@ export default function DatesPage() {
   const byDate = Object.fromEntries((data?.items ?? []).map((d) => [d.date, d]));
   return (
     <div className="app">
-      <Top title={data ? `选了${data.route.title}` : "团期选择"} sub={[data?.route.supplier, data?.window ? `需求时间：${data.window}` : ""].filter(Boolean).join(" · ")} back={`/deals/${id}`} />
+      <Top
+        right={
+          data && (
+            <button
+              className="b sm b-soft"
+              onClick={async () => {
+                await api.del(`/deals/${id}/route`);
+                toast("已退回这条线");
+                router.push(`/deals/${id}/search`);
+              }}
+            >
+              不选这条
+            </button>
+          )
+        }
+        title={data ? `选了${data.route.title}` : "团期选择"} sub={[data?.route.supplier, data?.window ? `需求时间：${data.window}` : ""].filter(Boolean).join(" · ")} back={`/deals/${id}`} />
       <Track stage={2} />
       <div className="sc">
         <div className="pad" style={{ paddingTop: 12 }}>

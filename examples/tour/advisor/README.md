@@ -34,6 +34,10 @@ departures, offers and quotes.
 - A price belongs to one deal, route, offer and departure, the party and rooms it was asked
   for, and the need's window; `pricing.validity` is the one rule. Only a departure of the
   deal's route is priced.
+- The advisor can take a chosen route back (`DELETE /api/deals/{id}/route`): the deal returns
+  to choosing and the route's departure, sheets and prices are void.
+- `GET /api/routes/{id}/page` is the whole published route drawn by the route kit's own page
+  (`route_kit.render.page`) in its customer view, with the route's cover picture.
 - A route is taken only through `closing.settle_route` and a sheet confirmed only through
   `closing.confirm_sheet`, whether from a button or the conversation. Another route voids the
   deal's departure, confirmations and prices; another departure or offer voids its

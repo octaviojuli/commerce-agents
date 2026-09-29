@@ -201,6 +201,18 @@ def settle_route(conn, owner, deal_id, product_id, title, supplier=None):
     return deal, route
 
 
+def release_route(engine, owner, deal_id):
+    """The advisor takes the route back: the deal returns to choosing, and nothing made for the
+    route (its departure, confirmation sheets or prices) survives."""
+    with engine.begin() as conn:
+        deal = store.deal(conn, owner, deal_id, lock=True)
+        if not deal.get("route"):
+            return {"route": None, "previous": None}
+        void_settled(conn, owner, deal_id, "线路已退回，需要重新选线")
+        store.update_deal(conn, owner, deal_id, route=None, departure=None, next_step="选线")
+        return {"route": None, "previous": deal["route"]}
+
+
 def choose_route(engine, owner, deal_id, product_id, title, supplier=None):
     with engine.begin() as conn:
         deal, route = settle_route(conn, owner, deal_id, product_id, title, supplier)

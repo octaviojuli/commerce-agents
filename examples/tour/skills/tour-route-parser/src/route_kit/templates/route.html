@@ -199,6 +199,8 @@ body[data-view="raw"] .raw-only{display:revert}
   .stats b{font-size:16px}
 }
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+.customer-only .seg,.customer-only a.crumb,.customer-only .panel{display:none}
+@media (min-width:1024px){.customer-only .cols{grid-template-columns:250px minmax(0,1fr)}}
 </style>
 </head>
 <body data-view="customer">
@@ -224,6 +226,10 @@ body[data-view="raw"] .raw-only{display:revert}
 <script>
 (function(){
 const R=JSON.parse(document.getElementById("data").textContent);
+// A published route without its evidence (the sales projection) shows only the customer view.
+const CUSTOMER=R.audience==="customer"||!R.source;
+R.source=R.source||{};R.units=R.units||[];
+if(CUSTOMER)document.documentElement.classList.add("customer-only");
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 // Display-only tidying of supplier punctuation; the JSON keeps the source wording.
@@ -360,7 +366,7 @@ function renderCenter(){
      ${optRows.length?`<h3 style="font-size:14px;margin:12px 0 6px">自费项目（自愿参加）</h3><div class="tw"><table class="t"><tr><th>项目</th><th>价格</th><th>时长</th><th>说明</th><th>天</th></tr>${optRows.map(r=>`<tr>${r.map(c=>`<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</table></div>`:`<p class="hint">附件未列出自费项目。</p>`}</section>`+
    `<section class="card" id="sec-policy"><h2 class="h">单房差、儿童与退改</h2>${pol.length?pol.map(([k,l])=>`<div class="group"><h3>${l}</h3><ul class="plain">${R.policies[k].map(x=>`<li>${T(x.text)}</li>`).join("")}</ul></div>`).join(""):`<p class="hint">附件未列出。</p>`}</section>`+
    `<section class="card" id="sec-notice"><h2 class="h">温馨提示与注意事项</h2>${R.notices.length?R.notices.map(g=>`<details class="group" ${g.items.length<=4?"open":""}><summary style="font-size:14px;color:var(--ink)"><b>${esc(g.title||NOTICE[g.category])}</b> · ${g.items.length} 条</summary><ul class="plain" style="margin-top:6px">${g.items.map(x=>`<li>${T(x.text)}${picTag(x.cite)}${x.auto?`<span class="review-only mw">原样挂入，待审</span>`:""}</li>`).join("")}</ul></details>`).join(""):`<p class="hint">附件未列出。</p>`}</section>`+
-   `<p class="hint" style="text-align:center">根据供应商附件《${esc(R.source.file_name)}》自动整理，发布前须人工核对。</p>`;
+   (R.source.file_name?`<p class="hint" style="text-align:center">根据供应商附件《${esc(R.source.file_name)}》自动整理，发布前须人工核对。</p>`:`<p class="hint" style="text-align:center">以供应商最终确认为准。</p>`);
   document.querySelectorAll(".node").forEach(el=>el.onclick=()=>{if(view!=="raw")return;sel={d:+el.dataset.d,i:+el.dataset.i};cur=sel.d;renderAll(false);const m=document.querySelector("#rawbox p.on");if(m)m.scrollIntoView({block:"center"});});
   const pb=$("#posterBtn"); if(pb)pb.onclick=()=>{const lb=$("#lightbox");lb.querySelector("img").src=R.cover_data;lb.showModal();};
   document.querySelectorAll("[data-jump]").forEach(a=>a.onclick=e=>{e.preventDefault();cur=+a.dataset.jump;renderAll(false);document.getElementById("day-"+cur).scrollIntoView({block:"start"});});
@@ -370,6 +376,7 @@ function renderTabs(){
   document.querySelectorAll("#mtabs button").forEach(x=>x.onclick=()=>{if(x.dataset.all){document.body.classList.toggle("m-oneday");renderTabs();return;}cur=+x.dataset.d;document.body.classList.add("m-oneday");renderAll(false);document.getElementById("day-"+cur).scrollIntoView({block:"start"});});
 }
 function renderPanel(){
+  if(CUSTOMER||!R.quality){$("#panel").innerHTML="";return;}
   const d=R.days[cur]||R.days[0]; const q=R.quality; let h="";
   if(!d&&view!=="customer"){$("#panel").innerHTML=`<h3>没有识别出逐日行程</h3><p class="hint">附件里没有找到天数标题，全部原文见"全部问题"与未归入原文。</p>`+q.unmapped.slice(0,40).map(u=>`<p class="hint">#${u.unit} ${esc(u.text.slice(0,80))}</p>`).join("");return;}
   if(view==="customer"){

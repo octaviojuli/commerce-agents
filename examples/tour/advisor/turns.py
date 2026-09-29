@@ -1144,6 +1144,7 @@ def chips(deal, need, gates, pending, result):
         out.append({"label": f"按 v{v} 找线", "action": "search", "primary": True})
     if deal.get("route") and not deal.get("departure"):
         out.append({"label": "看团期", "action": "dates", "primary": not out})
+        out.append({"label": "换一条线", "action": "release_route"})
     if deal.get("departure"):
         out.append({"label": "去确认单", "action": "confirm", "primary": not out})
     if "answers" in types:
