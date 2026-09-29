@@ -1,0 +1,71 @@
+{
+  "threshold": 5,
+  "prepared": [
+    {
+      "name": "_pg3_0",
+      "statement": "SELECT public.warehouse_begin_context($1,$2)",
+      "generic_plans": 82,
+      "custom_plans": 5
+    },
+    {
+      "name": "_pg3_1",
+      "statement": "SELECT warehouse_has_role(CAST($1 AS text[]))",
+      "generic_plans": 98,
+      "custom_plans": 5
+    },
+    {
+      "name": "_pg3_10",
+      "statement": "INSERT INTO audit_event(id,organization_id,actor_id,action,resource_id,details) VALUES($1,",
+      "generic_plans": 8,
+      "custom_plans": 5
+    },
+    {
+      "name": "_pg3_2",
+      "statement": "SELECT o.id AS offer_id,o.version AS offer_version,o.name AS offer_name,o.service_descript",
+      "generic_plans": 44,
+      "custom_plans": 5
+    },
+    {
+      "name": "_pg3_3",
+      "statement": "WITH applicable AS MATERIALIZED (\n              SELECT * FROM warehouse_applicable_prices(",
+      "generic_plans": 44,
+      "custom_plans": 5
+    },
+    {
+      "name": "_pg3_4",
+      "statement": "SELECT * FROM quote_snapshot WHERE buyer_org_id=warehouse_org_id() AND idempotency_key=$1",
+      "generic_plans": 26,
+      "custom_plans": 5
+    },
+    {
+      "name": "_pg3_5",
+      "statement": "SELECT candidate.*,c.name AS source_name\n                FROM supplier_connection c CROSS ",
+      "generic_plans": 0,
+      "custom_plans": 13
+    },
+    {
+      "name": "_pg3_6",
+      "statement": "SELECT d.id,d.product_id,d.supplier_org_id,d.code,d.depart_date,d.return_date,\n          d",
+      "generic_plans": 8,
+      "custom_plans": 5
+    },
+    {
+      "name": "_pg3_7",
+      "statement": "SELECT d.id,d.product_id,d.code,d.depart_date,d.return_date,d.company_id,d.observed_at,\n  ",
+      "generic_plans": 8,
+      "custom_plans": 5
+    },
+    {
+      "name": "_pg3_8",
+      "statement": "SELECT total-sold-held-blocked AS available FROM inventory_pool WHERE id=$1",
+      "generic_plans": 8,
+      "custom_plans": 5
+    },
+    {
+      "name": "_pg3_9",
+      "statement": "INSERT INTO quote_snapshot(id,buyer_org_id,actor_id,offer_id,grant_id,idempotency_key,requ",
+      "generic_plans": 8,
+      "custom_plans": 5
+    }
+  ]
+}

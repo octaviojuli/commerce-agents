@@ -1,0 +1,1022 @@
+{
+  "contract_version": "order-reservation-v1",
+  "phase_one_transactions_enabled": false,
+  "schemas": {
+    "ReservationRequest": {
+      "additionalProperties": false,
+      "description": "Proposed buyer input. Identity, prices, seat demand and supplier scope are server-resolved.",
+      "properties": {
+        "request_id": {
+          "format": "uuid",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "quote_id": {
+          "format": "uuid",
+          "title": "Quote Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "quote_id"
+      ],
+      "title": "ReservationRequest",
+      "type": "object"
+    },
+    "OperationIdentity": {
+      "additionalProperties": false,
+      "description": "A durable local operation key; it is not evidence of upstream idempotency.",
+      "properties": {
+        "buyer_org_id": {
+          "format": "uuid",
+          "title": "Buyer Org Id",
+          "type": "string"
+        },
+        "action": {
+          "enum": [
+            "reserve",
+            "create_order",
+            "confirm",
+            "release",
+            "cancel",
+            "amend"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "resource_id": {
+          "format": "uuid",
+          "title": "Resource Id",
+          "type": "string"
+        },
+        "request_id": {
+          "format": "uuid",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "request_hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Request Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "buyer_org_id",
+        "action",
+        "resource_id",
+        "request_id",
+        "request_hash"
+      ],
+      "title": "OperationIdentity",
+      "type": "object"
+    },
+    "SupplierTransactionCapabilities": {
+      "additionalProperties": false,
+      "description": "Future verified upstream abilities. Declaring one never enables phase-one writes.",
+      "properties": {
+        "hold": {
+          "default": false,
+          "title": "Hold",
+          "type": "boolean"
+        },
+        "create_order": {
+          "default": false,
+          "title": "Create Order",
+          "type": "boolean"
+        },
+        "query_order": {
+          "default": false,
+          "title": "Query Order",
+          "type": "boolean"
+        },
+        "cancel": {
+          "default": false,
+          "title": "Cancel",
+          "type": "boolean"
+        },
+        "amend": {
+          "default": false,
+          "title": "Amend",
+          "type": "boolean"
+        },
+        "idempotent_write": {
+          "default": false,
+          "title": "Idempotent Write",
+          "type": "boolean"
+        },
+        "create_order_includes_hold": {
+          "default": false,
+          "title": "Create Order Includes Hold",
+          "type": "boolean"
+        },
+        "idempotency_retention_seconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idempotency Retention Seconds"
+        }
+      },
+      "title": "SupplierTransactionCapabilities",
+      "type": "object"
+    },
+    "ReservationSnapshot": {
+      "$defs": {
+        "ExternalReference": {
+          "additionalProperties": false,
+          "properties": {
+            "connection_id": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            },
+            "department_key": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Department Key"
+            },
+            "object_kind": {
+              "enum": [
+                "reservation",
+                "order"
+              ],
+              "title": "Object Kind",
+              "type": "string"
+            },
+            "external_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "External Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "connection_id",
+            "department_key",
+            "object_kind",
+            "external_id"
+          ],
+          "title": "ExternalReference",
+          "type": "object"
+        },
+        "ManagedInventory": {
+          "additionalProperties": false,
+          "properties": {
+            "units": {
+              "exclusiveMinimum": 0,
+              "title": "Units",
+              "type": "integer"
+            },
+            "seat_rule_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Seat Rule Version",
+              "type": "string"
+            },
+            "authority": {
+              "const": "warehouse",
+              "default": "warehouse",
+              "title": "Authority",
+              "type": "string"
+            },
+            "pool_id": {
+              "format": "uuid",
+              "title": "Pool Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "units",
+            "seat_rule_version",
+            "pool_id"
+          ],
+          "title": "ManagedInventory",
+          "type": "object"
+        },
+        "SupplierInventory": {
+          "additionalProperties": false,
+          "properties": {
+            "units": {
+              "exclusiveMinimum": 0,
+              "title": "Units",
+              "type": "integer"
+            },
+            "seat_rule_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Seat Rule Version",
+              "type": "string"
+            },
+            "authority": {
+              "const": "supplier",
+              "default": "supplier",
+              "title": "Authority",
+              "type": "string"
+            },
+            "external_departure_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "External Departure Id",
+              "type": "string"
+            },
+            "department_key": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Department Key"
+            }
+          },
+          "required": [
+            "units",
+            "seat_rule_version",
+            "external_departure_id",
+            "department_key"
+          ],
+          "title": "SupplierInventory",
+          "type": "object"
+        },
+        "TransactionScope": {
+          "additionalProperties": false,
+          "properties": {
+            "buyer_org_id": {
+              "format": "uuid",
+              "title": "Buyer Org Id",
+              "type": "string"
+            },
+            "supplier_org_id": {
+              "format": "uuid",
+              "title": "Supplier Org Id",
+              "type": "string"
+            },
+            "connection_id": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "buyer_org_id",
+            "supplier_org_id",
+            "connection_id"
+          ],
+          "title": "TransactionScope",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/TransactionScope"
+        },
+        "quote_id": {
+          "format": "uuid",
+          "title": "Quote Id",
+          "type": "string"
+        },
+        "offer_id": {
+          "format": "uuid",
+          "title": "Offer Id",
+          "type": "string"
+        },
+        "inventory": {
+          "discriminator": {
+            "mapping": {
+              "supplier": "#/$defs/SupplierInventory",
+              "warehouse": "#/$defs/ManagedInventory"
+            },
+            "propertyName": "authority"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ManagedInventory"
+            },
+            {
+              "$ref": "#/$defs/SupplierInventory"
+            }
+          ],
+          "title": "Inventory"
+        },
+        "version": {
+          "exclusiveMinimum": 0,
+          "title": "Version",
+          "type": "integer"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "external_reference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExternalReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "state": {
+          "enum": [
+            "PENDING",
+            "HELD",
+            "CONFIRMED",
+            "EXPIRED",
+            "RELEASED",
+            "UNKNOWN"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "held_until": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Held Until"
+        }
+      },
+      "required": [
+        "id",
+        "scope",
+        "quote_id",
+        "offer_id",
+        "inventory",
+        "version",
+        "created_at",
+        "updated_at",
+        "state"
+      ],
+      "title": "ReservationSnapshot",
+      "type": "object"
+    },
+    "OrderSnapshot": {
+      "$defs": {
+        "ExternalReference": {
+          "additionalProperties": false,
+          "properties": {
+            "connection_id": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            },
+            "department_key": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Department Key"
+            },
+            "object_kind": {
+              "enum": [
+                "reservation",
+                "order"
+              ],
+              "title": "Object Kind",
+              "type": "string"
+            },
+            "external_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "External Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "connection_id",
+            "department_key",
+            "object_kind",
+            "external_id"
+          ],
+          "title": "ExternalReference",
+          "type": "object"
+        },
+        "ManagedInventory": {
+          "additionalProperties": false,
+          "properties": {
+            "units": {
+              "exclusiveMinimum": 0,
+              "title": "Units",
+              "type": "integer"
+            },
+            "seat_rule_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Seat Rule Version",
+              "type": "string"
+            },
+            "authority": {
+              "const": "warehouse",
+              "default": "warehouse",
+              "title": "Authority",
+              "type": "string"
+            },
+            "pool_id": {
+              "format": "uuid",
+              "title": "Pool Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "units",
+            "seat_rule_version",
+            "pool_id"
+          ],
+          "title": "ManagedInventory",
+          "type": "object"
+        },
+        "SupplierInventory": {
+          "additionalProperties": false,
+          "properties": {
+            "units": {
+              "exclusiveMinimum": 0,
+              "title": "Units",
+              "type": "integer"
+            },
+            "seat_rule_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Seat Rule Version",
+              "type": "string"
+            },
+            "authority": {
+              "const": "supplier",
+              "default": "supplier",
+              "title": "Authority",
+              "type": "string"
+            },
+            "external_departure_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "External Departure Id",
+              "type": "string"
+            },
+            "department_key": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Department Key"
+            }
+          },
+          "required": [
+            "units",
+            "seat_rule_version",
+            "external_departure_id",
+            "department_key"
+          ],
+          "title": "SupplierInventory",
+          "type": "object"
+        },
+        "TransactionScope": {
+          "additionalProperties": false,
+          "properties": {
+            "buyer_org_id": {
+              "format": "uuid",
+              "title": "Buyer Org Id",
+              "type": "string"
+            },
+            "supplier_org_id": {
+              "format": "uuid",
+              "title": "Supplier Org Id",
+              "type": "string"
+            },
+            "connection_id": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "buyer_org_id",
+            "supplier_org_id",
+            "connection_id"
+          ],
+          "title": "TransactionScope",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/TransactionScope"
+        },
+        "quote_id": {
+          "format": "uuid",
+          "title": "Quote Id",
+          "type": "string"
+        },
+        "offer_id": {
+          "format": "uuid",
+          "title": "Offer Id",
+          "type": "string"
+        },
+        "inventory": {
+          "discriminator": {
+            "mapping": {
+              "supplier": "#/$defs/SupplierInventory",
+              "warehouse": "#/$defs/ManagedInventory"
+            },
+            "propertyName": "authority"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ManagedInventory"
+            },
+            {
+              "$ref": "#/$defs/SupplierInventory"
+            }
+          ],
+          "title": "Inventory"
+        },
+        "version": {
+          "exclusiveMinimum": 0,
+          "title": "Version",
+          "type": "integer"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "external_reference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExternalReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "state": {
+          "enum": [
+            "PENDING",
+            "CONFIRMED",
+            "WAITLISTED",
+            "CANCELLED",
+            "UNKNOWN"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "reservation_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reservation Id"
+        },
+        "sale_movement_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sale Movement Id"
+        },
+        "payment_status": {
+          "const": "NOT_INTEGRATED",
+          "default": "NOT_INTEGRATED",
+          "title": "Payment Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "scope",
+        "quote_id",
+        "offer_id",
+        "inventory",
+        "version",
+        "created_at",
+        "updated_at",
+        "state"
+      ],
+      "title": "OrderSnapshot",
+      "type": "object"
+    },
+    "ExistingSaleLink": {
+      "additionalProperties": false,
+      "properties": {
+        "order_id": {
+          "format": "uuid",
+          "title": "Order Id",
+          "type": "string"
+        },
+        "supplier_org_id": {
+          "format": "uuid",
+          "title": "Supplier Org Id",
+          "type": "string"
+        },
+        "pool_id": {
+          "format": "uuid",
+          "title": "Pool Id",
+          "type": "string"
+        },
+        "sale_movement_id": {
+          "format": "uuid",
+          "title": "Sale Movement Id",
+          "type": "string"
+        },
+        "additional_sold": {
+          "const": 0,
+          "default": 0,
+          "title": "Additional Sold",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "order_id",
+        "supplier_org_id",
+        "pool_id",
+        "sale_movement_id"
+      ],
+      "title": "ExistingSaleLink",
+      "type": "object"
+    },
+    "SupplierWriteResult": {
+      "$defs": {
+        "ConfirmedResult": {
+          "additionalProperties": false,
+          "properties": {
+            "outcome": {
+              "const": "CONFIRMED",
+              "default": "CONFIRMED",
+              "title": "Outcome",
+              "type": "string"
+            },
+            "reference": {
+              "$ref": "#/$defs/ExternalReference"
+            }
+          },
+          "required": [
+            "reference"
+          ],
+          "title": "ConfirmedResult",
+          "type": "object"
+        },
+        "ExternalReference": {
+          "additionalProperties": false,
+          "properties": {
+            "connection_id": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            },
+            "department_key": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Department Key"
+            },
+            "object_kind": {
+              "enum": [
+                "reservation",
+                "order"
+              ],
+              "title": "Object Kind",
+              "type": "string"
+            },
+            "external_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "External Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "connection_id",
+            "department_key",
+            "object_kind",
+            "external_id"
+          ],
+          "title": "ExternalReference",
+          "type": "object"
+        },
+        "HeldResult": {
+          "additionalProperties": false,
+          "properties": {
+            "outcome": {
+              "const": "HELD",
+              "default": "HELD",
+              "title": "Outcome",
+              "type": "string"
+            },
+            "reference": {
+              "$ref": "#/$defs/ExternalReference"
+            },
+            "held_until": {
+              "format": "date-time",
+              "title": "Held Until",
+              "type": "string"
+            }
+          },
+          "required": [
+            "reference",
+            "held_until"
+          ],
+          "title": "HeldResult",
+          "type": "object"
+        },
+        "RejectedResult": {
+          "additionalProperties": false,
+          "properties": {
+            "outcome": {
+              "const": "REJECTED",
+              "default": "REJECTED",
+              "title": "Outcome",
+              "type": "string"
+            },
+            "code": {
+              "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "title": "RejectedResult",
+          "type": "object"
+        },
+        "UnknownResult": {
+          "additionalProperties": false,
+          "properties": {
+            "outcome": {
+              "const": "UNKNOWN",
+              "default": "UNKNOWN",
+              "title": "Outcome",
+              "type": "string"
+            },
+            "attempt_id": {
+              "format": "uuid",
+              "title": "Attempt Id",
+              "type": "string"
+            },
+            "reference": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ExternalReference"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "next_action": {
+              "const": "RECONCILE",
+              "default": "RECONCILE",
+              "title": "Next Action",
+              "type": "string"
+            }
+          },
+          "required": [
+            "attempt_id"
+          ],
+          "title": "UnknownResult",
+          "type": "object"
+        },
+        "WaitlistedResult": {
+          "additionalProperties": false,
+          "properties": {
+            "outcome": {
+              "const": "WAITLISTED",
+              "default": "WAITLISTED",
+              "title": "Outcome",
+              "type": "string"
+            },
+            "reference": {
+              "$ref": "#/$defs/ExternalReference"
+            },
+            "reservation_created": {
+              "const": false,
+              "default": false,
+              "title": "Reservation Created",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "reference"
+          ],
+          "title": "WaitlistedResult",
+          "type": "object"
+        }
+      },
+      "discriminator": {
+        "mapping": {
+          "CONFIRMED": "#/$defs/ConfirmedResult",
+          "HELD": "#/$defs/HeldResult",
+          "REJECTED": "#/$defs/RejectedResult",
+          "UNKNOWN": "#/$defs/UnknownResult",
+          "WAITLISTED": "#/$defs/WaitlistedResult"
+        },
+        "propertyName": "outcome"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/HeldResult"
+        },
+        {
+          "$ref": "#/$defs/ConfirmedResult"
+        },
+        {
+          "$ref": "#/$defs/WaitlistedResult"
+        },
+        {
+          "$ref": "#/$defs/UnknownResult"
+        },
+        {
+          "$ref": "#/$defs/RejectedResult"
+        }
+      ]
+    },
+    "ReconciliationReport": {
+      "$defs": {
+        "ExternalReference": {
+          "additionalProperties": false,
+          "properties": {
+            "connection_id": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            },
+            "department_key": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Department Key"
+            },
+            "object_kind": {
+              "enum": [
+                "reservation",
+                "order"
+              ],
+              "title": "Object Kind",
+              "type": "string"
+            },
+            "external_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "External Id",
+              "type": "string"
+            }
+          },
+          "required": [
+            "connection_id",
+            "department_key",
+            "object_kind",
+            "external_id"
+          ],
+          "title": "ExternalReference",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "format": "uuid",
+          "title": "Attempt Id",
+          "type": "string"
+        },
+        "connection_id": {
+          "format": "uuid",
+          "title": "Connection Id",
+          "type": "string"
+        },
+        "department_key": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Department Key"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "result": {
+          "enum": [
+            "MATCHED",
+            "NO_MATCH",
+            "AMBIGUOUS",
+            "UNAVAILABLE"
+          ],
+          "title": "Result",
+          "type": "string"
+        },
+        "candidates": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ExternalReference"
+          },
+          "title": "Candidates",
+          "type": "array"
+        },
+        "automatic_write_retry": {
+          "const": false,
+          "default": false,
+          "title": "Automatic Write Retry",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "attempt_id",
+        "connection_id",
+        "department_key",
+        "observed_at",
+        "result"
+      ],
+      "title": "ReconciliationReport",
+      "type": "object"
+    }
+  }
+}

@@ -1,0 +1,333 @@
+<title>逐日行程电脑端原型</title>
+<style>
+:root{
+  --font:"PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",ui-sans-serif,system-ui,sans-serif;
+  --ground:#f4f2ec;--card:#ffffff;--well:#eeebe3;
+  --ink:#23332e;--ink-2:#3c4f48;--ink-soft:#5d6f68;--ink-faint:#97a49e;
+  --line:rgba(35,51,46,.13);--line-strong:rgba(35,51,46,.22);
+  --accent:#1f7a8c;--accent-soft:#dfeef1;--accent-ink:#135463;--on-accent:#fff;
+  --ok:#2f7a50;--ok-soft:#e0efe4;--warn:#9a6b12;--warn-soft:#f6ead0;--danger:#b3402a;--danger-soft:#f7ded8;
+  --violet:#6650b0;--violet-soft:#e7e0f1;--note:#c2410c;--note-soft:#fde7d9;
+  --mark:#fff1b8;--mark-on:#ffd24d;
+  --shadow:0 1px 2px rgba(35,51,46,.06),0 4px 14px -6px rgba(35,51,46,.16);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  color-scheme:dark;--ground:#141b19;--card:#1c2522;--well:#25302c;--ink:#e4ebe8;--ink-2:#c7d2ce;--ink-soft:#9aaba5;--ink-faint:#6c7d77;
+  --line:rgba(228,235,232,.12);--line-strong:rgba(228,235,232,.2);--accent:#5fb4c4;--accent-soft:#1d3a40;--accent-ink:#a9dbe4;--on-accent:#0d1b1e;
+  --ok:#7cc79a;--ok-soft:#1d3527;--warn:#e0b25a;--warn-soft:#3a2f17;--danger:#ef8a74;--danger-soft:#3d221c;--violet:#b3a3ea;--violet-soft:#2c2640;
+  --note:#f59e6b;--note-soft:#3b261a;--mark:#4a3f12;--mark-on:#8a6d10;--shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px -8px rgba(0,0,0,.5);
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark;--ground:#141b19;--card:#1c2522;--well:#25302c;--ink:#e4ebe8;--ink-2:#c7d2ce;--ink-soft:#9aaba5;--ink-faint:#6c7d77;
+  --line:rgba(228,235,232,.12);--line-strong:rgba(228,235,232,.2);--accent:#5fb4c4;--accent-soft:#1d3a40;--accent-ink:#a9dbe4;--on-accent:#0d1b1e;
+  --ok:#7cc79a;--ok-soft:#1d3527;--warn:#e0b25a;--warn-soft:#3a2f17;--danger:#ef8a74;--danger-soft:#3d221c;--violet:#b3a3ea;--violet-soft:#2c2640;
+  --note:#f59e6b;--note-soft:#3b261a;--mark:#4a3f12;--mark-on:#8a6d10;--shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px -8px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--ground);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.6;margin:0}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{height:100%;display:grid;grid-template-rows:auto 1fr}
+.top{display:flex;align-items:center;gap:14px;padding:12px 20px;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.top h1{margin:0;font-size:18px}
+.top .meta{color:var(--ink-soft);font-size:13px}
+.top .sp{flex:1}
+.proto{font-size:12px;color:var(--note);background:var(--note-soft);padding:2px 8px;border-radius:999px;white-space:nowrap}
+.seg{display:flex;background:var(--well);border-radius:10px;padding:3px;gap:3px}
+.seg button{border:0;background:none;border-radius:8px;padding:5px 14px;font-size:14px;color:var(--ink-soft)}
+.seg button[aria-pressed="true"]{background:var(--card);color:var(--ink);font-weight:600;box-shadow:var(--shadow)}
+.tbtn{border:1px solid var(--line-strong);background:var(--card);border-radius:8px;padding:4px 10px;font-size:13px}
+.tbtn[aria-pressed="true"]{background:var(--note-soft);border-color:var(--note);color:var(--note)}
+.cols{display:grid;grid-template-columns:260px minmax(0,1fr) 380px;min-height:0}
+/* left: day nav = 简要行程 */
+.nav{border-right:1px solid var(--line);background:var(--card);overflow-y:auto;padding:14px 12px}
+.nav h2{font-size:12px;color:var(--ink-soft);margin:0 6px 8px;letter-spacing:.04em}
+.navday{display:grid;grid-template-columns:36px 1fr;gap:6px;width:100%;text-align:left;border:0;background:none;border-radius:10px;padding:8px 6px}
+.navday:hover{background:var(--well)}
+.navday[aria-current="true"]{background:var(--accent-soft)}
+.navday b{color:var(--accent);font-size:13px}
+.navday .t{font-size:14px;font-weight:600;line-height:1.35}
+.navday .p{font-size:12px;color:var(--ink-soft);line-height:1.5}
+.navday.sample b{color:var(--violet)}
+.navsep{font-size:11px;color:var(--ink-faint);margin:12px 6px 4px}
+/* center */
+.center{overflow-y:auto;padding:20px 28px 60px;scroll-behavior:smooth}
+.daycard{max-width:760px;margin:0 auto 22px;background:var(--card);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;scroll-margin-top:12px}
+.dhead{display:grid;grid-template-columns:1fr auto;gap:10px;padding:16px 20px 12px;border-bottom:1px solid var(--line)}
+.dhead .dn{font-size:12px;color:var(--accent);font-weight:600;letter-spacing:.04em}
+.dhead h2{margin:2px 0 0;font-size:20px;line-height:1.35}
+.dhead .sum{margin:6px 0 0;color:var(--ink-2);font-size:14px;max-width:60ch}
+.dstats{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.facts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.fact{font-size:12px;background:var(--well);color:var(--ink-2);border-radius:999px;padding:2px 9px;white-space:nowrap}
+.service{grid-column:1/-1;font-size:13px;background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:4px 10px}
+.port{grid-column:1/-1;display:flex;gap:8px;font-size:13px}
+.port div{background:var(--well);border-radius:8px;padding:4px 12px}
+.port b{margin-left:6px}
+.body{display:grid;grid-template-columns:minmax(0,1fr) 200px}
+.timeline{list-style:none;margin:0;padding:10px 20px 14px}
+.part{font-size:12px;color:var(--ink-soft);font-weight:600;padding:12px 0 4px 40px;letter-spacing:.04em}
+.node{position:relative;padding:6px 0 6px 40px}
+.node::before{content:"";position:absolute;left:14px;top:0;bottom:0;width:2px;background:var(--line)}
+.node .ic{position:absolute;left:0;top:8px;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:13px;background:var(--card);border:2px solid var(--line-strong)}
+.node.poi .ic,.node.group .ic{border-color:var(--accent);color:var(--accent)}
+.node.activity .ic,.node.free .ic{border-color:var(--ok);color:var(--ok)}
+.node.shopping .ic,.node.optional .ic,.node.package .ic{border-color:var(--warn);color:var(--warn)}
+.node.transport .ic,.node.meet .ic,.node.flight .ic,.node.ship .ic{border-color:var(--ink-faint);color:var(--ink-soft)}
+.node.notice .ic{border-color:var(--violet);color:var(--violet)}
+.node.recommend .ic{border-style:dashed;border-color:var(--ink-faint);color:var(--ink-faint)}
+.ncard{border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;transition:outline-color .15s}
+.node.poi .ncard,.node.group .ncard,.node.activity .ncard,.node.free .ncard{background:var(--ground);border:1px solid var(--line)}
+.node.shopping .ncard,.node.optional .ncard,.node.package .ncard{background:var(--warn-soft)}
+.node.recommend .ncard{border:1px dashed var(--line-strong)}
+.body.raw-on .node{cursor:pointer}
+.body.raw-on .node:hover>.ncard{outline:2px solid var(--line-strong);outline-offset:2px}
+.node.sel>.ncard{outline:2px solid var(--mark-on)!important;outline-offset:2px}
+.nrow{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.nrow b{font-size:16px}
+.transport .nrow b,.meet .nrow b,.flight .nrow b,.ship .nrow b{font-weight:500;font-size:14px;color:var(--ink-2)}
+.kind{font-size:12px;color:var(--ink-soft)}
+.local{font-size:13px;color:var(--ink-faint)}
+.badges{display:flex;gap:5px;flex-wrap:wrap}
+.b{font-size:12px;padding:1px 8px;border-radius:999px;background:var(--card);border:1px solid var(--line-strong);color:var(--ink-2);white-space:nowrap}
+.b.in{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft)}
+.b.ok{border-color:transparent;background:var(--ok-soft);color:var(--ok)}
+.b.warn{border-color:transparent;background:var(--warn-soft);color:var(--warn)}
+.b.unk{border-style:dashed;color:var(--ink-faint)}
+.children{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:2px 0 0;padding:0;list-style:none}
+.children li{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;gap:3px;font-size:14px}
+.desc{margin:0;font-size:13px;color:var(--ink-2);max-width:62ch}
+.note{font-size:12px;color:var(--ink-soft)}
+.alt{border-left:3px solid var(--violet);padding:4px 10px;font-size:13px;background:var(--violet-soft);border-radius:0 8px 8px 0}
+.disc{border-left:3px solid var(--warn);padding:4px 10px;font-size:13px;background:var(--warn-soft);border-radius:0 8px 8px 0}
+.flag{font-size:12px;color:var(--danger);background:var(--danger-soft);border-radius:8px;padding:3px 8px}
+.side{border-left:1px solid var(--line);padding:14px 16px;display:flex;flex-direction:column;gap:12px;font-size:14px}
+.side h4{margin:0;font-size:12px;color:var(--ink-soft);font-weight:600;letter-spacing:.04em}
+.side .meal{display:grid;grid-template-columns:22px 1fr;gap:4px}
+.side .meal i{font-style:normal;color:var(--ink-soft);font-size:12px}
+/* right panel */
+.panel{border-left:1px solid var(--line);background:var(--card);overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+.panel h3{margin:0;font-size:15px;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.panel .hint{font-size:12px;color:var(--ink-soft);margin:0}
+.box{background:var(--ground);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:6px}
+.box.warnbox{background:var(--warn-soft)}
+.box.dangerbox{background:var(--danger-soft)}
+.kv{display:flex;justify-content:space-between;gap:8px;font-size:14px}
+.kv span:first-child{color:var(--ink-soft)}
+.list{margin:0;padding-left:18px;font-size:14px;display:flex;flex-direction:column;gap:4px}
+.raw{font-size:14px;line-height:1.95;white-space:pre-line;margin:0}
+mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px;cursor:pointer}
+mark.on{background:var(--mark-on)}
+mark sup{font-size:10px;color:var(--ink-soft);margin-left:1px}
+.cov{font-size:12px;color:var(--ok);font-weight:400}
+.adv-only{display:none}
+body[data-view="advisor"] .adv-only,body[data-view="raw"] .adv-only{display:revert}
+.notes{display:none;position:fixed;right:20px;bottom:20px;width:min(440px,calc(100% - 40px));max-height:70vh;overflow-y:auto;background:var(--card);border:1px solid var(--note);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow);z-index:10;flex-direction:column;gap:8px}
+body.shownotes .notes{display:flex}
+.notes h3{margin:0;font-size:15px;display:flex;justify-content:space-between}
+.notes ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:14px}
+.notes li b{display:block}
+@media (max-width:1180px){.cols{grid-template-columns:220px minmax(0,1fr) 320px}.body{grid-template-columns:1fr}.side{border-left:0;border-top:1px solid var(--line);flex-direction:row;flex-wrap:wrap;gap:20px}}
+@media (max-width:900px){.cols{grid-template-columns:1fr}.nav,.panel{display:none}.children{grid-template-columns:1fr}.center{padding-inline:16px}}
+@media (prefers-reduced-motion:reduce){.center{scroll-behavior:auto}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div><h1>ACME 西葡经典 12 日</h1><div class="meta">上海往返 · 12 天 10 晚 · 行程已复核 · 景点 23 个 · 购物店 1 · 自费推荐 2</div></div>
+    <span class="proto">电脑端原型 · 虚构线路</span>
+    <div class="sp"></div>
+    <div class="seg" role="group" aria-label="视图">
+      <button data-v="customer" aria-pressed="true">客户看</button>
+      <button data-v="advisor" aria-pressed="false">顾问看</button>
+      <button data-v="raw" aria-pressed="false">原文对照</button>
+    </div>
+    <button class="tbtn" id="notesBtn" aria-pressed="false">设计说明</button>
+  </header>
+  <div class="cols">
+    <nav class="nav" aria-label="简要行程"><h2>简要行程</h2><div id="nav"></div></nav>
+    <main class="center" id="center"></main>
+    <aside class="panel" id="panel" aria-label="侧栏"></aside>
+  </div>
+</div>
+
+<section class="notes" id="notes" aria-label="设计说明">
+  <h3>电脑端设计说明 <button class="tbtn" id="closeNotes">关闭</button></h3>
+  <ol>
+    <li><b>数据和手机端完全相同，只是排布不同</b>节点、字段、三种视图都和 H5 原型一致。电脑端利用更宽的屏幕，把手机上需要切换或弹出的内容同时摆出来。</li>
+    <li><b>左栏是简要行程，也是目录</b>由节点自动生成。点某一天跳到对应位置；滚动中间内容时，左栏自动高亮当前这一天。</li>
+    <li><b>中间连续展示全部天数</b>电脑上适合整篇阅读和打印前核对，不用像手机那样一天一屏。观光段的子景点排成两列，三餐和住宿放在每天右侧的窄栏里。</li>
+    <li><b>右栏随视图变化</b>客户看：全程的费用提示（自费、购物、小费、不含项）汇总。顾问看：当天和需求单的冲突、原文未说明的字段。原文对照：当前这天的供应商原文，和节点左右并排对照。</li>
+    <li><b>左右对照是电脑端最主要的价值</b>点中间的节点，右栏原文高亮对应句子；点原文里的高亮，中间滚到对应节点。商户审核和顾问核实主要在电脑上完成。</li>
+    <li><b>窄屏自动退化</b>宽度小于 900px 时只保留中间一栏，和 H5 版本的阅读方式一致。</li>
+  </ol>
+</section>
+
+<script>
+(function(){
+const $=s=>document.querySelector(s);
+const DAYS=[
+ {n:1,label:"D1",title:"上海 ✈ 巴塞罗那",summary:"晚间在上海浦东集合，乘夜班航班飞往巴塞罗那。",facts:["夜宿飞机"],
+  raw:"指定时间于上海浦东国际机场集合，由领队协助办理登机手续。搭乘参考航班 AC901（23:55–07:10+1）飞往巴塞罗那。\n用餐：早餐 自理；午餐 自理；晚餐 自理\n住宿：夜宿飞机",
+  items:[
+   {t:"meet",name:"上海浦东国际机场集合",b:[["unk","集合时间另行通知"]],ev:"指定时间于上海浦东国际机场集合，由领队协助办理登机手续"},
+   {t:"flight",name:"参考航班 AC901 · 上海浦东 → 巴塞罗那",b:[["","23:55 起飞"],["","次日 07:10 到达"],["warn","参考航班，以出票为准"]],ev:"搭乘参考航班 AC901（23:55–07:10+1）飞往巴塞罗那"}],
+  meals:[["早","自理"],["午","自理"],["晚","自理"]],mealsEv:"用餐：早餐 自理；午餐 自理；晚餐 自理",hotel:"夜宿飞机",hotelEv:"住宿：夜宿飞机"},
+ {n:2,label:"D2",title:"巴塞罗那",summary:"市区观光看圣家堂和格拉西亚大道，入内游览奎尔公园，下午在哥特区自由活动。",facts:["入内 1","外观 1","途经 2","自费推荐 1"],
+  raw:"早上抵达巴塞罗那，导游接机。上午【巴塞罗那市区观光】（总观光时间不少于2小时）：外观【圣家堂】，车游格拉西亚大道，途经【米拉之家】【巴特罗之家】。午餐后入内参观【奎尔公园】（游览不少于1小时，含首道门票及中文讲解）；如遇奎尔公园预约已满，则改为游览【蒙锥克山】。下午前往【哥特区】自由活动（约2小时）。晚上可自愿参加自费项目【弗拉明戈表演】（约60欧元/人）。\n用餐：早餐 自理；午餐 中式团餐（六菜一汤）；晚餐 自理\n住宿：巴塞罗那 ACME 四星酒店或同级\n温馨提示：巴塞罗那扒手较多，请保管好随身物品。",
+  items:[
+   {t:"transport",name:"抵达巴塞罗那 · 导游接机",b:[],ev:"早上抵达巴塞罗那，导游接机"},
+   {part:"上午"},
+   {t:"group",name:"巴塞罗那市区观光",b:[["","总观光时间不少于 2 小时"]],ev:"上午【巴塞罗那市区观光】（总观光时间不少于2小时）",
+    children:[{name:"圣家堂",b:[["","外观"],["unk","门票：原文未说明",1]],desc:"高迪设计、仍在建造中的大教堂。",ev:"外观【圣家堂】"},
+              {name:"格拉西亚大道",b:[["","车游"]],ev:"车游格拉西亚大道"},
+              {name:"米拉之家",b:[["","途经"]],ev:"途经【米拉之家】"},
+              {name:"巴特罗之家",b:[["","途经"]],ev:"【巴特罗之家】"}]},
+   {part:"下午"},
+   {t:"poi",name:"奎尔公园",b:[["in","入内"],["","不少于 1 小时"],["ok","含首道门票"],["ok","含中文讲解"]],desc:"高迪设计的城市公园，以彩色马赛克和曲线建筑著称。",
+    ev:"午餐后入内参观【奎尔公园】（游览不少于1小时，含首道门票及中文讲解）",alt:{text:"如遇预约已满，改为游览蒙锥克山",ev:"如遇奎尔公园预约已满，则改为游览【蒙锥克山】"}},
+   {t:"free",name:"哥特区",b:[["","约 2 小时"]],ev:"下午前往【哥特区】自由活动（约2小时）"},
+   {part:"晚上"},
+   {t:"optional",name:"弗拉明戈表演",b:[["warn","约 60 欧元/人"],["","自愿参加"]],ev:"晚上可自愿参加自费项目【弗拉明戈表演】（约60欧元/人）"},
+   {t:"notice",name:"巴塞罗那扒手较多，请保管好随身物品",b:[],ev:"温馨提示：巴塞罗那扒手较多，请保管好随身物品。"}],
+  meals:[["早","自理"],["午","中式团餐 · 六菜一汤"],["晚","自理"]],mealsEv:"用餐：早餐 自理；午餐 中式团餐（六菜一汤）；晚餐 自理",
+  hotel:"巴塞罗那 ACME 四星酒店或同级",hotelEv:"住宿：巴塞罗那 ACME 四星酒店或同级",hotelBadge:"四星为供应商描述"},
+ {n:3,label:"D3",title:"巴塞罗那 → 萨拉戈萨 → 马德里",summary:"乘车经萨拉戈萨，入内参观皮拉尔圣母大教堂，停留购物店后前往马德里。",facts:["车程约 7 小时","入内 1","外观 1","购物店 1"],
+  raw:"早餐后乘车前往萨拉戈萨（约300公里，车程约3.5小时），入内参观【皮拉尔圣母大教堂】（约40分钟，免费参观）。午餐后前往【ACME 皮具中心】（购物店，停留约60分钟）。随后乘车前往马德里（约320公里，车程约3.5小时），抵达后外观【太阳门广场 Puerta del Sol】。\n用餐：早餐 酒店内；午餐 中式团餐；晚餐 中式团餐\n住宿：马德里 ACME 四星酒店或同级",
+  items:[
+   {t:"transport",name:"乘车 巴塞罗那 → 萨拉戈萨",b:[["","约 300 公里"],["","车程约 3.5 小时"]],ev:"早餐后乘车前往萨拉戈萨（约300公里，车程约3.5小时）"},
+   {t:"poi",name:"皮拉尔圣母大教堂",b:[["in","入内"],["","约 40 分钟"],["ok","免费参观"]],ev:"入内参观【皮拉尔圣母大教堂】（约40分钟，免费参观）"},
+   {t:"shopping",name:"ACME 皮具中心",b:[["warn","指定购物店"],["","停留约 60 分钟"]],flag:"客人需求单写了“不进购物店”，与这一站冲突",ev:"午餐后前往【ACME 皮具中心】（购物店，停留约60分钟）"},
+   {t:"transport",name:"乘车 萨拉戈萨 → 马德里",b:[["","约 320 公里"],["","车程约 3.5 小时"]],ev:"随后乘车前往马德里（约320公里，车程约3.5小时）"},
+   {t:"poi",name:"太阳门广场",local:"Puerta del Sol",b:[["","外观"],["unk","时长：原文未说明",1]],ev:"抵达后外观【太阳门广场 Puerta del Sol】"}],
+  meals:[["早","酒店内"],["午","中式团餐"],["晚","中式团餐"]],mealsEv:"用餐：早餐 酒店内；午餐 中式团餐；晚餐 中式团餐",
+  hotel:"马德里 ACME 四星酒店或同级",hotelEv:"住宿：马德里 ACME 四星酒店或同级",hotelBadge:"四星为供应商描述"},
+ {n:9,label:"样例·自由日",sample:true,title:"里斯本（全天自由活动）",summary:"全天自由活动，可自行前往推荐地点，或报名自费半日游套餐。",facts:["自由活动日"],
+  service:"当天不含用车、司机、导游",
+  raw:"早餐后全天自由活动。注：当天不含车、司机、导游。\n推荐自行前往：【贝伦塔】（门票自理）、【热罗尼莫斯修道院】（外观免费）。\n推荐自费套餐：辛特拉半日游（含【佩纳宫】门票、【摩尔人城堡】外观、往返用车及午餐），约80欧元/人，8人成团，需提前一天报名。\n用餐：早餐 酒店内；午餐 自理；晚餐 自理\n住宿：里斯本 ACME 四星酒店或同级（Hotel ACME Lisboa / ACME Tejo Hotel）",
+  items:[
+   {t:"free",name:"全天自由活动",b:[],ev:"早餐后全天自由活动"},
+   {t:"recommend",name:"贝伦塔",b:[["","推荐·自行前往"],["warn","门票自理"]],ev:"推荐自行前往：【贝伦塔】（门票自理）"},
+   {t:"recommend",name:"热罗尼莫斯修道院",b:[["","推荐·自行前往"],["","外观免费"]],ev:"【热罗尼莫斯修道院】（外观免费）"},
+   {t:"package",name:"辛特拉半日游",b:[["warn","约 80 欧元/人"],["","8 人成团"],["","需提前一天报名"]],ev:"推荐自费套餐：辛特拉半日游（含【佩纳宫】门票、【摩尔人城堡】外观、往返用车及午餐），约80欧元/人，8人成团，需提前一天报名。",
+    children:[{name:"佩纳宫",b:[["in","入内"],["ok","套餐含门票"]]},{name:"摩尔人城堡",b:[["","外观"]]},{name:"往返用车及午餐",b:[["ok","套餐内"]]}]}],
+  meals:[["早","酒店内"],["午","自理"],["晚","自理"]],mealsEv:"用餐：早餐 酒店内；午餐 自理；晚餐 自理",
+  hotel:"里斯本 ACME 四星酒店或同级（Hotel ACME Lisboa / ACME Tejo Hotel 二选一）",hotelEv:"住宿：里斯本 ACME 四星酒店或同级（Hotel ACME Lisboa / ACME Tejo Hotel）",hotelBadge:"候选酒店 2 家"},
+ {n:6,label:"样例·邮轮日",sample:true,title:"科孚岛（邮轮停靠）",summary:"邮轮停靠科孚岛，参加船票已含的岸上观光，傍晚返船。",facts:["港口停靠","岸上游 约 3 小时"],
+  port:[["到港","08:00"],["离港","18:00"],["返船截止","17:30"]],
+  raw:"邮轮预计到港 08:00，离港 18:00，所有乘客须于 17:30 前返回邮轮。\n船票已含岸上游：【科孚全景与老城漫步】（行程用时约3小时）：乘巴士途经【帕莱奥波利斯考古遗址】，步行游览【科孚老城】，远眺【老鼠岛】。如因天气原因邮轮无法靠港，岸上游取消，费用不退。\n岸上游结束后可在老城自由活动，游览时需付给当地导游小费约 2 欧元/人。\n用餐：早餐 邮轮；午餐 邮轮；晚餐 邮轮\n住宿：邮轮",
+  items:[
+   {t:"ship",name:"邮轮靠港 · 下船",b:[],ev:"邮轮预计到港 08:00，离港 18:00，所有乘客须于 17:30 前返回邮轮"},
+   {t:"group",name:"科孚全景与老城漫步",b:[["ok","船票已含"],["","约 3 小时"]],ev:"船票已含岸上游：【科孚全景与老城漫步】（行程用时约3小时）",
+    children:[{name:"帕莱奥波利斯考古遗址",b:[["","途经（巴士）"]],ev:"乘巴士途经【帕莱奥波利斯考古遗址】"},{name:"科孚老城",b:[["in","步行游览"]],ev:"步行游览【科孚老城】"},{name:"老鼠岛",b:[["","远眺"]],ev:"远眺【老鼠岛】"}],
+    disc:{text:"如因天气无法靠港，岸上游取消，费用不退",ev:"如因天气原因邮轮无法靠港，岸上游取消，费用不退。"},
+    note:{text:"需付当地导游小费约 2 欧元/人",ev:"游览时需付给当地导游小费约 2 欧元/人"}},
+   {t:"free",name:"老城自由活动",b:[["unk","时长：原文未说明",1]],ev:"岸上游结束后可在老城自由活动"},
+   {t:"ship",name:"返船 · 邮轮离港",b:[["warn","17:30 前返船"]],ev:"所有乘客须于 17:30 前返回邮轮"}],
+  meals:[["早","邮轮"],["午","邮轮"],["晚","邮轮"]],mealsEv:"用餐：早餐 邮轮；午餐 邮轮；晚餐 邮轮",hotel:"邮轮",hotelEv:"住宿：邮轮"}
+];
+
+const ICON={meet:"集",transport:"车",flight:"机",ship:"船",poi:"景",group:"览",activity:"玩",free:"逛",shopping:"购",optional:"费",package:"套",recommend:"荐",notice:"注"};
+const KIND={poi:"景点",group:"观光段",activity:"活动体验",free:"自由活动",shopping:"购物店",optional:"自费项目",package:"自费套餐",recommend:"推荐·自行前往",notice:"提醒"};
+let view="customer", cur=0, sel=null; // sel = {day, i}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function badge([cls,text,adv]){return `<span class="b ${cls||""} ${adv?"adv-only":""}">${esc(text)}</span>`;}
+function chain(d){const p=[];d.items.forEach(x=>{if(x.t==="group")x.children.forEach(c=>p.push(c.name+(c.b.some(b=>b[1]==="外观")?"（外观）":"")));else if(["poi","free"].includes(x.t))p.push(x.name);else if(x.t==="shopping")p.push("购物店 1");else if(x.t==="package")p.push("自费套餐 1");});return p.length?p.join(" · "):"交通日";}
+function renderNav(){
+  const main=DAYS.map((d,i)=>[d,i]).filter(([d])=>!d.sample), smp=DAYS.map((d,i)=>[d,i]).filter(([d])=>d.sample);
+  const btn=([d,i])=>`<button class="navday ${d.sample?"sample":""}" data-d="${i}" aria-current="${cur===i}"><b>${d.sample?"样例":"D"+d.n}</b><span><span class="t">${esc(d.title)}</span><br><span class="p">${esc(chain(d))}</span></span></button>`;
+  $("#nav").innerHTML=main.map(btn).join("")+`<div class="navsep">D4–D12 原型中省略</div><div class="navsep">版式样例</div>`+smp.map(btn).join("");
+  document.querySelectorAll(".navday").forEach(b=>b.onclick=()=>{const i=+b.dataset.d;document.getElementById("day-"+i).scrollIntoView({block:"start"});cur=i;renderNav();renderPanel();});
+}
+function node(d,di,it,i){
+  if(it.part) return `<li class="part">${it.part}</li>`;
+  const on=sel&&sel.day===di&&sel.i===i;
+  return `<li class="node ${it.t} ${on?"sel":""}" data-day="${di}" data-i="${i}">
+    <span class="ic" aria-hidden="true">${ICON[it.t]}</span>
+    <div class="ncard">
+      <div class="nrow"><b>${esc(it.name)}</b>${it.local?`<span class="local">${esc(it.local)}</span>`:""}${KIND[it.t]?`<span class="kind">${KIND[it.t]}</span>`:""}${it.b.length?`<span class="badges">${it.b.map(badge).join("")}</span>`:""}</div>
+      ${it.desc?`<p class="desc">${esc(it.desc)}</p>`:""}
+      ${it.children?`<ul class="children">${it.children.map(c=>`<li><div class="nrow"><b style="font-size:14px">${esc(c.name)}</b></div><div class="badges">${c.b.map(badge).join("")}</div>${c.desc?`<p class="desc">${esc(c.desc)}</p>`:""}</li>`).join("")}</ul>`:""}
+      ${it.alt?`<div class="alt"><b>替代安排</b>：${esc(it.alt.text)}</div>`:""}
+      ${it.disc?`<div class="disc"><b>不保证</b>：${esc(it.disc.text)}</div>`:""}
+      ${it.note?`<div class="note">额外费用：${esc(it.note.text)}</div>`:""}
+      ${it.flag?`<div class="flag adv-only">${esc(it.flag)}</div>`:""}
+    </div></li>`;
+}
+function renderCenter(){
+  $("#center").innerHTML=DAYS.map((d,di)=>`<article class="daycard" id="day-${di}" data-d="${di}">
+    <div class="dhead"><div><span class="dn">${d.sample?"版式样例 · ":""}第 ${d.n} 天</span><h2>${esc(d.title)}</h2><p class="sum">${esc(d.summary)}</p></div>
+      <div class="dstats"><div class="facts">${d.facts.map(f=>`<span class="fact">${esc(f)}</span>`).join("")}</div></div>
+      ${d.port?`<div class="port">${d.port.map(([k,v])=>`<div>${k}<b>${v}</b></div>`).join("")}</div>`:""}
+      ${d.service?`<div class="service">${esc(d.service)}</div>`:""}</div>
+    <div class="body ${view==="raw"?"raw-on":""}">
+      <ol class="timeline">${d.items.map((it,i)=>node(d,di,it,i)).join("")}</ol>
+      <div class="side"><div><h4>用餐</h4>${d.meals.map(([k,v])=>`<div class="meal"><i>${k}</i><span>${esc(v)}</span></div>`).join("")}</div>
+        <div><h4>住宿</h4><div>${esc(d.hotel)}</div>${d.hotelBadge?`<span class="b adv-only">${esc(d.hotelBadge)}</span>`:""}</div></div>
+    </div></article>`).join("")+`<p style="text-align:center;color:var(--ink-faint);font-size:13px">D4–D12 原型中省略</p>`;
+  document.querySelectorAll(".node").forEach(n=>n.onclick=()=>{
+    if(view!=="raw") return;
+    const di=+n.dataset.day,i=+n.dataset.i; sel={day:di,i}; cur=di; renderAll(false);
+    const m=document.querySelector(`#rawText mark[data-i="${i}"]`); if(m) m.scrollIntoView({block:"center"});
+  });
+}
+function markRaw(d,di){
+  let text=esc(d.raw);const spans=[];let ord=0;
+  d.items.forEach((it,i)=>{if(it.part)return;ord++;[it.ev,...(it.children||[]).map(c=>c.ev),it.alt&&it.alt.ev,it.disc&&it.disc.ev,it.note&&it.note.ev].filter(Boolean).forEach(ev=>spans.push([ev,i,ord]));});
+  spans.push([d.mealsEv,"m","餐"],[d.hotelEv,"h","宿"]);
+  spans.forEach(([ev,i,label])=>{const e=esc(ev);const at=text.indexOf(e);if(at<0)return;
+    if(text.lastIndexOf("<mark",at)>text.lastIndexOf("</mark>",at))return;
+    const on=sel&&sel.day===di&&sel.i===i;
+    text=text.slice(0,at)+`<mark data-i="${i}" class="${on?"on":""}">${e}<sup>${label}</sup></mark>`+text.slice(at+e.length);});
+  return text;
+}
+function allNodes(){const r=[];DAYS.filter(d=>!d.sample).forEach(d=>d.items.forEach(it=>{if(!it.part)r.push([d,it]);}));return r;}
+function renderPanel(){
+  const d=DAYS[cur];
+  let h="";
+  if(view==="customer"){
+    const opt=allNodes().filter(([,it])=>["optional","package"].includes(it.t));
+    const shop=allNodes().filter(([,it])=>it.t==="shopping");
+    const alts=allNodes().filter(([,it])=>it.alt||it.disc);
+    h=`<h3>费用与安排提示</h3><p class="hint">从全程节点自动汇总，客户在一处看清要另外花钱或可能变动的地方。</p>
+      <div class="box warnbox"><h4 style="margin:0;font-size:13px">自费项目 ${opt.length} 个（自愿参加）</h4><ul class="list">${opt.map(([dd,it])=>`<li>D${dd.n} ${esc(it.name)}：${esc(it.b[0][1])}</li>`).join("")}</ul></div>
+      <div class="box warnbox"><h4 style="margin:0;font-size:13px">购物店 ${shop.length} 个</h4><ul class="list">${shop.map(([dd,it])=>`<li>D${dd.n} ${esc(it.name)}（${esc(it.b[1][1])}）</li>`).join("")}</ul></div>
+      <div class="box"><h4 style="margin:0;font-size:13px">可能调整的安排</h4><ul class="list">${alts.map(([dd,it])=>`<li>D${dd.n} ${esc(it.name)}：${esc((it.alt||it.disc).text)}</li>`).join("")}</ul></div>
+      <div class="box"><div class="kv"><span>三餐</span><span>含 18 餐 · 自理 11 餐</span></div><div class="kv"><span>住宿</span><span>四星或同级 × 10 晚</span></div><div class="kv"><span>参考航班</span><span>以出票为准</span></div></div>`;
+  } else if(view==="advisor"){
+    const unk=[];d.items.forEach(it=>{if(it.part)return;[...it.b,...(it.children||[]).flatMap(c=>c.b)].forEach(b=>{if(b[2])unk.push(it.name+"："+b[1]);});});
+    const flags=d.items.filter(it=>it.flag);
+    h=`<h3>第 ${d.n} 天 · 顾问核对</h3><p class="hint">随中间滚动的当天变化。</p>
+      <div class="box ${flags.length?"dangerbox":""}"><h4 style="margin:0;font-size:13px">与需求单的冲突</h4>${flags.length?`<ul class="list">${flags.map(f=>`<li>${esc(f.name)}：${esc(f.flag)}</li>`).join("")}</ul>`:`<span class="hint">这一天没有冲突</span>`}</div>
+      <div class="box"><h4 style="margin:0;font-size:13px">原文未说明</h4>${unk.length?`<ul class="list">${unk.map(u=>`<li>${esc(u)}</li>`).join("")}</ul>`:`<span class="hint">没有</span>`}</div>
+      <div class="box"><h4 style="margin:0;font-size:13px">客人需求单（摘要）</h4><div class="kv"><span>人数</span><span>2 大 2 小</span></div><div class="kv"><span>偏好</span><span>不进购物店</span></div><div class="kv"><span>出行时间</span><span>2/1–2/20</span></div></div>`;
+  } else {
+    h=`<h3>第 ${d.n} 天 · 供应商原文 <span class="cov">✓ 已全部归入节点</span></h3>
+      <p class="hint">点中间的节点，这里高亮对应的原文；点高亮，中间滚到对应节点。上标数字是时间线上的第几个节点。</p>
+      <p class="raw" id="rawText">${markRaw(d,cur)}</p>`;
+  }
+  $("#panel").innerHTML=h;
+  document.querySelectorAll("#rawText mark[data-i]").forEach(m=>m.onclick=()=>{
+    const i=m.dataset.i;if(isNaN(+i))return;sel={day:cur,i:+i};renderAll(false);
+    const n=document.querySelector(`.node[data-day="${cur}"][data-i="${i}"]`);if(n)n.scrollIntoView({block:"center"});});
+}
+function renderAll(center=true){
+  document.body.dataset.view=view;
+  document.querySelectorAll(".seg button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===view));
+  const st=$("#center").scrollTop; renderCenter(); $("#center").scrollTop=st;
+  renderNav(); renderPanel();
+}
+// scrollspy
+$("#center").addEventListener("scroll",()=>{
+  const top=$("#center").getBoundingClientRect().top+80; let best=cur;
+  document.querySelectorAll(".daycard").forEach(c=>{if(c.getBoundingClientRect().top<=top)best=+c.dataset.d;});
+  if(best!==cur){cur=best;renderNav();renderPanel();}
+});
+document.querySelectorAll(".seg button").forEach(b=>b.onclick=()=>{view=b.dataset.v;sel=null;renderAll();});
+const setNotes=on=>{document.body.classList.toggle("shownotes",on);$("#notesBtn").setAttribute("aria-pressed",on);};
+$("#notesBtn").onclick=()=>setNotes(!document.body.classList.contains("shownotes"));
+$("#closeNotes").onclick=()=>setNotes(false);
+renderAll();
+})();
+</script>

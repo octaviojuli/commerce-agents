@@ -1,0 +1,25 @@
+{
+  "boundary": "Local disposable smoke-size fixture; one reused runtime connection, 18 repetitions of all four service operations. Plan counters are diagnostic and do not measure ECS latency.",
+  "before": {
+    "prepare_threshold": 5,
+    "quote_reads": [
+      {
+        "name": "_pg3_4",
+        "statement": "SELECT * FROM quote_snapshot WHERE (CAST($1 AS uuid) IS NULL OR id=$1) AND (CAST($2 AS tex",
+        "generic_plans": 0,
+        "custom_plans": 31
+      }
+    ]
+  },
+  "after": {
+    "prepare_threshold": 5,
+    "quote_reads": [
+      {
+        "name": "_pg3_4",
+        "statement": "SELECT * FROM quote_snapshot WHERE buyer_org_id=warehouse_org_id() AND idempotency_key=$1",
+        "generic_plans": 26,
+        "custom_plans": 5
+      }
+    ]
+  }
+}

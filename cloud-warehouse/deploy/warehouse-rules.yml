@@ -1,0 +1,34 @@
+groups:
+  - name: warehouse-http
+    interval: 15s
+    rules:
+      - record: warehouse:http_requests:rate5m
+        expr: |
+          sum by (job, instance, route, method, status, outcome) (
+            rate(warehouse_http_requests_total{job="tour-warehouse-api",route=~"/v1/.*"}[5m])
+          )
+      - record: warehouse:http_complete_2xx:ratio5m
+        expr: |
+          (
+            (
+              sum by (job, instance, route, method) (warehouse:http_requests:rate5m{status=~"2..",outcome="complete"})
+              or on (job, instance, route, method)
+              (0 * sum by (job, instance, route, method) (warehouse:http_requests:rate5m))
+            )
+            / sum by (job, instance, route, method) (warehouse:http_requests:rate5m)
+          )
+          and on (job, instance, route, method)
+          (sum by (job, instance, route, method) (warehouse:http_requests:rate5m) > 0)
+      - record: warehouse:http_duration:p95_seconds
+        expr: |
+          histogram_quantile(0.95, sum by (job, instance, route, method, le) (
+            rate(warehouse_http_duration_seconds_bucket{job="tour-warehouse-api",route=~"/v1/.*",outcome="complete"}[5m])
+          ))
+      - alert: WarehouseApiScrapeUnavailable
+        expr: up{job="tour-warehouse-api"} == 0 or absent(up{job="tour-warehouse-api"})
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: 云仓 API 指标采集失败
+          description: 核对 API 进程、运维密钥和私有网络；此告警不证明业务数据库已损坏。

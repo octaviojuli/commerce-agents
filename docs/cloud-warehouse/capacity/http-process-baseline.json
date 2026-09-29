@@ -1,0 +1,92 @@
+{
+  "profile": "baseline",
+  "transport": "http",
+  "observed_at": "2026-09-23T15:26:21.728954+00:00",
+  "scale": {
+    "suppliers": 50,
+    "products_per_supplier": 200,
+    "departures_per_product": 10,
+    "concurrency": 100,
+    "requests": 400
+  },
+  "buyers": 100,
+  "counts": {
+    "supplier_product": 10000,
+    "departure": 100000,
+    "inventory_pool": 50000,
+    "contract_price": 50000
+  },
+  "environment": {
+    "os": "Darwin",
+    "architecture": "arm64",
+    "cpu_count": 10,
+    "python": "3.12.14",
+    "postgres": "16.13 (Homebrew)",
+    "database_max_connections": 30,
+    "database_pool_limit": 8,
+    "database_pool": "psycopg_pool",
+    "auth_pool_limit": 8,
+    "http_client_connection_limit": 101,
+    "http_client_pool": "per-thread",
+    "http_topology": "client threads and server in separate processes"
+  },
+  "setup_seconds": 8.09,
+  "boundary": "real loopback TCP/HTTP including fixture-session authentication, request queueing, serialization, RLS, pool wait and quote writes; excludes login issuance, TLS/proxy, browser, LLM and upstream APIs",
+  "http_server_stopped": true,
+  "inventory_unchanged": true,
+  "quote_snapshots_created": 101,
+  "distinct_quote_count_matches": true,
+  "disposable_resources_cleaned": true,
+  "operations": {
+    "catalog": {
+      "requests": 100,
+      "errors": {},
+      "p50_ms": 272.38,
+      "p95_ms": 313.69,
+      "p99_ms": 319.58,
+      "max_ms": 320.21,
+      "target_p95_ms": 800,
+      "passed": true,
+      "server_timing_samples": 100,
+      "server_p95_to_headers_ms": 312.43
+    },
+    "departures": {
+      "requests": 100,
+      "errors": {},
+      "p50_ms": 279.84,
+      "p95_ms": 320.54,
+      "p99_ms": 328.72,
+      "max_ms": 328.99,
+      "target_p95_ms": 800,
+      "passed": true,
+      "server_timing_samples": 100,
+      "server_p95_to_headers_ms": 318.47
+    },
+    "managed_stock": {
+      "requests": 100,
+      "errors": {},
+      "p50_ms": 275.68,
+      "p95_ms": 308.9,
+      "p99_ms": 319.08,
+      "max_ms": 323.78,
+      "target_p95_ms": 300,
+      "passed": false,
+      "server_timing_samples": 100,
+      "server_p95_to_headers_ms": 307.18
+    },
+    "managed_quote": {
+      "requests": 100,
+      "errors": {},
+      "p50_ms": 486.54,
+      "p95_ms": 553.0,
+      "p99_ms": 572.7,
+      "max_ms": 576.37,
+      "target_p95_ms": 500,
+      "passed": false,
+      "server_timing_samples": 100,
+      "server_p95_to_headers_ms": 543.42
+    }
+  },
+  "elapsed_seconds": 1.4,
+  "passed": false
+}

@@ -1,0 +1,34 @@
+{
+  "resource_owner": "6d75ac8b1550451c8e51c5f5d4cd21a9",
+  "api_image": "local/warehouse-api:20260924-05",
+  "postgres_image": "postgres:16-bookworm",
+  "limits": {
+    "database_cpu": 2,
+    "database_memory_mib": 1024,
+    "client_and_server_shared_cpu": 2,
+    "client_and_server_memory_mib": 1536
+  },
+  "external_network": false,
+  "application_credentials": false,
+  "reports": {
+    "smoke": {
+      "exit_code": 0,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-6d75ac8b1550451c8e51c5f5d4cd21a9/smoke.json",
+      "passed": true
+    },
+    "extended": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-6d75ac8b1550451c8e51c5f5d4cd21a9/extended.json",
+      "passed": false
+    }
+  },
+  "cleanup_complete": true,
+  "web_before": {
+    "18085": 200,
+    "18105": 200
+  },
+  "web_after": {
+    "18085": 200,
+    "18105": 200
+  }
+}

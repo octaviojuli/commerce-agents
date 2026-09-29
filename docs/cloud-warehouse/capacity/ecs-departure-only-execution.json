@@ -1,0 +1,25 @@
+{
+  "resource_owner": "4a68e1cddcf9411da7a2ad9c27f67fbe",
+  "api_image": "local/warehouse-api:20260924-02",
+  "postgres_image": "postgres:16-bookworm",
+  "limits": {
+    "database_cpu": 1,
+    "database_memory_mib": 1024,
+    "client_and_server_shared_cpu": 2,
+    "client_and_server_memory_mib": 1536
+  },
+  "external_network": false,
+  "application_credentials": false,
+  "reports": {
+    "smoke": {
+      "exit_code": 1,
+      "path": "/opt/tour-warehouse/releases/20260924-01/capacity-4a68e1cddcf9411da7a2ad9c27f67fbe/smoke.json",
+      "passed": false
+    }
+  },
+  "cleanup_complete": true,
+  "web_before": {
+    "18085": 200,
+    "18105": 200
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "profile": "baseline",
+  "observed_at": "2026-09-23T14:02:48.060777+00:00",
+  "scale": {
+    "suppliers": 50,
+    "products_per_supplier": 200,
+    "departures_per_product": 10,
+    "concurrency": 100,
+    "requests": 400
+  },
+  "buyers": 100,
+  "counts": {
+    "supplier_product": 10000,
+    "departure": 100000,
+    "inventory_pool": 50000,
+    "contract_price": 50000
+  },
+  "environment": {
+    "os": "Darwin",
+    "architecture": "arm64",
+    "cpu_count": 10,
+    "postgres": "16.13 (Homebrew)",
+    "database_pool_limit": 8
+  },
+  "setup_seconds": 8.26,
+  "boundary": "application services including RLS, pool wait and quote snapshot writes; excludes HTTP, LLM and upstream APIs",
+  "inventory_unchanged": true,
+  "disposable_resources_cleaned": true,
+  "operations": {
+    "catalog": {
+      "requests": 100,
+      "errors": {
+        "TimeoutError": 17
+      },
+      "p50_ms": 6370.17,
+      "p95_ms": 30012.55,
+      "p99_ms": 33073.53,
+      "max_ms": 33344.46,
+      "target_p95_ms": 800,
+      "passed": false
+    },
+    "departures": {
+      "requests": 100,
+      "errors": {
+        "TimeoutError": 15
+      },
+      "p50_ms": 61.56,
+      "p95_ms": 30007.37,
+      "p99_ms": 30009.99,
+      "max_ms": 30011.82,
+      "target_p95_ms": 800,
+      "passed": false
+    },
+    "managed_stock": {
+      "requests": 100,
+      "errors": {
+        "TimeoutError": 19
+      },
+      "p50_ms": 40.59,
+      "p95_ms": 30009.48,
+      "p99_ms": 30010.08,
+      "max_ms": 30010.28,
+      "target_p95_ms": 300,
+      "passed": false
+    },
+    "managed_quote": {
+      "requests": 100,
+      "errors": {
+        "TimeoutError": 36
+      },
+      "p50_ms": 30004.87,
+      "p95_ms": 44187.46,
+      "p99_ms": 48542.15,
+      "max_ms": 55129.49,
+      "target_p95_ms": 500,
+      "passed": false
+    }
+  },
+  "elapsed_seconds": 65.23,
+  "passed": false
+}

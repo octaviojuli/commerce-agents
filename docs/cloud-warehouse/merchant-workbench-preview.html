@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'">
+<title>线路 · 团期 · 订单 — 商户工作台结构预览</title>
+<style>
+:root{--ground:#f0f1eb;--paper:#fffefa;--chrome:#f7f8f2;--ink:#203a35;--muted:#63736a;--line:#dce1d6;--accent:#96502d;--tint:#f7e9dc;--green:#356448}
+*{box-sizing:border-box}body{margin:0;background:var(--ground);color:var(--ink);font:14px/1.65 "Avenir Next","PingFang SC","Microsoft YaHei",sans-serif}button,input,select{font:inherit}button,a{touch-action:manipulation}button{cursor:pointer}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #bb663b;outline-offset:3px}button{border:1px solid var(--line);border-radius:7px;background:var(--paper);color:var(--ink);padding:7px 12px}a{color:var(--accent)}.layout{display:grid;grid-template-columns:218px minmax(0,1fr);min-height:100vh}aside{background:var(--chrome);border-right:1px solid var(--line);padding:28px 18px;display:flex;flex-direction:column;gap:24px}.brand{font-weight:700;font-size:21px}.sub{font-size:12px;color:var(--muted)}.mark{display:block;font-size:11px;letter-spacing:3px;color:var(--accent);margin-bottom:12px}nav{display:grid;gap:7px}nav button{text-align:left;border:0;background:transparent;padding:12px}nav button[aria-current=page]{background:#e8ece2;font-weight:700;border-left:3px solid var(--accent)}.support{border-top:1px solid var(--line);padding-top:18px;color:var(--muted);font-size:13px}.support p{margin:9px 10px}.operator{margin-top:auto;border-top:1px solid var(--line);padding-top:18px}.workspace{min-width:0}.banner{padding:12px 32px;background:#f8edd5;color:#69490b;border-bottom:1px solid #e8dcc0;font-size:13px}.top{padding:23px 32px 0;display:flex;justify-content:space-between;gap:20px;align-items:center}.source{font-size:12px;color:var(--muted)}main{padding:26px 32px 50px;max-width:1600px;margin:auto}h1,h2,h3,p{margin:0}h1{font:700 32px/1.3 "Songti SC",Georgia,serif;margin:7px 0 12px}h2{font-size:20px}h3{font-size:15px;margin-bottom:10px}.intro{color:var(--muted);max-width:780px}.eyebrow{color:var(--accent);font-size:11px;letter-spacing:2px;font-weight:700}.row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.between{justify-content:space-between}.panel{margin-top:22px;background:var(--paper);border:1px solid var(--line);border-radius:11px;padding:22px}.filters{display:flex;gap:14px;align-items:end;flex-wrap:wrap}label{display:grid;gap:6px;font-size:12px;color:var(--muted)}input,select{background:white;border:1px solid #b8c4b5;border-radius:6px;padding:9px 11px;color:var(--ink)}input{width:260px}.primary{background:var(--ink);color:white;border-color:var(--ink)}.tablewrap{overflow:auto;margin-top:12px}table{border-collapse:collapse;width:100%;text-align:left;white-space:nowrap}th{font-size:12px;color:var(--muted);font-weight:500;background:#f5f6ef}th,td{padding:13px 12px;border-bottom:1px solid var(--line)}td:first-child{font-variant-numeric:tabular-nums}tr:last-child td{border-bottom:0}.link{border:0;background:transparent;padding:3px 0;color:var(--accent);text-decoration:underline;text-underline-offset:3px}.badge{display:inline-block;font-size:12px;padding:2px 8px;border-radius:5px;background:#e4efdf;color:#305b40}.badge.gray{background:#eceee8;color:#5a645d}.badge.warn{background:#f8edd5;color:#785312}.scope{background:var(--tint);border-radius:6px;padding:7px 12px;margin-top:16px;display:flex;align-items:center;justify-content:space-between;gap:15px}.muted{color:var(--muted);font-size:13px}.foot{margin-top:13px;font-size:12px;color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.block{padding:17px;border:1px solid var(--line);border-radius:8px;background:#fafbf6}.block p{color:var(--muted);font-size:13px}.big{font-size:24px;font-weight:600;margin:4px 0}.tabs{border-bottom:1px solid var(--line);padding:14px 0;display:flex;gap:10px;flex-wrap:wrap}.tabs span{font-size:13px;padding:5px 10px;background:#f0f1eb;border-radius:5px}.note{border-left:3px solid #b78644;padding:10px 15px;background:#faf3e6;font-size:13px;margin-top:18px}.kv{display:grid;grid-template-columns:150px 1fr;gap:10px;padding:13px 0;border-bottom:1px solid var(--line)}.kv span{color:var(--muted)}.detail{scroll-margin-top:20px}.detail h2{margin-bottom:5px}.steps{counter-reset:day}.day{padding:17px 0;border-bottom:1px solid var(--line)}.day::before{counter-increment:day;content:"D" counter(day);font-weight:700;color:var(--accent);margin-right:12px}.day p{margin:8px 0 0 34px;color:var(--muted)}.assistant{margin-top:24px;border:1px dashed #b8c4b5;padding:13px 16px;border-radius:8px;color:var(--muted);font-size:13px}.empty{padding:28px;text-align:center;color:var(--muted)}[hidden]{display:none!important}.minor{font-size:12px;color:var(--muted);margin-top:3px}.stack{display:grid;gap:12px}.section-title{margin:22px 0 12px}.legend{font-size:12px;color:var(--muted);margin-top:14px}
+aside{position:sticky;top:0;height:100vh;overflow:auto}
+@media(max-width:1000px){.layout{grid-template-columns:170px minmax(0,1fr)}main{padding:22px}.top,.banner{padding-left:22px;padding-right:22px}.grid{grid-template-columns:1fr}.source{max-width:230px}.panel{padding:17px}}
+@media(max-width:680px){.layout{display:block}aside{padding:16px;gap:12px;border-right:0;border-bottom:1px solid var(--line)}.mark{display:none}.brand{font-size:18px}nav{display:flex;gap:5px}nav button{flex:1;padding:10px 6px;text-align:center}.support,.operator{display:none}.top{padding:16px 16px 0;align-items:start}.top .source{max-width:180px}.banner{padding:10px 16px}main{padding:20px 16px}h1{font-size:28px}.filters label,input,select{width:100%}.filters label{flex:1 1 100%}.kv{grid-template-columns:110px 1fr}.panel{padding:15px}}
+@media(max-width:680px){aside{position:static;height:auto;overflow:visible}}
+@media print{aside,.filters,.top,button{display:none}.layout{display:block}.panel{break-inside:avoid}body{background:white}}
+
+.button{display:inline-block;border:1px solid var(--line);border-radius:7px;background:var(--paper);color:var(--ink);padding:7px 12px;text-decoration:none}.button.primary{background:var(--ink);color:white}.record-link{font-weight:600;text-decoration:none;color:var(--ink)}.record-link:hover{text-decoration:underline;color:var(--accent)}.pagination{margin-top:16px}.disabled{opacity:.5;cursor:default}.detail{margin:0;padding:0;overflow:visible;border:0;background:transparent}.detail-header{position:sticky;top:0;z-index:4;background:var(--chrome);padding:16px 22px;border:1px solid var(--line);border-radius:10px;box-shadow:0 4px 12px #203a3510}.detail-header h1{font-size:27px;margin:5px 0}.breadcrumbs{font-size:12px;margin-bottom:12px;color:var(--muted)}.detail-body{background:var(--paper);padding:24px;border:1px solid var(--line);border-radius:10px;margin-top:18px}.detail-header .actions{flex-shrink:0}.detail-header .eyebrow{overflow-wrap:anywhere}.tabs a{display:inline-block;padding:5px 10px;background:#f0f1eb;border-radius:5px;text-decoration:none}.detail-body [id]{scroll-margin-top:180px}.detail-body .section-title{padding-top:6px}.preview-label{color:var(--muted);font-size:12px;margin-top:7px}
+@media(max-width:680px){.detail-header{padding:13px}.detail-header h1{font-size:23px}.detail-body{padding:16px}.detail-header .actions{gap:8px}.detail-header .button{font-size:12px;padding:6px 8px}.detail-body [id]{scroll-margin-top:240px}}
+@media print{.detail-header{position:static;box-shadow:none}.actions,.breadcrumbs,.pagination{display:none}}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside><div><span class="mark">TOUR / WORKSPACE</span><div class="brand">国旅环球</div><div class="sub">商户工作台 · 名称预览</div></div>
+<nav aria-label="业务页面"><button data-view="routes">01　线路管理</button><button data-view="departures">02　团期管理</button><button data-view="orders">03　订单管理</button></nav>
+<div class="support"><div class="sub">原有公共能力 · 保留</div><p>审批中心</p><p>数据同步</p><p>价表与自管库存</p><p>分销授权与供应源</p></div>
+<div class="operator"><strong>员工账号</strong><div class="sub">人员身份与商户组织分开</div></div></aside>
+<div class="workspace"><div class="banner"><strong>结构预览 · 所有业务记录均为虚构示例</strong>　可点击菜单、筛选、查看详情及关联跳转；不会读取或修改真实业务。</div>
+<header class="top"><div class="source">当前供应源<br><strong>国旅环球B2B-API接口</strong></div><a href="merchant-business-model.md">查看字段与状态方案 ↗</a></header>
+<main id="main"><div id="list-page"><div class="eyebrow" id="eyebrow"></div><h1 id="heading" tabindex="-1"></h1><p class="intro" id="intro"></p>
+<div id="coverage" class="note" hidden>已有 B2B 订单 · 只读。正式页面须显示授权部门、覆盖时间和完整性；本草图没有执行同步。</div>
+<div id="scope" class="scope" hidden><span></span><button id="clear-scope">清除关联筛选</button></div>
+<section class="panel"><form id="filters" class="filters"><label><span id="search-label">编号或名称</span><input id="query" type="search" placeholder="搜索虚构示例记录"></label><label>业务状态<select id="status"></select></label><button class="primary" type="submit">查询示例</button><button id="reset" type="button">重置</button></form>
+<div class="tablewrap" id="table"></div><div class="row between pagination"><p class="foot" id="count" role="status"></p><div id="pagination" class="row" aria-label="列表分页"></div></div></section>
+</div><section class="panel detail" id="detail" hidden aria-label="独立详情页面"></section>
+<div class="assistant">原商户助手继续保留。正式系统中，助手和页面共用同一套业务服务、组织权限与审批规则。</div>
+<p class="legend">本草图用于核对栏目与操作路径。表格宽时可横向滚动；完整字段、权限和异常状态以设计方案为准。</p>
+</main></div></div>
+<script>
+
+const routes=[{id:'R-DEMO-001',name:'示例线路 A（虚构）',destination:'示例目的地',days:5,status:'上架'},{id:'R-DEMO-002',name:'示例线路 B（虚构）',destination:'示例目的地',days:7,status:'下架'}];
+const departures=[{id:'D-DEMO-001',route:'R-DEMO-001',date:'2030-10-01',back:'2030-10-05',status:'待核实',seats:12},{id:'D-DEMO-002',route:'R-DEMO-001',date:'2030-10-08',back:'2030-10-12',status:'关闭',seats:8},{id:'D-DEMO-003',route:'R-DEMO-001',date:'2030-10-08',back:'2030-10-12',status:'待核实',seats:0}];
+const orders=[{id:'O-DEMO-001',departure:'D-DEMO-001',buyer:'示例采购单位甲（虚构）',adults:2,children:1,amount:5600,status:'已确认'},{id:'O-DEMO-002',departure:'D-DEMO-001',buyer:'示例采购单位乙（虚构）',adults:1,children:0,amount:1900,status:'已取消'}];
+
+// Fictional rows make pagination and return-position behavior reviewable.
+for(let n=3;n<=18;n++) routes.push({id:`R-DEMO-${String(n).padStart(3,'0')}`,name:`示例线路 ${String(n).padStart(2,'0')}（虚构）`,destination:'示例目的地',days:5,status:n%3===0?'下架':'上架'});
+const cfg={routes:{title:'线路管理',en:'01 / ROUTES',intro:'维护每条线路的行程内容与销售介绍。参考价格归线路，具体发团价格与名额进入团期查看。',search:'线路编号或名称',states:['上架','下架'],heads:['线路编号 / 名称','目的地 / 天数','参考价格','上下架','团期数量','操作']},departures:{title:'团期管理',en:'02 / DEPARTURES',intro:'按团号管理某一次发团计划。销售状态、可售余位与成团情况分别展示，同一日期也可以有多个团号。',search:'团号或线路名称',states:['待核实','关闭'],heads:['团号','所属线路','出发 / 返回','销售状态','可售余位','操作']},orders:{title:'订单管理',en:'03 / EXISTING ORDERS',intro:'查看 B2B 已有订单及其采购单位、成交金额和原始状态。金额、结算信息来自订单本身。',search:'订单号、团号或下单单位',states:['已确认','已取消'],heads:['订单号 / 下单单位','团号 / 出发日期','人数','订单总额','业务状态','结算方式','操作']}};
+
+const $=s=>document.querySelector(s);
+const money=n=>'¥'+n.toLocaleString('zh-CN',{minimumFractionDigits:2});
+const escapeHTML=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const badge=s=>`<span class="badge ${['下架','关闭','已取消'].includes(s)?'gray':s==='待核实'?'warn':''}">${escapeHTML(s)}</span>`;
+const routeName=id=>routes.find(r=>r.id===id)?.name??'历史线路待关联';
+const dataFor=v=>v==='routes'?routes:v==='departures'?departures:orders;
+const pageSize=8;
+let view='routes',currentId='',query='',status='',scope='',pageNumber=1,restoring=false;
+history.scrollRestoration='manual';
+function href(v,id='',params={}){
+  const search=new URLSearchParams();
+  for(const key of ['q','status','scope','page'])if(params[key]&&!(key==='page'&&Number(params[key])===1))search.set(key,params[key]);
+  return '#'+v+(id?'/'+encodeURIComponent(id):'')+(search.size?'?'+search.toString():'');
+}
+function context(){return {q:query,status,scope,page:pageNumber};}
+function link(v,id,params,label,cls='link',restore=false){return `<a class="${cls}" href="${escapeHTML(href(v,id,params))}"${restore?' data-restore="true"':''}>${escapeHTML(label)}</a>`;}
+function listAddress(){return href(view,'',context());}
+function loadState(){
+  const [path,search='']=location.hash.slice(1).split('?');const parts=path.split('/');
+  view=Object.hasOwn(cfg,parts[0])?parts[0]:'routes';
+  try{currentId=decodeURIComponent(parts[1]||'');}catch{currentId='INVALID';}
+  const params=new URLSearchParams(search);query=(params.get('q')||'').slice(0,500);
+  status=cfg[view].states.includes(params.get('status'))?params.get('status'):'';
+  scope=view==='routes'?'':(params.get('scope')||'').slice(0,100);
+  pageNumber=Math.min(10000,Math.max(1,parseInt(params.get('page'),10)||1));
+}
+function stored(address){try{return JSON.parse(sessionStorage.getItem('merchant-preview:'+address)||'null');}catch{return null;}}
+function saveEntry(focusHref){
+  if(restoring)return;
+  const current={...history.state,preview:true,address:location.hash,scroll:window.scrollY,tableX:$('#table').scrollLeft};
+  if(focusHref)current.focusHref=focusHref;
+  history.replaceState(current,'');
+  if(!currentId)try{sessionStorage.setItem('merchant-preview:'+location.hash,JSON.stringify(current));}catch{}
+}
+function navigate(address,restore=false){
+  saveEntry();const prior=restore?stored(address):null;
+  history.pushState({...prior,preview:true,address,scroll:prior?.scroll||0},'',address);
+  render(history.state);
+}
+function rows(){return dataFor(view).filter(r=>{
+  if(status&&r.status!==status)return false;
+  if(scope&&(view==='departures'?r.route:r.departure)!==scope)return false;
+  const haystack=[r.id,r.name,r.buyer,r.departure,r.route?routeName(r.route):''].filter(Boolean).join(' ');
+  return !query||haystack.toLowerCase().includes(query.toLowerCase());
+});}
+function restorePosition(saved){requestAnimationFrame(()=>{
+  window.scrollTo(0,saved?.scroll||0);$('#table').scrollLeft=saved?.tableX||0;
+  const focus=saved?.focusHref&&[...document.querySelectorAll('a[href]')].find(a=>a.getAttribute('href')===saved.focusHref);
+  (focus??$(currentId?'#detail-title':'#heading'))?.focus({preventScroll:true});
+  requestAnimationFrame(()=>{restoring=false;});
+});}
+function render(saved={}){
+  restoring=true;loadState();const c=cfg[view];
+  document.querySelectorAll('[data-view]').forEach(b=>{if(b.dataset.view===view)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});
+  $('#list-page').hidden=!!currentId;$('#detail').hidden=!currentId;
+  if(currentId){renderDetail();restorePosition(saved);return;}
+  document.title=c.title+' — 商户工作台结构预览';
+  $('#eyebrow').textContent=c.en;$('#heading').textContent=c.title;$('#intro').textContent=c.intro;
+  $('#search-label').textContent=c.search;$('#coverage').hidden=view!=='orders';
+  $('#status').innerHTML='<option value="">全部状态</option>'+c.states.map(s=>`<option ${s===status?'selected':''}>${s}</option>`).join('');$('#query').value=query;
+  $('#scope').hidden=!scope;$('#scope span').textContent=(view==='departures'?'所属线路：':'所属团期：')+scope;
+  const all=rows();const pages=Math.max(1,Math.ceil(all.length/pageSize));pageNumber=Math.min(pageNumber,pages);
+  const canonical=listAddress();if(location.hash!==canonical)history.replaceState({...history.state,address:canonical},'',canonical);
+  const items=all.slice((pageNumber-1)*pageSize,pageNumber*pageSize);
+  const body=items.map(r=>{
+    const details=link(view,r.id,context(),view==='routes'?'线路详情':view==='departures'?'团期详情':'订单详情');
+    if(view==='routes')return `<tr><td>${link(view,r.id,context(),r.id,'record-link')}<div>${link(view,r.id,context(),r.name,'record-link')}</div></td><td>${r.destination}<div class="minor">${r.days} 天</div></td><td>未提供<div class="minor">不代表成交价</div></td><td>${badge(r.status)}</td><td>${departures.filter(d=>d.route===r.id).length} 个示例团期</td><td>${details}<br>${link('departures','',{scope:r.id},'查看团期 →')}</td></tr>`;
+    if(view==='departures')return `<tr><td>${link(view,r.id,context(),r.id,'record-link')}</td><td>${routeName(r.route)}<div class="minor">${r.route}</div></td><td>${r.date}<div class="minor">${r.back}</div></td><td>${badge(r.status)}</td><td>${r.seats===0?'无可售余位':r.seats+' 位'}<div class="minor">示例观察，非实时数据</div></td><td>${details}<br>${link('orders','',{scope:r.id},'查看订单 →')}</td></tr>`;
+    const d=departures.find(d=>d.id===r.departure);
+    return `<tr><td>${link(view,r.id,context(),r.id,'record-link')}<div class="minor">${r.buyer}</div></td><td>${r.departure}<div class="minor">${d.date}</div></td><td>${r.adults} 成人 / ${r.children} 儿童</td><td>${money(r.amount)}<div class="minor">CNY · 示例历史金额</div></td><td>${badge(r.status)}</td><td>上游未提供</td><td>${details}</td></tr>`;
+  }).join('');
+  $('#table').innerHTML=`<table><thead><tr>${c.heads.map(h=>`<th scope="col">${h}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`+(items.length?'':'<div class="empty">此筛选下没有示例记录。正式系统会区分无记录、无权限、读取失败和接口未开放。</div>');
+  $('#count').textContent=`共 ${all.length} 条虚构示例 · 每页 ${pageSize} 条 · 此处不代表真实数据总量`;
+  $('#pagination').innerHTML=(pageNumber>1?link(view,'',{...context(),page:pageNumber-1},'上一页','button'):'<span class="button disabled">上一页</span>')+`<span>第 ${pageNumber} / ${pages} 页</span>`+(pageNumber<pages?link(view,'',{...context(),page:pageNumber+1},'下一页','button'):'<span class="button disabled">下一页</span>');
+  restorePosition(saved);
+}
+function renderDetail(){
+  const id=currentId,el=$('#detail');const record=dataFor(view).find(r=>r.id===id);
+  const back=link(view,'',context(),'← 返回'+cfg[view].title+'列表','button',true);
+  if(!record){document.title='记录不存在 — 商户工作台结构预览';el.innerHTML=`<header class="detail-header">${back}<h1 id="detail-title" tabindex="-1">记录不存在</h1></header><div class="detail-body">该地址没有对应的示例记录。可以返回列表重新选择。</div>`;return;}
+  document.title=id+' · '+(record.name||cfg[view].title.replace('管理','详情'))+' — 结构预览';
+  const title=(name,extra)=>`<header class="detail-header"><div class="breadcrumbs">${link(view,'',context(),cfg[view].title,'link',true)} / ${id} / 详情</div><div class="row between"><div><div class="eyebrow">${id}</div><h1 id="detail-title" tabindex="-1">${name}</h1></div><div class="row actions">${back}${extra??''}</div></div><p class="preview-label">独立详情页 · 虚构示例${view==='orders'?' · 已有订单只读':''}</p></header><div class="detail-body">`;
+  let content='';
+if(view==='routes'){const r=routes.find(r=>r.id===id);content=title(r.name,`${link("departures", "", {scope:id}, "查看团期 →", "button primary")}`)+`<div class="tabs" aria-label="线路内容目录"><button data-section="route-basic">基础资料</button><button data-section="route-itinerary">行程内容</button><button data-section="route-terms">费用与须知</button><button data-section="route-assets">图片与附件</button><button data-section="route-history">发布记录</button></div><div id="route-basic" class="kv"><span>线路编号</span><strong>${r.id}</strong></div><div class="kv"><span>亮点与特色</span><div>此处呈现线路特色与卖点，独立于团期价格及库存。</div></div><div class="kv"><span>简要行程</span><div>按天概览，帮助员工快速了解整条线路。</div></div><h3 id="route-itinerary" class="section-title">逐日行程 · 栏目示意</h3><div class="steps"><div class="day"><strong>当天标题 / 活动安排</strong><p>景点与游览安排　·　早餐 / 午餐 / 晚餐　·　住宿及标准　·　交通</p></div><div class="day"><strong>后续日程</strong><p>沿用相同字段，支持查看原文和经审批的修订内容。</p></div></div><div class="grid section-title"><div id="route-terms" class="block"><h3>费用包含 / 不包含</h3><p>线路通用条款；方案差异在团期标明。</p></div><div id="route-assets" class="block"><h3>图片 / 原始行程附件</h3><p>预览、来源、版本与复核记录集中呈现。</p></div><div class="block"><h3>注意事项 / 参考价格</h3><p>参考价格须注明币种、单位和适用范围。</p></div></div><div id="route-history" class="note"><strong>发布记录 · 栏目示意</strong><p>正式系统展示发布时间、审批人和版本；草图没有真实发布记录。</p>本页管理行程内容。线路下架后，历史团期与订单仍可查询；重新上架不自动解除某个团期的关闭。</div>`;}
+if(view==='departures'){const d=departures.find(d=>d.id===id);content=title('团期详情',`${link("routes", d.route, {}, "查看线路", "button")}${link("orders", "", {scope:id}, "查看订单 →", "button primary")}`)+`<div class="kv"><span>所属线路</span><strong>${routeName(d.route)} · ${d.route}</strong></div><div class="kv"><span>出发 / 返回</span><div>${d.date} → ${d.back}（虚构日期）</div></div><div class="grid section-title"><div class="block"><h3>销售状态</h3>${badge(d.status)}<p>独立记录关闭和报名截止。</p></div><div class="block"><h3>可售余位</h3><div class="big">${d.seats} <small>位</small></div><p>示例库存观察，不推断是否已确认售出。</p></div><div class="block"><h3>成团情况</h3><div class="big">待核实</div><p>与销售状态、余位分开。</p></div></div><h3 class="section-title">价格矩阵 · 方案与采购单位明确后查看</h3><div class="tablewrap"><table><thead><tr><th>方案</th><th>计价项</th><th>市场价</th><th>适用采购单位的结算价</th></tr></thead><tbody>${['成人','儿童','老人','单房差'].map(n=>`<tr><td>基础方案（示例）</td><td>${n}</td><td>未读取</td><td>待选择采购组织并取得有效报价</td></tr>`).join('')}</tbody></table></div><h3 class="section-title">库存明细 · B2B 管理</h3><div class="tablewrap"><table><thead><tr>${['计划人数','确认数','占位数','预留数','候补数','可售余位'].map(s=>`<th>${s}</th>`).join('')}</tr></thead><tbody><tr><td>未提供</td><td>未提供</td><td>待核实口径</td><td>待核实口径</td><td>未提供</td><td>${d.seats}</td></tr></tbody></table></div><div class="note">占位与预留暂不合并、不套减法。订单同步不扣库存；同团期多个报价方案也不增加名额。报名截止与预留到期分别展示。</div>`;}
+if(view==='orders'){const o=orders.find(o=>o.id===id);const d=departures.find(d=>d.id===o.departure);const lines=o.id==='O-DEMO-001'?'<tr><td>成人</td><td>2</td><td>¥2,000.00</td><td>¥4,000.00</td></tr><tr><td>儿童</td><td>1</td><td>¥1,600.00</td><td>¥1,600.00</td></tr>':'<tr><td>成人</td><td>1</td><td>上游未提供</td><td>¥1,900.00</td></tr>';content=title('已有订单详情',`${link("departures", d.id, {}, "查看团期", "button")}`)+`<div class="kv"><span>下单单位</span><strong>${o.buyer}</strong></div><div class="kv"><span>所属团期 / 线路</span><div>${d.id} / ${routeName(d.route)}</div></div><div class="kv"><span>订单业务状态</span><div>${badge(o.status)} <span class="muted">原始状态与标准状态保留对应关系</span></div></div><h3 class="section-title">成交明细 · 虚构示例</h3><div class="tablewrap"><table><thead><tr><th>计价项</th><th>数量</th><th>历史单价</th><th>金额</th></tr></thead><tbody>${lines}</tbody></table></div><div class="kv"><span>订单总额</span><strong>${money(o.amount)} CNY</strong></div><div class="grid section-title"><div class="block"><h3>结算方式</h3><p>上游未提供</p><p>现付或账期须有明确来源。</p></div><div class="block"><h3>已收 / 未收 / 已退</h3><p>本示例未提供</p><p>不能根据订单状态推断。</p></div><div class="block"><h3>来源与覆盖</h3><p>示例部门 · 未执行同步</p><p>正式页面显示最近成功观察与完整性。</p></div></div><div class="note">本页仅查看。缺少历史单价时不反算；没有成交时行程快照时，不拿今天的线路版本补成历史成交内容。</div>`;}
+
+  el.innerHTML=content+'</div>';
+}
+document.addEventListener('click',e=>{
+  const anchor=e.target.closest('a[href]');
+  if(anchor&&anchor.getAttribute('href').startsWith('#')){
+    if(e.button!==0||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;
+    e.preventDefault();saveEntry(anchor.getAttribute('href'));navigate(anchor.getAttribute('href'),anchor.hasAttribute('data-restore'));return;
+  }
+  const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.view){navigate(href(b.dataset.view));return;}
+  if(b.dataset.section){document.getElementById(b.dataset.section)?.scrollIntoView({block:'start',behavior:'instant'});}
+});
+$('#filters').addEventListener('submit',e=>{e.preventDefault();navigate(href(view,'',{...context(),q:$('#query').value.trim(),status:$('#status').value,page:1}));});
+$('#reset').addEventListener('click',()=>navigate(href(view,'',{scope})));
+$('#clear-scope').addEventListener('click',()=>navigate(href(view,'',{q:query,status,page:1})));
+window.addEventListener('popstate',()=>render(history.state));
+window.addEventListener('hashchange',()=>{if(history.state?.address!==location.hash)render({scroll:0});});
+let frame;window.addEventListener('scroll',()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>saveEntry());},{passive:true});
+window.addEventListener('pagehide',()=>saveEntry());
+render(history.state?.address===location.hash?history.state:{});
+</script>
+</body></html>

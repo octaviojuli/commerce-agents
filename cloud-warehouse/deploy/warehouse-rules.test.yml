@@ -1,0 +1,53 @@
+rule_files:
+  - warehouse-rules.yml
+evaluation_interval: 15s
+tests:
+  - name: unavailable target fires after two minutes and recovers
+    interval: 15s
+    input_series:
+      - series: 'up{job="tour-warehouse-api",instance="api:8005"}'
+        values: '0+0x12 1+0x12'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: WarehouseApiScrapeUnavailable
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: WarehouseApiScrapeUnavailable
+        exp_alerts:
+          - exp_labels: {job: tour-warehouse-api, instance: "api:8005", severity: warning}
+            exp_annotations:
+              summary: 云仓 API 指标采集失败
+              description: 核对 API 进程、运维密钥和私有网络；此告警不证明业务数据库已损坏。
+      - eval_time: 4m
+        alertname: WarehouseApiScrapeUnavailable
+        exp_alerts: []
+  - name: missing target is not silently healthy
+    interval: 15s
+    input_series: []
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: WarehouseApiScrapeUnavailable
+        exp_alerts:
+          - exp_labels: {job: tour-warehouse-api, severity: warning}
+            exp_annotations:
+              summary: 云仓 API 指标采集失败
+              description: 核对 API 进程、运维密钥和私有网络；此告警不证明业务数据库已损坏。
+  - name: success ratio preserves rejection and absence semantics
+    interval: 15s
+    input_series:
+      - series: 'warehouse_http_requests_total{job="tour-warehouse-api",instance="api:8005",route="/v1/advisor/quotes",method="POST",status="201",outcome="complete"}'
+        values: '0+12x20'
+      - series: 'warehouse_http_requests_total{job="tour-warehouse-api",instance="api:8005",route="/v1/advisor/quotes",method="POST",status="500",outcome="error"}'
+        values: '0+3x20'
+      - series: 'warehouse_http_requests_total{job="tour-warehouse-api",instance="api:8005",route="/v1/products",method="GET",status="403",outcome="complete"}'
+        values: '0+15x20'
+      - series: 'warehouse_http_requests_total{job="tour-warehouse-api",instance="api:8005",route="/v1/departures",method="GET",status="200",outcome="complete"}'
+        values: '0+0x20'
+    promql_expr_test:
+      - expr: warehouse:http_complete_2xx:ratio5m
+        eval_time: 5m
+        exp_samples:
+          - labels: 'warehouse:http_complete_2xx:ratio5m{job="tour-warehouse-api",instance="api:8005",route="/v1/advisor/quotes",method="POST"}'
+            value: 0.8
+          - labels: 'warehouse:http_complete_2xx:ratio5m{job="tour-warehouse-api",instance="api:8005",route="/v1/products",method="GET"}'
+            value: 0

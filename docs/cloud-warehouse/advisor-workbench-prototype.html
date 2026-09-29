@@ -1,0 +1,612 @@
+<title>云仓顾问工作台原型</title>
+<style>
+:root{
+  --font-body:"PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Source Han Sans SC","Microsoft YaHei",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --ground:#f4f2ec;--card:#ffffff;--well:#eeebe3;
+  --ink:#23332e;--ink-2:#3c4f48;--ink-soft:#5d6f68;--ink-faint:#97a49e;
+  --line:rgba(35,51,46,.13);--line-strong:rgba(35,51,46,.22);
+  --accent:#1f7a8c;--accent-strong:#186b7c;--accent-soft:#dfeef1;--accent-ink:#135463;--on-accent:#fff;
+  --ok:#2f7a50;--ok-soft:#e0efe4;--warn:#9a6b12;--warn-soft:#f6ead0;--danger:#b3402a;--danger-soft:#f7ded8;
+  --violet:#6650b0;--violet-soft:#e7e0f1;
+  --note:#c2410c;--note-soft:#fde7d9;
+  --shadow:0 1px 2px rgba(35,51,46,.06),0 4px 14px -6px rgba(35,51,46,.16);
+  --radius:12px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  color-scheme:dark;
+  --ground:#141b19;--card:#1c2522;--well:#25302c;
+  --ink:#e4ebe8;--ink-2:#c7d2ce;--ink-soft:#9aaba5;--ink-faint:#6c7d77;
+  --line:rgba(228,235,232,.12);--line-strong:rgba(228,235,232,.2);
+  --accent:#5fb4c4;--accent-strong:#4aa3b4;--accent-soft:#1d3a40;--accent-ink:#a9dbe4;--on-accent:#0d1b1e;
+  --ok:#7cc79a;--ok-soft:#1d3527;--warn:#e0b25a;--warn-soft:#3a2f17;--danger:#ef8a74;--danger-soft:#3d221c;
+  --violet:#b3a3ea;--violet-soft:#2c2640;--note:#f59e6b;--note-soft:#3b261a;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px -8px rgba(0,0,0,.5);
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#141b19;--card:#1c2522;--well:#25302c;
+  --ink:#e4ebe8;--ink-2:#c7d2ce;--ink-soft:#9aaba5;--ink-faint:#6c7d77;
+  --line:rgba(228,235,232,.12);--line-strong:rgba(228,235,232,.2);
+  --accent:#5fb4c4;--accent-strong:#4aa3b4;--accent-soft:#1d3a40;--accent-ink:#a9dbe4;--on-accent:#0d1b1e;
+  --ok:#7cc79a;--ok-soft:#1d3527;--warn:#e0b25a;--warn-soft:#3a2f17;--danger:#ef8a74;--danger-soft:#3d221c;
+  --violet:#b3a3ea;--violet-soft:#2c2640;--note:#f59e6b;--note-soft:#3b261a;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px -8px rgba(0,0,0,.5);
+}
+html,body{height:100%}
+body{background:var(--ground);color:var(--ink);font-family:var(--font-body);font-size:14px;line-height:1.6}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--font-mono);font-size:12px}
+
+.app{height:100%;display:grid;grid-template-rows:auto auto 1fr}
+.topbar{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line)}
+.brand{font-weight:600;white-space:nowrap}
+.brand span{color:var(--ink-soft);font-weight:400}
+.topbar .spacer{flex:1}
+.proto-tag{font-size:12px;color:var(--note);background:var(--note-soft);padding:2px 8px;border-radius:999px;white-space:nowrap}
+.tbtn{border:1px solid var(--line-strong);background:var(--card);border-radius:8px;padding:4px 10px;font-size:13px;white-space:nowrap}
+.tbtn[aria-pressed="true"]{background:var(--note-soft);border-color:var(--note);color:var(--note)}
+.who{font-size:13px;color:var(--ink-soft);white-space:nowrap}
+
+.stepper{display:flex;gap:4px;padding:8px 16px;background:var(--card);border-bottom:1px solid var(--line);overflow-x:auto;position:relative}
+.step{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:13px;color:var(--ink-faint);white-space:nowrap}
+.step .dot{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;border:1px solid var(--line-strong)}
+.step.done{color:var(--ink-2)}
+.step.done .dot{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.step.now{color:var(--accent-ink);background:var(--accent-soft);font-weight:600}
+.step.now .dot{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.step.offline{color:var(--ink-faint);border:1px dashed var(--line-strong)}
+.step-sep{color:var(--ink-faint);align-self:center}
+
+.main{display:grid;grid-template-columns:220px minmax(0,1fr) 360px;min-height:0}
+.sessions{border-right:1px solid var(--line);background:var(--card);padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;position:relative}
+.sessions h2{font-size:12px;color:var(--ink-soft);font-weight:600;letter-spacing:.04em;margin:4px 4px 2px}
+.sess{text-align:left;border:0;background:none;padding:8px 10px;border-radius:10px;display:flex;flex-direction:column;gap:2px}
+.sess:hover{background:var(--well)}
+.sess.on{background:var(--accent-soft)}
+.sess b{font-weight:600;font-size:13px}
+.sess small{color:var(--ink-soft);font-size:12px}
+.newbtn{border:1px dashed var(--line-strong);background:none;border-radius:10px;padding:8px;font-size:13px;color:var(--ink-2)}
+
+.chatcol{display:flex;flex-direction:column;min-height:0;min-width:0;position:relative}
+.log{flex:1;overflow-y:auto;padding:20px 16px 8px;display:flex;flex-direction:column;gap:14px}
+.log-inner{max-width:720px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.msg-user{align-self:flex-end;max-width:85%;background:var(--accent-strong);color:var(--on-accent);padding:10px 14px;border-radius:14px 14px 4px 14px}
+.msg-action{align-self:flex-end;font-size:12px;color:var(--ink-soft);background:var(--well);padding:4px 10px;border-radius:999px}
+.msg-agent{display:flex;flex-direction:column;gap:10px;max-width:100%}
+.msg-agent>p{margin:0}
+.agent-mark{font-size:12px;color:var(--accent);font-weight:600}
+.typing{color:var(--ink-faint);font-size:13px}
+.home{margin:auto;max-width:520px;padding:24px 0;display:flex;flex-direction:column;gap:12px}
+.home h1{font-size:22px;margin:0;text-wrap:balance}
+.home p{margin:0;color:var(--ink-soft)}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow)}
+.card h3{margin:0;font-size:15px;line-height:1.4}
+.card .sub{color:var(--ink-soft);font-size:12px}
+.update{display:flex;flex-direction:column;gap:6px}
+.update-row{display:flex;gap:8px;align-items:baseline;font-size:13px;flex-wrap:wrap}
+.update-row .k{color:var(--ink-soft);min-width:64px}
+.routes{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.route{display:flex;flex-direction:column;gap:8px}
+.reasons{display:flex;flex-direction:column;gap:3px;font-size:12px;margin:0;padding:0;list-style:none}
+.reasons li{display:flex;gap:6px}
+.ok{color:var(--ok)}.bad{color:var(--danger)}.mid{color:var(--warn)}
+.row-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
+.btn{border:1px solid var(--line-strong);background:var(--card);border-radius:8px;padding:5px 10px;font-size:13px}
+.btn:hover{background:var(--well)}
+.btn.primary{background:var(--accent-strong);color:var(--on-accent);border-color:var(--accent-strong)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:1px 8px;border-radius:999px;background:var(--well);color:var(--ink-2);white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.danger{background:var(--danger-soft);color:var(--danger)}
+.pill.accent{background:var(--accent-soft);color:var(--accent-ink)}
+.pill.violet{background:var(--violet-soft);color:var(--violet)}
+.deps{width:100%;border-collapse:collapse;font-size:13px}
+.deps th{text-align:left;font-weight:500;color:var(--ink-soft);font-size:12px;padding:4px 6px;border-bottom:1px solid var(--line)}
+.deps td{padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+.deps tr:last-child td{border-bottom:0}
+.deps tr.out td{color:var(--ink-faint)}
+.tablewrap{overflow-x:auto}
+.quote-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.qbox{background:var(--well);border-radius:10px;padding:8px 10px}
+.qbox .l{font-size:12px;color:var(--ink-soft)}
+.qbox .v{font-size:18px;font-weight:600}
+.lines{font-size:13px;display:flex;flex-direction:column;gap:3px;margin:0;padding:0;list-style:none}
+.lines li{display:flex;justify-content:space-between;gap:8px}
+.missing{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:6px 10px;font-size:13px}
+.stale{background:var(--danger-soft);color:var(--danger);border-radius:8px;padding:6px 10px;font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.share{border:1px dashed var(--line-strong);border-radius:10px;padding:10px;font-size:13px;display:flex;flex-direction:column;gap:4px}
+.link{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.link code{background:var(--well);border-radius:6px;padding:2px 6px;user-select:all}
+
+.suggest{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line-strong);background:var(--card);border-radius:999px;padding:4px 12px;font-size:13px;color:var(--accent-ink)}
+.chip:hover{background:var(--accent-soft)}
+.composer{border-top:1px solid var(--line);background:var(--card);padding:10px 16px 12px}
+.composer-inner{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+.inputrow{display:flex;gap:8px}
+.inputrow input{flex:1;min-width:0;border:1px solid var(--line-strong);border-radius:10px;padding:9px 12px;background:var(--ground);color:var(--ink);font:inherit}
+
+.panel{border-left:1px solid var(--line);background:var(--card);overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:14px;position:relative}
+.panel h2{font-size:13px;margin:0;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.panel section{display:flex;flex-direction:column;gap:8px}
+.gauge{display:flex;flex-direction:column;gap:6px;background:var(--well);border-radius:10px;padding:10px}
+.gline{display:flex;justify-content:space-between;gap:8px;font-size:13px;align-items:center}
+.brief{display:flex;flex-direction:column}
+.bf{display:grid;grid-template-columns:72px 1fr auto;gap:8px;align-items:start;padding:7px 2px;border-bottom:1px solid var(--line);font-size:13px}
+.bf:last-child{border-bottom:0}
+.bf .k{color:var(--ink-soft)}
+.bf .v{min-width:0;overflow-wrap:anywhere}
+.bf .v.empty{color:var(--ink-faint)}
+.bf .hint{display:block;font-size:11px;color:var(--ink-soft)}
+.bf input{width:100%;border:1px solid var(--accent);border-radius:6px;padding:2px 6px;font:inherit;background:var(--ground);color:var(--ink)}
+.editbtn{border:0;background:none;color:var(--accent);font-size:12px;padding:0 2px}
+.src{font-size:10px;padding:0 6px;border-radius:999px;white-space:nowrap;line-height:18px}
+.src.said{background:var(--ok-soft);color:var(--ok)}
+.src.inferred{background:var(--warn-soft);color:var(--warn)}
+.src.advisor{background:var(--violet-soft);color:var(--violet)}
+.src.missing{background:var(--danger-soft);color:var(--danger)}
+.src.none{background:var(--well);color:var(--ink-faint)}
+.sel{font-size:13px;display:flex;flex-direction:column;gap:4px}
+.sel .empty{color:var(--ink-faint)}
+.flash{animation:flash 1.2s ease}
+@keyframes flash{0%{background:var(--accent-soft)}100%{background:transparent}}
+
+.tabs{display:none}
+.anno{display:none;position:absolute;z-index:5;width:20px;height:20px;border-radius:50%;background:var(--note);color:#fff;font-size:11px;font-weight:700;place-items:center;box-shadow:0 0 0 3px var(--note-soft);border:0;padding:0}
+body.notes .anno{display:grid}
+.notes-drawer{position:fixed;right:16px;bottom:16px;width:min(420px,calc(100% - 32px));max-height:min(70vh,560px);overflow-y:auto;background:var(--card);border:1px solid var(--note);border-radius:14px;box-shadow:var(--shadow);padding:14px 16px;z-index:10;display:none;flex-direction:column;gap:10px}
+body.notes .notes-drawer{display:flex}
+.notes-drawer h2{margin:0;font-size:14px;display:flex;justify-content:space-between;align-items:center}
+.notes-drawer ol{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:10px;font-size:13px}
+.notes-drawer li{display:grid;grid-template-columns:22px 1fr;gap:8px}
+.notes-drawer li b{display:block}
+.notes-drawer .n{width:20px;height:20px;border-radius:50%;background:var(--note);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center}
+.notes-drawer .was{color:var(--ink-soft);font-size:12px}
+
+@media (max-width:1100px){
+  .main{grid-template-columns:minmax(0,1fr) 340px}
+  .sessions{display:none}
+}
+@media (max-width:760px){
+  .app{grid-template-rows:auto auto auto 1fr}
+  .main{grid-template-columns:minmax(0,1fr)}
+  .tabs{display:flex;gap:4px;padding:6px 16px;background:var(--card);border-bottom:1px solid var(--line)}
+  .tabs button{flex:1;border:1px solid var(--line-strong);background:var(--card);border-radius:8px;padding:5px}
+  .tabs button[aria-selected="true"]{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent)}
+  .panel{border-left:0}
+  body[data-tab="chat"] .panel{display:none}
+  body[data-tab="brief"] .chatcol{display:none}
+  .who,.proto-tag{display:none}
+  .quote-grid{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){.flash{animation:none}}
+</style>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">◆ ACME 旅行社 <span>· 云仓顾问</span></div>
+    <span class="proto-tag">交互原型 · 演示数据</span>
+    <div class="spacer"></div>
+    <span class="who">李顾问 · 华东门店</span>
+    <button class="tbtn" id="notesBtn" aria-pressed="false">设计说明</button>
+    <button class="tbtn" id="resetBtn">重新演示</button>
+  </header>
+  <nav class="stepper" id="stepper" aria-label="销售阶段"></nav>
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tabChat" aria-selected="true">对话</button>
+    <button role="tab" id="tabBrief" aria-selected="false">需求单 <span id="tabBadge"></span></button>
+  </div>
+  <div class="main">
+    <aside class="sessions" aria-label="客人会话">
+      <button class="anno" style="top:6px;right:8px" data-n="7">7</button>
+      <h2>客人会话</h2>
+      <button class="newbtn" id="newBtn">＋ 新客人</button>
+      <div id="sessList"></div>
+    </aside>
+    <section class="chatcol" aria-label="对话">
+      <div class="log" id="log"><div class="log-inner" id="logInner"></div></div>
+      <div class="composer">
+        <div class="composer-inner">
+          <div class="suggest" id="suggest"></div>
+          <form class="inputrow" id="form">
+            <input id="input" autocomplete="off" aria-label="输入客人需求或指令" placeholder="描述客人的需求，或告诉助手下一步做什么">
+            <button class="btn primary" type="submit">发送</button>
+          </form>
+        </div>
+      </div>
+    </section>
+    <aside class="panel" id="panel" aria-label="需求单与当前选择">
+      <section style="position:relative">
+        <button class="anno" style="top:-4px;right:0" data-n="2">2</button>
+        <h2>需求单 <span class="sub" id="briefTitle" style="font-weight:400;color:var(--ink-soft);font-size:12px"></span></h2>
+        <div class="gauge" id="gauge" style="position:relative"></div>
+        <div class="brief" id="brief"></div>
+      </section>
+      <section style="position:relative">
+        <button class="anno" style="top:-4px;right:0" data-n="5">5</button>
+        <h2>当前选择</h2>
+        <div class="sel" id="selection"></div>
+      </section>
+    </aside>
+  </div>
+</div>
+<button class="anno" id="anno1" style="position:fixed" data-n="1">1</button>
+
+<div class="notes-drawer" id="notes" role="dialog" aria-label="设计说明">
+  <h2>设计说明 <button class="tbtn" id="closeNotes">关闭</button></h2>
+  <ol>
+    <li><span class="n">1</span><div><b>阶段条由服务端状态决定</b>需求 → 选线 → 团期 → 报价 → 发给客人。建议按钮和卡片上的操作都受当前阶段约束，不再靠提示词里的“不得……”规则。<div class="was">现状：warehouse_agent.py 里有 30 多条补丁式规则，没有阶段概念。</div></div></li>
+    <li><span class="n">2</span><div><b>需求单是持久化的会话状态</b>每个字段标明来源：客人说、推断、顾问改、待确认。每轮以受限数据块注入模型，重启和换设备后不丢。推断出来的内容（比如“春节前后”换算成的日期）必须标出来，由顾问确认。<div class="was">现状：只保存“看过哪些产品”，客人需求散落在对话文字里；原版的 SearchContext 存在进程内存，重启就丢。</div></div></li>
+    <li><span class="n">3</span><div><b>完整度分两级判定</b>检索只要目的地和出行时间；询价还需要成人儿童构成、儿童年龄、房型。缺什么就问什么，但不阻塞检索。一次只追问一件事。</div></li>
+    <li><span class="n">4</span><div><b>召回结果写明匹配理由</b>每条线路逐项对照需求单：日期窗口内有没有团、天数、出发城市、有没有购物店（以已复核行程为准）。不完全匹配的也展示，但标出冲突项，由顾问判断。<div class="was">现状：只支持关键词、精确天数、精确出发地；“12 天左右”表达不了。</div></div></li>
+    <li><span class="n">5</span><div><b>卡片按钮直接执行，对话只留一行记录</b>“看团期”“询价”“下一页”直接调接口，对话里只显示一行操作记录，不再往聊天里发“游标 xxx”这类机器文本。</div></li>
+    <li><span class="n">6</span><div><b>报价从需求单取人数和房型</b>不再手工填表。需求单变了，已有报价自动标记失效，需要重新询价。缺项明确列出，不给不完整的总价。</div></li>
+    <li><span class="n">7</span><div><b>一个客人一条会话</b>会话标题由需求单自动生成，比如“4 人 · 西葡 · 春节”，方便顾问同时跟进多位客人。</div></li>
+    <li><span class="n">8</span><div><b>一期终点：发给客人，占位转线下</b>分享页不含同行结算价。占位不开放，这里提供“复制给计调”的团期信息，流程有明确的终点，不会停在报价这一步。</div></li>
+  </ol>
+</div>
+
+<script>
+(function(){
+const $=s=>document.querySelector(s);
+const STAGES=["需求","选线","团期","报价","发给客人","占位（一期线下）"];
+const SRC={said:"客人说",inferred:"推断·待确认",advisor:"顾问改",missing:"询价前需补",none:"未提"};
+const ROUTES=[
+ {id:"WP-1042",name:"ACME 西葡经典12日",days:12,city:"上海",reviewed:true,
+  reasons:[["ok","窗口内有 3 个团期"],["ok","12 天，在 11–13 天范围内"],["ok","上海往返"],["ok","已复核行程：全程无购物店"]]},
+ {id:"WP-1187",name:"ACME 西葡摩13日",days:13,city:"上海",reviewed:true,
+  reasons:[["ok","窗口内有 1 个团期"],["ok","13 天，在范围内"],["mid","多一个国家：摩洛哥（扩展选择）"],["bad","已复核行程第 9 天有 1 个购物店，与“无购物”冲突"]]},
+ {id:"WP-0968",name:"ACME 伊比利亚深度11日",days:11,city:"北京",reviewed:false,
+  reasons:[["ok","窗口内有 2 个团期"],["ok","11 天，在范围内"],["bad","北京出发，与“上海”不符"],["mid","行程尚未复核，购物情况未知"]]}
+];
+const DEPS=[
+ {id:"WD-55301",code:"XP270130",go:"01-30",back:"02-10",status:"short",label:"余位不足 4 人",deadline:"01-08"},
+ {id:"WD-55302",code:"XP270203",go:"02-03",back:"02-14",status:"ok",label:"有位，可满足 4 人",deadline:"01-10"},
+ {id:"WD-55303",code:"XP270210",go:"02-10",back:"02-21",status:"unknown",label:"待确认（库存超过 5 分钟未刷新）",deadline:"01-17"},
+ {id:"WD-55304",code:"XP270220",go:"02-20",back:"03-03",status:"out",label:"在出行窗口外",deadline:"01-27"}
+];
+let S, typingTimer=null;
+
+function fresh(){
+  return {
+    stage:0, busy:false,
+    brief:{
+      dest:{k:"目的地",v:"",src:"none",need:"search"},
+      window:{k:"出行时间",v:"",src:"none",need:"search"},
+      days:{k:"天数",v:"",src:"none",need:"opt"},
+      city:{k:"出发城市",v:"",src:"none",need:"opt"},
+      party:{k:"人数",v:"",src:"none",need:"search"},
+      mix:{k:"成人儿童",v:"",src:"none",need:"quote"},
+      rooms:{k:"房型",v:"",src:"none",need:"quote"},
+      pref:{k:"偏好",v:"",src:"none",need:"opt"},
+      budget:{k:"预算",v:"",src:"none",need:"opt"}
+    },
+    route:null, dep:null, quote:null, quoteStale:false, depsStale:false, shared:false,
+    title:"新客人", editing:null
+  };
+}
+
+/* ---------- rendering ---------- */
+function renderStepper(){
+  const el=$("#stepper"); el.innerHTML="";
+  STAGES.forEach((name,i)=>{
+    const d=document.createElement("div");
+    const offline=i===5;
+    d.className="step "+(offline?"offline":i<S.stage?"done":i===S.stage?"now":"");
+    d.innerHTML=`<span class="dot">${i<S.stage&&!offline?"✓":i+1}</span>${name}`;
+    el.appendChild(d);
+    if(i<STAGES.length-1){const s=document.createElement("span");s.className="step-sep";s.textContent="›";el.appendChild(s);}
+  });
+  const r=el.getBoundingClientRect(); const a=$("#anno1");
+  a.style.top=(r.top+r.height/2-10)+"px"; a.style.left=Math.max(8,r.right-30)+"px";
+}
+function ready(level){
+  const b=S.brief;
+  const lack=Object.keys(b).filter(k=>(b[k].need==="search"||(level==="quote"&&b[k].need==="quote"))&&(!b[k].v||b[k].src==="missing"));
+  const inferred=Object.keys(b).filter(k=>(b[k].need==="search"||(level==="quote"&&b[k].need==="quote"))&&b[k].src==="inferred");
+  return {lack,inferred};
+}
+function renderGauge(){
+  const s=ready("search"), q=ready("quote"), b=S.brief;
+  const name=k=>b[k].k;
+  const line=(label,r)=>{
+    if(r.lack.length) return `<div class="gline"><span>${label}</span><span class="pill danger">缺 ${r.lack.map(name).join("、")}</span></div>`;
+    if(r.inferred.length) return `<div class="gline"><span>${label}</span><span class="pill warn">可以，${r.inferred.map(name).join("、")}待确认</span></div>`;
+    return `<div class="gline"><span>${label}</span><span class="pill ok">已齐全</span></div>`;
+  };
+  $("#gauge").innerHTML=`<button class="anno" style="top:-8px;right:-6px" data-n="3">3</button>`+line("可以检索",s)+line("可以询价",q);
+  const lack=q.lack.length; $("#tabBadge").textContent=lack?`· 缺${lack}`:"";
+}
+function renderBrief(){
+  const el=$("#brief"); el.innerHTML="";
+  Object.entries(S.brief).forEach(([key,f])=>{
+    const row=document.createElement("div"); row.className="bf"; row.id="bf-"+key;
+    const src=f.v?f.src:(f.need==="quote"?"missing":"none");
+    let val;
+    if(S.editing===key){
+      val=`<div class="v"><input id="edit-${key}" value="${esc(f.v)}" aria-label="修改${f.k}"></div>`;
+    } else {
+      val=`<div class="v ${f.v?"":"empty"}">${f.v?esc(f.v):(f.need==="quote"?"询价前需要":"未提")}${f.hint?`<span class="hint">${esc(f.hint)}</span>`:""}</div>`;
+    }
+    row.innerHTML=`<div class="k">${f.k}</div>${val}<div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span class="src ${src}">${SRC[src]}</span><button class="editbtn" data-edit="${key}">${S.editing===key?"保存":"修改"}</button></div>`;
+    el.appendChild(row);
+  });
+  el.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>toggleEdit(b.dataset.edit));
+  const inp=S.editing&&$("#edit-"+S.editing);
+  if(inp){inp.focus();inp.onkeydown=e=>{if(e.key==="Enter")toggleEdit(S.editing)};}
+  $("#briefTitle").textContent=S.title==="新客人"?"":S.title;
+}
+function renderSelection(){
+  const el=$("#selection");
+  const parts=[];
+  parts.push(S.route?`<div><span class="pill accent">线路</span> ${S.route.name} <span class="mono">${S.route.id}</span></div>`:`<div class="empty">线路：尚未选择</div>`);
+  parts.push(S.dep?`<div><span class="pill accent">团期</span> <span class="num">${S.dep.go} → ${S.dep.back}</span> <span class="mono">${S.dep.code}</span></div>`:`<div class="empty">团期：尚未选择</div>`);
+  if(S.quote){
+    parts.push(S.quoteStale
+      ?`<div class="stale">需求已改，这份报价失效 <button class="btn" data-act="requote">按新需求重新询价</button></div>`
+      :`<div><span class="pill ok">报价</span> 市场价已知小计 <b class="num">¥${fmt(S.quote.market)}</b> · 结算价已知小计 <b class="num">¥${fmt(S.quote.settle)}</b><div class="sub" style="font-size:12px;color:var(--ink-soft)">缺 1 项（司导服务费），有效至 ${S.quote.until}</div></div>`);
+  } else parts.push(`<div class="empty">报价：尚未询价</div>`);
+  if(S.shared) parts.push(`<div><span class="pill violet">已分享</span> 客人链接已生成，等待客人回复</div>`);
+  el.innerHTML=parts.join("");
+  bindActs(el);
+}
+function renderSessions(){
+  const list=[
+    {t:S.title,s:S.stage>0?STAGES[Math.min(S.stage,4)]+"阶段":"刚开始",on:true},
+    {t:"2 人 · 日本 · 樱花季",s:"已发给客人 · 昨天"},
+    {t:"6 人 · 北欧 · 暑假",s:"报价阶段 · 9/24"},
+    {t:"3 人 · 新西兰 · 国庆",s:"选线阶段 · 9/22"}
+  ];
+  $("#sessList").innerHTML=list.map(x=>`<button class="sess ${x.on?"on":""}"><b>${esc(x.t)}</b><small>${x.s}</small></button>`).join("");
+}
+function renderAll(){renderStepper();renderGauge();renderBrief();renderSelection();renderSessions();}
+
+/* ---------- chat primitives ---------- */
+function logEl(){return $("#logInner");}
+function scroll(){const l=$("#log");l.scrollTop=l.scrollHeight;}
+function addUser(text){clearHome();const d=document.createElement("div");d.className="msg-user";d.textContent=text;logEl().appendChild(d);scroll();}
+function addAction(text){clearHome();const d=document.createElement("div");d.className="msg-action";d.textContent="▸ "+text;logEl().appendChild(d);scroll();}
+function agent(html,after){
+  clearHome();
+  S.busy=true; setSuggest([]);
+  const t=document.createElement("div");t.className="typing";t.textContent="助手正在处理…";logEl().appendChild(t);scroll();
+  typingTimer=setTimeout(()=>{
+    t.remove();
+    const d=document.createElement("div");d.className="msg-agent";
+    d.innerHTML=`<span class="agent-mark">云仓顾问助手</span>`+html;
+    logEl().appendChild(d); bindActs(d);
+    S.busy=false; if(after) after(d); renderAll(); scroll();
+  },650);
+}
+function clearHome(){const h=$("#home");if(h)h.remove();}
+function setSuggest(items){
+  const el=$("#suggest"); el.innerHTML="";
+  items.forEach(([label,fn])=>{const b=document.createElement("button");b.className="chip";b.textContent=label;b.onclick=()=>{if(!S.busy)fn()};el.appendChild(b);});
+}
+function bindActs(root){
+  root.querySelectorAll("[data-act]").forEach(b=>{
+    b.onclick=()=>{ if(S.busy) return;
+      const a=b.dataset.act, arg=b.dataset.arg;
+      if(a==="deps") showDeps(ROUTES.find(r=>r.id===arg),true);
+      if(a==="quote") doQuote(DEPS.find(d=>d.id===arg),true);
+      if(a==="requote") doQuote(S.dep,true,true);
+      if(a==="share") doShare(true);
+      if(a==="copy") copyText(b);
+      if(a==="more") addAction("已读取下一页（原型中无更多数据）");
+    };
+  });
+}
+function flash(keys){keys.forEach(k=>{const r=$("#bf-"+k);if(r){r.classList.remove("flash");void r.offsetWidth;r.classList.add("flash");}});}
+function setField(key,v,src,hint){const f=S.brief[key];f.v=v;f.src=src;f.hint=hint||"";}
+
+/* ---------- scenario ---------- */
+const EXAMPLE="客人一家 4 口，想明年春节前后去西班牙、葡萄牙，12 天左右，上海出发，不想进购物店。";
+
+function home(){
+  logEl().innerHTML=`<div class="home" id="home"><span class="agent-mark">云仓顾问助手</span><h1>客人想去哪里？</h1><p>把客人的原话发给我。我会整理成右侧的需求单，缺什么再问你；目的地和时间有了就开始找线路。</p></div>`;
+  setSuggest([["发送示例需求：一家 4 口 · 西葡 · 春节",()=>parseNeed(EXAMPLE)]]);
+  $("#input").value=EXAMPLE;
+}
+
+function parseNeed(text){
+  addUser(text); $("#input").value="";
+  setField("dest","西班牙、葡萄牙","said");
+  setField("window","2027-01-28 至 2027-02-16","inferred","按春节 2/6 前后各约 10 天换算，请和客人确认");
+  setField("days","11–13 天","said","“12 天左右”按 ±1 天");
+  setField("city","上海","said");
+  setField("party","4 人","said");
+  setField("mix","","missing"); setField("rooms","","missing");
+  setField("pref","不进购物店","said");
+  S.title="4 人 · 西葡 · 春节"; S.stage=1;
+  agent(`<div class="card update" style="position:relative"><h3>需求单已更新</h3>
+      <div class="update-row"><span class="k">客人说</span><span>西班牙、葡萄牙 · 12 天左右 · 上海出发 · 4 人 · 不进购物店</span></div>
+      <div class="update-row"><span class="k">推断</span><span class="mid">出行时间 2027-01-28 至 02-16（春节 2/6 前后），请确认</span></div>
+      <div class="update-row"><span class="k">询价前需补</span><span class="bad">4 人的成人儿童构成、儿童年龄、房型</span></div>
+    </div>
+    <p>目的地和时间已够检索，先按需求单找线路。在窗口内有团期的线路共 3 条：</p>
+    <div class="routes" style="position:relative"><button class="anno" style="top:-10px;left:-6px" data-n="4">4</button>${ROUTES.map(routeCard).join("")}</div>
+    <p>第 1 条全部符合。第 2 条行程里有购物店，第 3 条是北京出发，都已标出。<b>询价前还要知道 4 位是几大几小、孩子几岁、住几间什么房。</b></p>`,
+    ()=>{flash(["dest","window","days","city","party","pref"]);
+      setSuggest([
+        ["2 大 2 小，孩子 8 岁和 11 岁，两间双人房",partyAnswer],
+        ["出行时间改成 2/1–2/20",changeWindow],
+        ["看 ACME 西葡经典12日 的团期",()=>showDeps(ROUTES[0],false)]
+      ]);});
+}
+function routeCard(r){
+  return `<article class="card route"><div style="display:flex;gap:6px;flex-wrap:wrap">${r.reviewed?'<span class="pill ok">行程已复核</span>':'<span class="pill warn">行程待复核</span>'}<span class="pill">${r.days} 天</span><span class="pill">${r.city}出发</span></div>
+    <h3>${r.name}</h3><span class="mono" style="color:var(--ink-faint)">${r.id}</span>
+    <ul class="reasons">${r.reasons.map(([c,t])=>`<li class="${c}"><span>${c==="ok"?"✓":c==="bad"?"✕":"!"}</span><span>${t}</span></li>`).join("")}</ul>
+    <div class="row-actions"><button class="btn primary" data-act="deps" data-arg="${r.id}">看团期</button><button class="btn" onclick="this.textContent='（原型：打开逐日行程）'">逐日行程</button></div></article>`;
+}
+function partyAnswer(){
+  addUser("2 大 2 小，孩子 8 岁和 11 岁，两间双人房");
+  setField("mix","成人 2 · 儿童 2（8 岁、11 岁）","said");
+  setField("rooms","双人间 × 2（儿童占床）","said","两个孩子分住两间，按占床计");
+  const stale=!!S.quote;
+  agent(`<div class="card update"><h3>需求单已更新</h3><div class="update-row"><span class="k">客人说</span><span>成人 2、儿童 2（8 岁、11 岁），双人间 × 2</span></div></div>
+    <p>询价需要的信息已齐。出行时间仍是推断，发报价前请和客人确认一下。</p>`,()=>{
+      flash(["mix","rooms"]);
+      if(stale){S.quoteStale=true;}
+      nextAfterParty();
+    });
+}
+function nextAfterParty(){
+  if(S.dep&&S.quote) setSuggest([["按新需求重新询价",()=>doQuote(S.dep,false,true)]]);
+  else if(S.dep) setSuggest([["给 "+S.dep.go+" 这团询价",()=>doQuote(S.dep,false)]]);
+  else if(S.route) setSuggest([["给 02-03 这团询价",()=>doQuote(DEPS[1],false)]]);
+  else setSuggest([["看 ACME 西葡经典12日 的团期",()=>showDeps(ROUTES[0],false)],["出行时间改成 2/1–2/20",changeWindow]]);
+}
+function changeWindow(){
+  addUser("出行时间改成 2/1–2/20");
+  setField("window","2027-02-01 至 2027-02-20","said");
+  if(S.route) S.depsStale=true;
+  agent(`<div class="card update"><h3>需求单已更新</h3><div class="update-row"><span class="k">客人说</span><span>出行时间 2027-02-01 至 02-20</span></div><div class="update-row"><span class="k">保留</span><span>目的地、天数、出发城市、人数、偏好都不变</span></div></div>
+    <p>按新窗口重新检索，第 1 条线路仍然符合，窗口内有 2 个团期（02-03、02-10）。</p>`,()=>{flash(["window"]);
+      setSuggest([["看 ACME 西葡经典12日 的团期",()=>showDeps(ROUTES[0],false)],["2 大 2 小，孩子 8 岁和 11 岁，两间双人房",partyAnswer]]);});
+}
+function showDeps(route,fromCard){
+  if(fromCard) addAction("看团期："+route.name); else addUser("看 "+route.name+" 的团期");
+  S.route=route; S.dep=null; S.depsStale=false; S.stage=Math.max(S.stage,2);
+  if(route.id!=="WP-1042"){
+    agent(`<p>原型只准备了“ACME 西葡经典12日”的团期数据。</p>`,()=>setSuggest([["看 ACME 西葡经典12日 的团期",()=>showDeps(ROUTES[0],false)]]));return;
+  }
+  const q=ready("quote").lack.length===0;
+  const win=S.brief.window.v;
+  agent(`<p>${route.name} 在出行窗口内的团期如下，是否有位都按 <b>4 人</b>判断：</p>
+    <div class="card"><div class="tablewrap"><table class="deps num"><thead><tr><th>出发 → 返回</th><th>团号</th><th>余位（按 4 人）</th><th>收客截止</th><th></th></tr></thead><tbody>
+    ${DEPS.map(d=>{
+      const pill=d.status==="ok"?"ok":d.status==="unknown"?"warn":d.status==="short"?"danger":"";
+      const canQuote=d.status==="ok"||d.status==="unknown";
+      const btn=d.status==="out"?"":canQuote?`<button class="btn ${d.status==="ok"?"primary":""}" data-act="quote" data-arg="${d.id}">${q?"询价":"询价（缺人数构成）"}</button>`:"";
+      return `<tr class="${d.status==="out"?"out":""}"><td>${d.go} → ${d.back}</td><td class="mono">${d.code}</td><td><span class="pill ${pill}">${d.label}</span></td><td>${d.deadline}</td><td>${btn}</td></tr>`;}).join("")}
+    </tbody></table></div><div style="margin-top:8px"><button class="btn" data-act="more">下一页团期</button></div></div>
+    <p>02-03 这团最合适：有位，12 天，02-14 回，赶得上开学。02-10 的库存需要重新读取才能确认。${q?"":"<b>询价前还差 4 位的成人儿童构成和房型。</b>"}</p>`,
+    ()=>{ if(q) setSuggest([["给 02-03 这团询价",()=>doQuote(DEPS[1],false)],["02-10 重新读取库存",()=>{addUser("02-10 重新读取库存");agent("<p>已重新读取：02-10 这团目前<b>有位，可满足 4 人</b>。</p>",()=>setSuggest([["给 02-03 这团询价",()=>doQuote(DEPS[1],false)]]));}]]);
+          else setSuggest([["2 大 2 小，孩子 8 岁和 11 岁，两间双人房",partyAnswer],["02-10 重新读取库存",()=>{addUser("02-10 重新读取库存");agent("<p>已重新读取：02-10 这团目前<b>有位，可满足 4 人</b>。</p>",()=>setSuggest([["2 大 2 小，孩子 8 岁和 11 岁，两间双人房",partyAnswer]]));}]]); });
+}
+function doQuote(dep,fromCard,re){
+  if(fromCard) addAction((re?"重新询价：":"询价：")+dep.go+" "+dep.code); else addUser(re?"按新需求重新询价":"给 "+dep.go+" 这团询价");
+  S.dep=dep;
+  const r=ready("quote");
+  if(r.lack.length){
+    agent(`<p>询价需要知道 4 位客人是几大几小、孩子的年龄和房型。这几项请问一下客人，我不会替客人默认。</p>`,
+      ()=>setSuggest([["2 大 2 小，孩子 8 岁和 11 岁，两间双人房",partyAnswer]]));
+    return;
+  }
+  S.stage=Math.max(S.stage,3);
+  const kids=S.brief.mix.v.includes("儿童 2");
+  const adults=S.brief.mix.v.startsWith("成人 2")?2:4;
+  const nk=kids?2:0;
+  const m={a:16800,c:15800}, s={a:14900,c:14000};
+  const market=adults*m.a+nk*m.c, settle=adults*s.a+nk*s.c;
+  S.quote={market,settle,until:"今天 15:42"}; S.quoteStale=false;
+  agent(`<div class="card" style="display:flex;flex-direction:column;gap:10px;position:relative"><button class="anno" style="top:-10px;right:-6px" data-n="6">6</button>
+      <div><span class="sub">报价 · 按需求单：${esc(S.brief.mix.v)} · ${esc(S.brief.rooms.v)}</span><h3>ACME 西葡经典12日 · ${dep.go} → ${dep.back}</h3></div>
+      <div class="quote-grid num">
+        <div class="qbox"><div class="l">市场价（可给客人）已知小计</div><div class="v">¥${fmt(market)}</div></div>
+        <div class="qbox"><div class="l">同行结算价（仅顾问可见）已知小计</div><div class="v">¥${fmt(settle)}</div></div>
+      </div>
+      <ul class="lines num">
+        <li><span>成人 × ${adults}</span><span>¥${fmt(m.a)} / 结算 ¥${fmt(s.a)}</span></li>
+        ${nk?`<li><span>儿童占床 × ${nk}（8 岁、11 岁）</span><span>¥${fmt(m.c)} / 结算 ¥${fmt(s.c)}</span></li>`:""}
+        <li><span>单房差</span><span>无（两间双人房住满）</span></li>
+      </ul>
+      <div class="missing">缺 1 项：境外司导服务费。行程附件写明“另付”，金额待供应商确认，所以这里不给完整总价。</div>
+      <div class="sub">有位，可满足 4 人 · 报价有效至今天 15:42 · 报价不占位</div>
+      <div class="row-actions"><button class="btn primary" data-act="share">发给客人</button></div>
+    </div>`,
+    ()=>setSuggest([["发给客人",()=>doShare(false)],["客人改成 3 大 1 小",changeMix],["也看看 02-10 的报价",()=>{addUser("也看看 02-10 的报价");agent("<p>（原型：生成第二份报价，右侧“当前选择”可以在两份报价之间切换。）</p>",()=>setSuggest([["发给客人",()=>doShare(false)]]));}]]));
+}
+function changeMix(){
+  addUser("客人改成 3 大 1 小，孩子 11 岁");
+  setField("mix","成人 3 · 儿童 1（11 岁）","said");
+  S.quoteStale=true;
+  agent(`<div class="card update"><h3>需求单已更新</h3><div class="update-row"><span class="k">客人说</span><span>成人 3、儿童 1（11 岁）</span></div></div>
+    <div class="stale">人数构成变了，刚才的报价已失效，右侧已标出。</div><p>房型还是两间双人房吗？如果是，我直接按新构成重新询价。</p>`,
+    ()=>{flash(["mix"]);setSuggest([["房型不变，重新询价",()=>{addUser("房型不变，重新询价");requote3a1c();}]]);});
+}
+function requote3a1c(){
+  S.stage=3;
+  const market=3*16800+15800, settle=3*14900+14000;
+  S.quote={market,settle,until:"今天 15:51"}; S.quoteStale=false;
+  agent(`<div class="card" style="display:flex;flex-direction:column;gap:10px"><div><span class="sub">报价 · 按需求单：成人 3 · 儿童 1（11 岁）· 双人间 × 2</span><h3>ACME 西葡经典12日 · ${S.dep.go} → ${S.dep.back}</h3></div>
+    <div class="quote-grid num"><div class="qbox"><div class="l">市场价已知小计</div><div class="v">¥${fmt(market)}</div></div><div class="qbox"><div class="l">同行结算价已知小计</div><div class="v">¥${fmt(settle)}</div></div></div>
+    <div class="missing">仍缺：境外司导服务费（待供应商确认）。</div><div class="row-actions"><button class="btn primary" data-act="share">发给客人</button></div></div>`,
+    ()=>setSuggest([["发给客人",()=>doShare(false)]]));
+}
+function doShare(fromCard){
+  if(S.quoteStale){ if(fromCard) addAction("发给客人"); else addUser("发给客人");
+    agent(`<p>这份报价已失效，先按新需求重新询价再发。</p>`,()=>setSuggest([["按新需求重新询价",()=>doQuote(S.dep,false,true)]]));return;}
+  if(fromCard) addAction("发给客人"); else addUser("发给客人");
+  S.stage=5; S.shared=true;
+  agent(`<div class="card" style="display:flex;flex-direction:column;gap:10px;position:relative"><button class="anno" style="top:-10px;right:-6px" data-n="8">8</button>
+      <h3>客人链接已生成</h3>
+      <div class="share"><b>客人看到的内容</b><span>ACME 西葡经典12日 · 2027-${S.dep.go} 出发 · 12 天逐日行程（已复核）</span><span>市场价已知小计 ¥${fmt(S.quote.market)}，另付：境外司导服务费（待确认）</span><span class="sub">不含同行结算价、余位数、供应商信息</span></div>
+      <div class="link"><code>acme.example/p/7Kx2</code><button class="btn" data-act="copy" data-copy="acme.example/p/7Kx2">复制链接</button></div>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column;gap:8px">
+      <h3>下一步：占位（一期在线下完成）</h3>
+      <p style="margin:0;font-size:13px;color:var(--ink-2)">客人确认后，把下面这段发给供应商计调占位。在线占位在二期开放。</p>
+      <div class="share mono" id="opsText">线路 ACME 西葡经典12日（WP-1042）\n团号 ${S.dep.code}，${S.dep.go} 出发\n${esc(S.brief.mix.v)}，${esc(S.brief.rooms.v)}\n报价有效至 ${S.quote.until}</div>
+      <div class="row-actions"><button class="btn" data-act="copy" data-copy="ops">复制给计调</button></div>
+    </div>`,
+    ()=>{ const o=$("#opsText"); if(o) o.style.whiteSpace="pre-line"; o.textContent=o.textContent.replace(/\\n/g,"\n");
+      setSuggest([["客人回复：确认这团",()=>{addUser("客人回复：确认这团");agent("<p>已记录客人确认，会话标为“待线下占位”。占位完成后在这里补一句占位编号即可，我会记到这位客人的会话里。</p>",()=>setSuggest([]));}]]);});
+}
+
+/* ---------- brief editing ---------- */
+function toggleEdit(key){
+  if(S.editing===key){
+    const v=$("#edit-"+key).value.trim(); const f=S.brief[key];
+    if(v!==f.v){ f.v=v; f.src=v?"advisor":"none"; f.hint="";
+      if(["mix","rooms","party"].includes(key)&&S.quote){S.quoteStale=true;}
+      if(key==="window"&&S.route){S.depsStale=true;}
+      addAction(`需求单：${f.k} 改为“${v||"空"}”`);
+      if(S.quoteStale&&S.quote) setSuggest([["按新需求重新询价",()=>doQuote(S.dep,false,true)]]);
+      else if(key==="window"&&S.route) setSuggest([["按新时间重新读取团期",()=>showDeps(S.route,false)]]);
+    }
+    S.editing=null;
+  } else S.editing=key;
+  renderAll(); if(!S.editing) flash([key]);
+}
+
+/* ---------- utils ---------- */
+function fmt(n){return n.toLocaleString("zh-CN");}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function copyText(btn){
+  let t=btn.dataset.copy; if(t==="ops"){const o=$("#opsText");t=o?o.textContent:"";}
+  const done=()=>{const old=btn.textContent;btn.textContent="已复制";setTimeout(()=>btn.textContent=old,1400);};
+  try{navigator.clipboard.writeText(t).then(done,()=>{btn.textContent="请手动选择复制";});}catch(e){btn.textContent="请手动选择复制";}
+}
+
+/* ---------- boot ---------- */
+function reset(){
+  clearTimeout(typingTimer); S=fresh(); renderAll(); home();
+}
+$("#form").onsubmit=e=>{
+  e.preventDefault(); if(S.busy) return;
+  const v=$("#input").value.trim(); if(!v) return;
+  if(S.stage===0){parseNeed(v);return;}
+  addUser(v); $("#input").value="";
+  agent(`<p>原型只演示预设流程，请点上方的建议按钮，或直接点卡片上的操作。</p>`,()=>nextAfterParty());
+};
+$("#resetBtn").onclick=reset;
+$("#newBtn").onclick=reset;
+const setNotes=on=>{document.body.classList.toggle("notes",on);$("#notesBtn").setAttribute("aria-pressed",on?"true":"false");renderStepper();};
+$("#notesBtn").onclick=()=>setNotes(!document.body.classList.contains("notes"));
+$("#closeNotes").onclick=()=>setNotes(false);
+document.addEventListener("click",e=>{const a=e.target.closest(".anno");if(a){setNotes(true);}});
+const setTab=t=>{document.body.dataset.tab=t;$("#tabChat").setAttribute("aria-selected",t==="chat");$("#tabBrief").setAttribute("aria-selected",t==="brief");};
+$("#tabChat").onclick=()=>setTab("chat");$("#tabBrief").onclick=()=>setTab("brief");
+window.addEventListener("resize",renderStepper);
+setTab("chat"); reset();
+})();
+</script>

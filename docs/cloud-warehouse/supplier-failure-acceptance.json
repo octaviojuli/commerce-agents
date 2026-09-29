@@ -1,0 +1,101 @@
+{
+  "scope": "Local Chromium, original advisor UI, fictional browser-intercepted API responses; no real supplier or ECS fault injection",
+  "api_regression": {
+    "file": "cloud-warehouse/tests/test_async_responsiveness.py",
+    "test": "test_one_supplier_failure_does_not_block_same_buyer_other_supplier",
+    "cases": [
+      "timeout",
+      "rate_limit"
+    ],
+    "same_buyer_two_suppliers": true,
+    "real_auth_and_disposable_postgres": true,
+    "focused_passed": 7,
+    "full_suite_passed": 505,
+    "skipped": 0,
+    "transport": "httpx ASGITransport in process; production auth and PostgreSQL, fictional upstream connectors"
+  },
+  "browser": {
+    "timeoutCardVerified": true,
+    "transportClearsCard": true,
+    "retryKeyVerified": true,
+    "switchedSupplierVerified": true,
+    "lateResponseIgnored": true,
+    "requests": [
+      {
+        "label": "A",
+        "key": "d2a38d59-258f-40e8-9a37-6401e8379f8f"
+      },
+      {
+        "label": "A",
+        "key": "e822032a-5b28-4eb5-b4ef-0b9e31f1f25d"
+      },
+      {
+        "label": "A",
+        "key": "e822032a-5b28-4eb5-b4ef-0b9e31f1f25d"
+      },
+      {
+        "label": "A",
+        "key": "e4afb9aa-7ccb-48a7-b201-6047ec262e21"
+      },
+      {
+        "label": "B",
+        "key": "3fdb7699-49e5-42fa-9883-bd8e2e16aea2"
+      }
+    ],
+    "failures": [
+      {
+        "url": "http://127.0.0.1:3016/warehouse-api/v1/me/organizations",
+        "error": "net::ERR_ABORTED"
+      },
+      {
+        "url": "http://127.0.0.1:3016/warehouse-api/v1/conversations?role=advisor",
+        "error": "net::ERR_ABORTED"
+      },
+      {
+        "url": "http://127.0.0.1:3016/warehouse-api/v1/advisor/products?limit=12&query=",
+        "error": "net::ERR_ABORTED"
+      },
+      {
+        "url": "http://127.0.0.1:3016/warehouse-api/v1/advisor/offers?departure_id=WD-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&limit=25",
+        "error": "net::ERR_ABORTED"
+      },
+      {
+        "url": "http://127.0.0.1:3016/warehouse-api/v1/advisor/quotes",
+        "error": "net::ERR_CONNECTION_FAILED"
+      },
+      {
+        "url": "http://127.0.0.1:3016/warehouse-api/v1/advisor/quotes",
+        "error": "net::ERR_ABORTED"
+      },
+      {
+        "url": "http://127.0.0.1:3016/warehouse-api/v1/advisor/offers?departure_id=WD-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb&limit=25",
+        "error": "net::ERR_ABORTED"
+      }
+    ],
+    "unexpected": [],
+    "artifacts": [
+      "output/playwright/failure-isolation-mock.js",
+      "output/playwright/supplier-timeout.png",
+      "output/playwright/supplier-b-success.png"
+    ]
+  },
+  "known_ui_limitations": [
+    "Transport failure currently displays browser text Failed to fetch"
+  ],
+  "production_app_changed": false,
+  "public_https_read_check": {
+    "advisor": 200,
+    "merchant": 200,
+    "advisor_anonymous_api": 401,
+    "merchant_anonymous_api": 401
+  },
+  "sha256": {
+    "cloud-warehouse/tests/test_async_responsiveness.py": "add9f500080a7ea7bc5b479af07ad321ab3b873a03a80ea407b4428376d8a78e",
+    "examples/tour/storefront-web/components/warehouse/Quote.tsx": "7f0a6d58a2a474224cc5f889ba29964fd9d4dd6752cb5870fbd0193df3cdadb4",
+    "examples/tour/storefront-web/components/warehouse/Workbench.tsx": "d92cf8d13c1ac4c872ef5127e2536e119a37d0de397a29abe5b5326b40898588",
+    "examples/web-shared/warehouse-client.ts": "a588969b25cb3d20e811e448c70f001395033cbd1a023cd053136bafcaf80563",
+    "output/playwright/failure-isolation-mock.js": "7c73f5a6a2fad8a4fb9d1530d58073c5622b78aed6b8cac90d3528d68407d8ab",
+    "output/playwright/supplier-timeout.png": "87abea88ae95cf12a063005a1b94ce03942829a29dccb8ae31c2f1db9f39ae88",
+    "output/playwright/supplier-b-success.png": "a51351106f631bf051127ecc1c7146326dd48ab64dad37e8651053fb2e9a3a12"
+  }
+}

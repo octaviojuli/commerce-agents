@@ -1,0 +1,25 @@
+ARG NODE_IMAGE=node:22-bookworm-slim
+FROM ${NODE_IMAGE} AS builder
+ARG TOUR_WEB_APP=storefront-web
+ENV NEXT_TELEMETRY_DISABLED=1
+WORKDIR /source/examples
+COPY examples ./
+RUN case "$TOUR_WEB_APP" in storefront-web|merchant-web) ;; *) exit 1 ;; esac \
+    && npm ci --include=dev \
+    && TOUR_STANDALONE=1 ./node_modules/.bin/next build "tour/$TOUR_WEB_APP" \
+    && mkdir -p /out \
+    && cp -a "tour/$TOUR_WEB_APP/.next/standalone/." /out/ \
+    && mkdir -p "/out/tour/$TOUR_WEB_APP/.next" \
+    && cp -a "tour/$TOUR_WEB_APP/.next/static" "/out/tour/$TOUR_WEB_APP/.next/static" \
+    && if [ -d "tour/$TOUR_WEB_APP/public" ]; then cp -a "tour/$TOUR_WEB_APP/public" "/out/tour/$TOUR_WEB_APP/public"; fi
+
+FROM ${NODE_IMAGE}
+ARG TOUR_WEB_APP=storefront-web
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
+COPY --from=builder --chown=node:node /out /app
+USER node
+WORKDIR /app/tour/${TOUR_WEB_APP}
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s \
+    CMD node -e "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+CMD ["node", "server.js"]

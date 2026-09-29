@@ -1,0 +1,44 @@
+{
+  "observed_at": "2026-09-24T17:50:49.771857+00:00",
+  "rows": 5000,
+  "file_bytes": 193056,
+  "boundary": "one fictional XLSX through loopback HTTP, fixture sessions, real roles, RLS and explicit fixture approval; excludes login issuance, TLS/proxy, browser, upstream and concurrent traffic",
+  "validation_boundary": "standalone parser in client process; HTTP upload separately includes server validation and persistence",
+  "environment": {
+    "os": "Linux",
+    "architecture": "x86_64",
+    "python": "3.12.14",
+    "cpu_count": 4
+  },
+  "http_server_stopped": true,
+  "disposable_resources_cleaned": true,
+  "seconds": {
+    "validation": 1.0176,
+    "upload": 0.9865,
+    "preview": 0.8038,
+    "approval": 0.344,
+    "publication": 25.8604,
+    "replay": 0.0438,
+    "duplicate_upload": 0.8408
+  },
+  "targets_seconds": {
+    "upload": 2.0,
+    "validation": 60.0
+  },
+  "target_results": {
+    "upload": true,
+    "validation": true
+  },
+  "passed": true,
+  "counts": {
+    "supplier_product": 500,
+    "departure": 5000,
+    "inventory_pool": 5000,
+    "inventory_movement": 5000
+  },
+  "draft_did_not_publish": true,
+  "ledger_matches_every_pool": true,
+  "replay_did_not_duplicate": true,
+  "unauthenticated_and_buyer_upload_denied": true,
+  "postgres": "16.15 (Debian 16.15-1.pgdg12+2)"
+}

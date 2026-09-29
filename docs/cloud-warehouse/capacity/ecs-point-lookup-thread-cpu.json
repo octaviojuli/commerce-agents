@@ -1,0 +1,10 @@
+{
+  "boundary": "20-second thread CPU sample during fictional mixed HTTP load; only matched live thread lifetimes, not request latency or full-run average",
+  "observed_at": "2026-09-24T18:56:33.968945+00:00",
+  "elapsed_seconds": 20.000101895000626,
+  "matched_threads": 49,
+  "cpu_seconds": {
+    "event_loop": 4.56,
+    "other_threads": 13.829999999999998
+  }
+}

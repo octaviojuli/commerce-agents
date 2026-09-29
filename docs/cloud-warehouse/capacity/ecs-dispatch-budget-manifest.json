@@ -1,0 +1,13 @@
+{
+  "api_image": "sha256:9ddb075c2f2eb9f493ea7c9d2cb3e5bda617efb0198191c2d5fabd952664ed04",
+  "diagnostic_source_sha256": {
+    "response-dispatch-baseline.py": "8624c4f3f1631178a7583a3ff698b1bcd1e338529675077e183ce675ca440e13",
+    "response-dispatch-typed_sync.py": "a5c095e7481b3add62d49045dfb7087f4b5c7a660cdd9cb1dd3d358b2e9c9df8",
+    "response-dispatch-typed_async.py": "8c42f596c012896fc2df641daec9f1f0880686c6626e9534cdd2b6618b2e3d09",
+    "thread-budget-40.py": "0d30eaf04f7bec0ce44fe465cf89eeaa1f198512e6e5b77d2bc0e56b53456895",
+    "thread-budget-16.py": "6393d8335a43d0be72a42b96726141a920813702596bedf48a0131e563959d72",
+    "thread-budget-8.py": "eaab1e2bde1664d3a3be9c2bf9845629971eaa8a16a16812586e225a632efaac"
+  },
+  "running_api_unchanged": true,
+  "health": "healthy"
+}
