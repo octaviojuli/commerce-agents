@@ -22,6 +22,12 @@ departures, offers and quotes.
 4. `model.answer` and `model.draft` write the answers and the WeChat draft from those facts.
 5. `grounding.check` keeps a factual clause only when a fact supports it with the same
    numbers, negations, limits and conditions; questions about saved fields are removed.
+6. The judge (`judge.py`) reads each sentence against the same evidence and the settled deal,
+   in one call per reply. Its verdict decides what the rules could only guess; the rules still
+   decide numbers, private terms, promises, repeated questions and conflicting routes. The
+   judge also picks the unit that answers each question, can start a search the rules missed,
+   and must read a clear yes before a reply counts as confirming the sheet. When it is off,
+   slow or unsure, the rules stand.
 
 ## What the program guarantees
 
@@ -62,6 +68,7 @@ departures, offers and quotes.
 | `need.py` | Need fields, the per-child party, gates, clarity, consequences of a change |
 | `interpret.py` | Evidence, places, holidays, party merge, fill versus change sheet |
 | `grounding.py` | The draft check |
+| `judge.py` | The judge client: sentence support, evidence, the turn's step, consent |
 | `facts.py` | A published itinerary as whole citable facts, the quick-look grid, warnings |
 | `routes.py` | Search funnel, route cards, departures |
 | `pricing.py` | Warehouse price checks, per-bed child lines, the one validity rule, margin |
@@ -90,7 +97,9 @@ python -m tour.advisor.serve          # http://127.0.0.1:8006
 sealed with it, so a new key makes earlier scans unreadable.
 
 The model is read from `ADVISOR_MODEL` or `TOUR_MODEL` with the Anthropic client's usual
-variables. `tesseract` on the path enables passport recognition.
+variables. `tesseract` on the path enables passport recognition. The judge reads
+`ADVISOR_JUDGE_KEY`, `ADVISOR_JUDGE_MODE` (`on`, `shadow` or `off`), and optionally
+`ADVISOR_JUDGE_URL` and `ADVISOR_JUDGE_MODEL`; see `judge.py`.
 
 Production containers and the independent database are configured by
 [`advisor-v4.compose.yaml`](../../../cloud-warehouse/deploy/advisor-v4.compose.yaml).

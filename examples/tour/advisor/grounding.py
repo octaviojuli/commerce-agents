@@ -11,6 +11,10 @@ INTERNAL = re.compile(r"(?<![A-Za-z0-9])(?:W[PDO]-[A-Za-z0-9-]+|[A-Z]{1,5}\d{1,5
 PRIVATE = re.compile(
     r"同[行业]价|结算价|毛利|利润|(?:余位|剩余名额|库存)[：:\s]*[\d一二三四五六七八九十]+|\{\s*\""
 )
+# Saying a customer's personal numbers were taken down: they are masked and never kept.
+KEPT_PERSONAL = re.compile(
+    r"(?:手机|电话|护照|证件|身份证)[号码]?.{0,12}(?:登记|留好|记下|记好|保存|存好|收到)"
+)
 # Guarantees, and holds or bookings: the advisor app neither holds seats nor books in phase one.
 PROMISE = re.compile(
     r"(?<!不)(?<!无法)(?<!不能)(?:保证|一定|肯定|确保|包退|绝对|百分百"
@@ -324,7 +328,7 @@ def check(
         part for s in said for part in re.split(r"[^。！？\n]*[？?吗][。！？\n]?", s) if part
     )
     known = set(known)
-    kept, claims, removed, reasons = [], [], [], []
+    kept, claims, removed, reasons, decisions = [], [], [], [], []
     questions = 0
     for sentence in re.findall(r"[^。！？\n]+[。！？]?", text or ""):
         stripped = sentence.strip()
@@ -401,16 +405,32 @@ def check(
                         "reviewed": fact.get("reviewed", True),
                     }
                 )
-        if not reason and PROMISE.search(stripped):
+        # Hard rules are recorded whatever failed first, so no later reading can lift them.
+        hard = reason if reason in HARD else ""
+        if PROMISE.search(stripped):
             backed = [f for f in reviewed if any(c["fact_id"] == f["fact_id"] for c in found)]
             if not any(PROMISE.search(f["text"]) for f in backed):
-                reason = "promise"
-        if (
-            not reason
-            and any(name in stripped for name in conflicts)
-            and not ("备选" in stripped and "确认" in stripped)
+                hard = hard or "promise"
+        if any(name in stripped for name in conflicts) and not (
+            "备选" in stripped and "确认" in stripped
         ):
-            reason = "conflict"
+            hard = hard or "conflict"
+        if (
+            INTERNAL.search(stripped)
+            or PRIVATE.search(stripped)
+            or KEPT_PERSONAL.search(stripped)
+            or any(t and t in stripped for t in forbidden)
+        ):
+            hard = "private"
+        reason = reason if reason in HARD or not hard else hard
+        decisions.append(
+            {
+                "text": stripped,
+                "reason": reason,
+                "hard": hard,
+                "claims": [c for c in found if c["fact_id"]],
+            }
+        )
         if reason:
             removed.append(stripped)
             reasons.append(reason)
@@ -423,4 +443,48 @@ def check(
         "removed": removed,
         "reasons": reasons,
         "sentences": len(kept) + len(removed),
+        "decisions": decisions,
+    }
+
+
+# Reasons the program keeps whatever the judge says: they are rules, not readings.
+HARD = {"private", "promise", "asks_known", "too_many_questions", "conflict"}
+# The judge overturns the rules only when sure enough: "safe" at TRUST, "unsafe" at DOUBT.
+# Measured on live replies, an "unsafe" below DOUBT is a coin toss (a correct route list at 0.02).
+TRUST, DOUBT = 0.5, 0.3
+
+
+def judged(result: dict, verdicts: list, facts: list, said=()) -> dict:
+    """The check's result with the judge deciding what the rules could only guess at.
+
+    The judge never keeps a sentence the rules cut for a hard reason, nor one whose numbers
+    appear in no fact and nothing the customer said.
+    """
+    allowed = set().union(*(numbers(f["text"]) for f in facts)) if facts else set()
+    allowed |= set().union(*(numbers(s) for s in said)) if said else set()
+    kept, claims, removed, reasons, decisions = [], [], [], [], []
+    padded = (list(verdicts) + [None] * len(result["decisions"]))[: len(result["decisions"])]
+    for d, v in zip(result["decisions"], padded, strict=True):
+        reason, how = d["reason"], "rules"
+        if not d.get("hard") and v:
+            choice, confidence = v
+            spoken = numbers(TOPIC_SPAN.sub("", d["text"]))
+            if choice == "unsafe" and confidence >= DOUBT:
+                reason, how = "judged_unsafe", "judge"
+            elif confidence >= TRUST and spoken <= allowed:
+                reason, how = "", "judge"
+        decisions.append({**d, "reason": reason, "by": how})
+        if reason:
+            removed.append(d["text"])
+            reasons.append(reason)
+        else:
+            kept.append(d["text"])
+            claims.extend(d["claims"])
+    return {
+        **result,
+        "text": "\n".join(kept),
+        "claims": claims,
+        "removed": removed,
+        "reasons": reasons,
+        "decisions": decisions,
     }

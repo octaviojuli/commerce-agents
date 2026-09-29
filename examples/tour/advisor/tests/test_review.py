@@ -549,7 +549,7 @@ def test_an_upgrade_stops_on_duplicate_sales_and_keeps_them(env):
         db.migrate(engine)
 
 
-def run_turn(engine, owner, deal, model, message):
+def run_turn(engine, owner, deal, model, message, judge=None):
     async def run():
         wh = Warehouse(
             "http://warehouse.test",
@@ -558,7 +558,7 @@ def run_turn(engine, owner, deal, model, message):
             transport=httpx.MockTransport(warehouse),
         )
         try:
-            return await Turns(engine, model).run(owner, wh, deal, message)
+            return await Turns(engine, model, judge).run(owner, wh, deal, message)
         finally:
             await wh.aclose()
 

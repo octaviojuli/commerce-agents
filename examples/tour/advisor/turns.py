@@ -5,6 +5,7 @@ saves facts, opens proposals, runs searches, picks the one question worth asking
 the consequences of a change and checks every draft sentence before the advisor sees it.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -18,6 +19,7 @@ from . import need as needs
 from . import suppliers as supplier_notes
 from .facts import Route
 from .interpret import changes as read_changes
+from .judge import Judge
 from .model import ModelUnavailable
 from .need import Need
 from .store import Owner
@@ -66,6 +68,14 @@ def known_fields(need: Need) -> set:
         if need.get(field):
             known.add(field)
     return known
+
+
+def shown_facts(context) -> list:
+    """The names of routes already shown: a reply may name them, numbers and all."""
+    return [
+        {"fact_id": f"route:{v['product_id']}", "text": v["title"], "section": "目录"}
+        for v in context["visible"][:8]
+    ]
 
 
 def chosen_facts(deal) -> list:
@@ -181,9 +191,10 @@ def stage(deal, need: Need) -> int:
 class Turns:
     """Runs a turn. ``engine`` is the advisor database; ``wh`` the advisor's warehouse view."""
 
-    def __init__(self, engine, model):
+    def __init__(self, engine, model, judge=None):
         self.engine = engine
         self.model = model
+        self.judge = judge or Judge(mode="off")
 
     async def run(self, owner: Owner, wh, deal_id, text: str, kind="customer"):
         text, hidden = privacy.mask(text)
@@ -198,13 +209,23 @@ class Turns:
             result["notes"].append(
                 "已隐藏" + "、".join(hidden) + "，没有保存也没有交给助手；证件请在证件页上传"
             )
-        try:
-            understanding = await self.model.call(
-                "understand", self._understand_input(deal, need, context, text)
-            )
-        except ModelUnavailable:
-            understanding = None
+
+        async def understand():
+            try:
+                return await self.model.call(
+                    "understand", self._understand_input(deal, need, context, text)
+                )
+            except ModelUnavailable:
+                return None
+
+        # The judge reads the turn's intent beside the model, so it costs no extra wait.
+        understanding, step = await asyncio.gather(
+            understand(),
+            self.judge.route_turn(text, turn_state(deal, context), allowed_steps(need, context)),
+        )
+        if understanding is None:
             result["degraded"] = "本轮没能读懂，原话已保存，可以重试或手动改需求单。"
+        step = step if self.judge.applies else None
         tags = self._tags(understanding, text)
         result["tags"] = tags
         _, _, rejected = read_changes(need, understanding, text, today(), turn=seq)
@@ -298,11 +319,15 @@ class Turns:
         gates = needs.gates(need)
         result["gates"] = gates
         result["clarity"] = needs.clarity(need)
-        facts = requirement_facts(need) + chosen_facts(deal)
+        facts = requirement_facts(need) + chosen_facts(deal) + shown_facts(context)
         conflicts = []
-        draft_extra = {}
+        draft_extra = {"hidden": hidden} if hidden else {}
         # --- what the program does this turn, in priority order
-        research = ("research" in tags or RESEARCH.search(text)) and not NO_RESEARCH.search(text)
+        research = (
+            "research" in tags
+            or RESEARCH.search(text)
+            or (step is not None and step[0] == "search" and step[1] >= SURE)
+        ) and not NO_RESEARCH.search(text)
         if not gates["search"]["ready"]:
             asked = context["recent_asks"]
             result["cards"].append(
@@ -412,6 +437,12 @@ class Turns:
                 memory.book(conn, owner, deal_id, answered, seq)
         if understanding and "confirm" in tags and context.get("confirmation"):
             confirmed = understanding.confirms and not understanding.disputes
+            if confirmed and self.judge.applies:
+                # A confirmation is the customer's consent: both readers must see a clear yes.
+                yes = await self.judge.consent(text, sheet_text(context["confirmation"]))
+                if yes is not None and not (yes[0] == "yes" and yes[1] >= SURE_CONFIRM):
+                    confirmed = False
+                    result["notes"].append("客人这句不像明确确认，确认单先不勾，请顾问核对")
             try:
                 with self.engine.begin() as conn:
                     locked = store.deal(conn, owner, deal_id, lock=True)
@@ -431,6 +462,7 @@ class Turns:
             result["cards"].append(
                 {"type": "confirm_reply", "status": status, "disputes": understanding.disputes}
             )
+            draft_extra["confirmation"] = status
         # the one question to ask
         if "ask_next" not in draft_extra:
             # With a change waiting, ask about the need as it would be once adopted.
@@ -660,10 +692,12 @@ class Turns:
             target = routes_named(q.route, context["visible"]) if q.route else None
             if not target and COMPARING.search(q.text) and len(context["visible"]) >= 2:
                 # "哪条吃得好" is answered on each route shown, so the advisor can weigh them.
+                # Each route is asked about itself; the customer's words stay on the answer.
+                own = q.model_copy(update={"text": q.text + "（只回答这一条线路的情况）"})
                 for route in context["visible"][:3]:
                     by_route.setdefault(route["product_id"], {"route": route, "items": []})[
                         "items"
-                    ].append((index, q))
+                    ].append((index, own))
                 continue
             if (
                 not target
@@ -702,6 +736,20 @@ class Turns:
             # This deal's current price answers price questions about the chosen route.
             if key and key == (deal.get("route") or {}).get("product_id"):
                 facts = [*extra, *facts]
+            # The judge picks the unit that answers each question; it leads the model's evidence.
+            picks = (
+                await asyncio.gather(
+                    *(
+                        self.judge.pick_evidence(q.text, relevant(facts, [q], MAX_PICK))
+                        for _, q in group["items"]
+                    )
+                )
+                if facts
+                else [(None, 0.0)] * len(group["items"])
+            )
+            picked = {index: p for (index, _), p in zip(group["items"], picks, strict=True)}
+            chosen = [f for f, _ in picks if f] if self.judge.applies else []
+            shown = relevant(facts, [q for _, q in group["items"]], 120)
             payload = {
                 "questions": [
                     {"index": i, "text": q.text, "topic": q.topic, "day": q.day}
@@ -710,7 +758,7 @@ class Turns:
                 "route": route.title if route else "",
                 "facts": [
                     {"fact_id": f["fact_id"], "text": f["text"]}
-                    for f in relevant(facts, [q for _, q in group["items"]], 120)
+                    for f in [*chosen, *(f for f in shown if f not in chosen)]
                 ],
             }
             try:
@@ -754,6 +802,10 @@ class Turns:
                         used += cited
                 if not facts and not key:
                     item["answer"] = "还没有选定线路，先确定问的是哪一条。"
+                hint, confidence = picked.get(index, (None, 0.0))
+                if item["kind"] == "unknown" and hint and confidence >= HINT and self.judge.applies:
+                    # The advisor sees the unit the judge found; the customer is told nothing yet.
+                    item["maybe"] = {"text": hint["text"], "section": hint["section"]}
                 if (
                     item["kind"] == "unknown"
                     and price_gap
@@ -763,6 +815,8 @@ class Turns:
                     # A price exists but may not be quoted yet; say why, not "资料没写明".
                     item["answer"] = f"已核价，但还不能报给客人：{price_gap}。"
                 answered.append(item)
+        for a in answered:
+            a["question"] = a["question"].removesuffix("（只回答这一条线路的情况）")
         answered.sort(key=lambda a: [q.text for q in questions].index(a["question"]))
         return answered, used
 
@@ -785,6 +839,8 @@ class Turns:
             "searched": "routes" in extra,
             "directions": extra.get("directions", []),
             "change_pending": pending,
+            "confirmation": extra.get("confirmation", ""),
+            "hidden": extra.get("hidden", []),
             "conflicts": conflicts,
             "facts": [
                 f["text"] for f in facts if f.get("section") in ("已选", "报价", "目录", "方向")
@@ -817,6 +873,12 @@ class Turns:
             conflicts=conflicts,
             max_questions=3 if not needs.gates(need)["search"]["ready"] else 2,
         )
+        said = [text, needs.summary(need)]
+        verdicts = await self.judge.check_draft(
+            [x["text"] for x in checked["decisions"]], facts, said, judge_state(deal, extra)
+        )
+        if verdicts and self.judge.applies:
+            checked = grounding.judged(checked, verdicts, facts, said)
         body = salute(checked["text"], mem.get("salutation", ""))
         simplified = bool(checked["removed"])
         if len(body) < 8:
@@ -854,6 +916,23 @@ INSTRUCTION = re.compile(
     r"^(?:帮我|麻烦)?(?:跟|和|给)?(?:她|他|客人)?(?:说一下|说说|回一下|问一下|讲一下)?"
 )
 ASKED = re.compile(r"^(?:[^，。：:]{0,6}(?:问|说)[：:，]?)")
+
+
+def judge_state(deal, extra) -> dict:
+    """What the deal has settled, so the judge can tell a restated window from a departure."""
+    # Worded as the deal's own facts, so the judge reads the reply's dates the same way.
+    settled = {f["fact_id"]: f["text"].split("：", 1)[1] for f in chosen_facts(deal)}
+    return {
+        "已选线路": settled.get("deal:route", "未选"),
+        "已选团期": settled.get("deal:departure", "未选"),
+        "本轮是否找过线": "是" if "routes" in extra else "没有",
+        "确认单": {
+            "confirmed": "客人已确认",
+            "open": "客人尚未确认",
+            "stale": "已失效，需要重发",
+        }.get(extra.get("confirmation", ""), "本轮未涉及"),
+        "客人发来的号码": "已隐藏，没有保存" if extra.get("hidden") else "无",
+    }
 
 
 def pending_line(answers):
@@ -909,6 +988,41 @@ def fits(card, need: Need) -> bool:
         and card.get("price")
         and card["price"]["per_person"] > float(budget.per_person) * 1.2
     )
+
+
+# How many units the judge weighs per question, and how sure it must be to point one out.
+MAX_PICK, HINT = 12, 0.8
+# How sure the judge must be to start a search, and to count a reply as a yes to the sheet.
+SURE, SURE_CONFIRM = 0.8, 0.8
+STEPS = {
+    "search": "按已保存的需求找线或重新找线；礼貌问句（有没有合适的、帮我看看）也算。",
+    "answer": "问具体线路、价格、政策或行程的问题，需要从资料或报价回答。",
+    "record": "补充或修改需求（人数、房间、时间、预算、偏好），没有要求找线。",
+    "select": "明确选定已展示的某一条线路。",
+    "wait": "寒暄、表示要考虑、商量后再说，没有新的请求。",
+}
+
+
+def sheet_text(sheet) -> str:
+    return "；".join(f"{i['label']}：{i['text']}" for i in (sheet or {}).get("items", []))
+
+
+def allowed_steps(need, context) -> dict:
+    """Only the steps the program could take now; the judge chooses among these."""
+    names = ["answer", "record", "wait"]
+    if needs.gates(need)["search"]["ready"]:
+        names.insert(0, "search")
+    if context["visible"]:
+        names.append("select")
+    return {n: STEPS[n] for n in names}
+
+
+def turn_state(deal, context) -> dict:
+    return {
+        "shown_routes": [v["title"] for v in context["visible"]][:5],
+        "chosen_route": (deal.get("route") or {}).get("title", ""),
+        "confirmation": (context.get("confirmation") or {}).get("status", "none"),
+    }
 
 
 COMPARING = re.compile(r"哪条|哪个|哪一条|哪家|两条|几条|对比|比较|区别|更好|更适合")

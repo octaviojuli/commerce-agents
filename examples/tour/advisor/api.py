@@ -32,6 +32,7 @@ from sqlalchemy import text
 from . import closing, db, memory, papers, privacy, routes, selling, store, suppliers
 from . import need as needs
 from .facts import Route
+from .judge import Judge
 from .model import ModelUnavailable, TypedModel
 from .need import Need
 from .store import Owner
@@ -151,10 +152,11 @@ class Ask(BaseModel):
     deal_id: UUID | None = None
 
 
-def create_app(settings: Settings, *, model=None, transport=None):
+def create_app(settings: Settings, *, model=None, transport=None, judge=None):
     engine = db.connect(settings.database_url)
     model = model or TypedModel()
-    turns = Turns(engine, model)
+    judge = judge or Judge()
+    turns = Turns(engine, model, judge)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -163,6 +165,7 @@ def create_app(settings: Settings, *, model=None, transport=None):
         engine.dispose()
         if hasattr(model, "aclose"):
             await model.aclose()
+        await judge.aclose()
 
     app = FastAPI(title="ACME 顾问搭档", lifespan=lifespan)
 
