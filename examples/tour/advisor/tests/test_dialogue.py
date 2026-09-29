@@ -694,3 +694,105 @@ def test_http_does_not_reduce_known_party_counts(dialogue, monkeypatch, draft):
     monkeypatch.setattr(model, "call", wrong_draft)
     result = say(client, deal, "收到，谢谢。", "customer")
     assert draft not in result["draft"]["text"], result["draft"]
+
+
+# A room count that is not a number costs only the rooms; a part of the party needs
+# that many people of its kind.
+def room_reading(message, count):
+    return Understanding.model_validate(
+        {
+            "changes": [
+                {"field": "rooms", "value": {"doubles": count}, "evidence": "一间大床房"},
+                {"field": "budget", "value": {"per_person": 15000}, "evidence": "每人15000元"},
+            ]
+        }
+    )
+
+
+@pytest.mark.parametrize("count", ["一", "一间"], ids=["chinese-number", "with-unit"])
+def test_invalid_room_value_does_not_discard_valid_budget(count):
+    message = "一间大床房，预算每人15000元"
+    fills, proposals, rejected = interpret.changes(
+        needs.Need(), room_reading(message, count), message, date(2026, 9, 29)
+    )
+    assert str(fills["budget"]["new"]["per_person"]) == "15000", (fills, proposals, rejected)
+
+
+@pytest.mark.parametrize("count", ["一", "一间"], ids=["chinese-number", "with-unit"])
+def test_http_survives_a_non_numeric_model_room_value(dialogue, monkeypatch, count):
+    client, deal, state, model = dialogue
+    message = "一间大床房，预算每人15000元"
+
+    async def response(name, data):
+        if name == "understand":
+            return room_reading(message, count)
+        if name == "draft":
+            return Draft(to_customer="好的，已收到您的需求。")
+        raise AssertionError(name)
+
+    monkeypatch.setattr(model, "call", response)
+    monkeypatch.setattr(client._transport, "raise_server_exceptions", False)
+    result = client.post(f"/api/deals/{deal}/turns", json={"text": message, "kind": "customer"})
+    budget = value(detail(client, deal), "budget")
+    assert result.status_code == 200, (result.status_code, result.text, {"saved_budget": budget})
+    assert str(budget["per_person"]) == "15000"
+
+
+SUBSET_CASES = [
+    ({"total_count": 3}, "三个客人", "其中三位成人同行。"),
+    ({"adults": 3, "children": []}, "三位大人，没有孩子", "其中一个孩子同行。"),
+    ({"adults": 2, "children": [{"age": 8}]}, "两个大人一个孩子", "其中两个孩子同行。"),
+]
+
+
+@pytest.mark.parametrize(
+    "party,said,draft",
+    SUBSET_CASES,
+    ids=["unknown-composition", "no-children", "too-many-children"],
+)
+def test_a_subset_cannot_invent_people(party, said, draft):
+    result = grounding.check(
+        draft, [], said=[said], counts=grounding.known_counts(needs.Party.model_validate(party))
+    )
+    assert not result["text"] and "party" in result["reasons"], result
+
+
+@pytest.mark.parametrize(
+    "party,said,draft",
+    SUBSET_CASES,
+    ids=["unknown-composition", "no-children", "too-many-children"],
+)
+def test_http_does_not_return_an_unfounded_subset(dialogue, monkeypatch, party, said, draft):
+    client, deal, state, model = dialogue
+    client.put(f"/api/deals/{deal}/need/party", json={"value": party}).raise_for_status()
+
+    async def response(name, data):
+        if name == "understand":
+            return Understanding()
+        if name == "draft":
+            return Draft(to_customer=draft)
+        raise AssertionError(name)
+
+    monkeypatch.setattr(model, "call", response)
+    result = say(client, deal, "收到，谢谢。", "customer")
+    assert draft not in result["draft"]["text"], result["draft"]
+
+
+def test_disputed_room_counts_remain_pending_in_http(dialogue, monkeypatch):
+    client, deal, state, model = dialogue
+    message = "一间大床房，预算每人15000元"
+
+    async def response(name, data):
+        if name == "understand":
+            return room_reading(message, 2)
+        if name == "draft":
+            return Draft(to_customer="好的，已收到您的需求。")
+        raise AssertionError(name)
+
+    monkeypatch.setattr(model, "call", response)
+    result = say(client, deal, message, "customer")
+    assert value(detail(client, deal), "rooms") is None
+    change = next(c for c in result["cards"] if c["type"] == "change")
+    item = next(i for i in change["items"] if i["field"] == "rooms")
+    assert item["status"] == "pending" and item["new"]["doubles"] == 1
+    assert "大床1间" in item["hint"] and "大床2间" in item["hint"]

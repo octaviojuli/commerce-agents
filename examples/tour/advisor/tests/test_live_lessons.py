@@ -289,3 +289,15 @@ def test_a_room_kind_named_twice_is_left_to_the_model():
 
     assert rooms("一间大床房给爸妈，一间大床房给我们") == {}
     assert rooms("两间大床房改一间双床房") == {}
+
+
+def test_a_room_count_that_is_not_a_number_goes_to_the_advisor():
+    message = "一间大床房"
+    _, proposals, _ = changes(
+        Need(),
+        reading({"field": "rooms", "value": {"doubles": "一间"}, "evidence": message}),
+        message,
+        TODAY,
+    )
+    assert proposals[0]["new"]["doubles"] == 1
+    assert proposals[0]["hint"].endswith("模型读作 大床未读准")

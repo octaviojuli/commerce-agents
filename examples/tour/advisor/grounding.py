@@ -67,21 +67,33 @@ PARTY_KINDS = {
 }
 
 
-def party_counts(text: str) -> set:
+def party_counts(text: str, *, parts=False) -> set:
     """Each head count by kind the text states, as ("adults", 3): "三名成人", "二大一小".
 
-    "其中一个孩子" and "每一位成人" name part of the party, not its count.
+    "其中一个孩子" and "每一位成人" name part of the party, not its count: they are left out,
+    or with ``parts`` are the only ones given.
     """
     text = text or ""
     found = set()
     for m in PARTY_COUNT.finditer(text):
-        if re.search(r"(?:其中|每)$", text[: m.start()]):
+        if bool(re.search(r"(?:其中|每)$", text[: m.start()])) != parts:
             continue
         if m[1]:
             found.add((PARTY_KINDS[m[2]], heads(m[1])))
         else:
             found |= {("adults", heads(m[3])), ("children", heads(m[4]))}
     return found
+
+
+def unsettled(clause: str, counts: set) -> bool:
+    """A head count the clause states that ``counts`` does not settle; a part ("其中两个孩子")
+    needs at least that many of its kind."""
+    most = {}
+    for kind, n in counts:
+        most[kind] = max(n, most.get(kind, 0))
+    return not party_counts(clause) <= counts or any(
+        n > most.get(kind, 0) for kind, n in party_counts(clause, parts=True)
+    )
 
 
 def heads(value: str) -> int:
@@ -513,9 +525,7 @@ def check(
             counts is not None
             and not question
             # Each clause: "酒店需要再核实" does not make "按3位成人来安排" known.
-            and any(
-                not party_counts(c) <= counts for c in clauses(stripped) if not VERIFY.search(c)
-            )
+            and any(unsettled(c, counts) for c in clauses(stripped) if not VERIFY.search(c))
         ):
             hard = hard or "party"
         if (

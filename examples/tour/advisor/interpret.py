@@ -164,9 +164,23 @@ def rooms(message: str) -> dict:
     return {ROOM_KINDS[tokens[k][1]]: int(tokens[i][2]) for i, k in owners.items()}
 
 
+def room_count(value) -> int | None:
+    """The model's count for one room kind; None when it is not a number ("一间")."""
+    if value in (None, ""):
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def room_text(counts: dict) -> str:
     names = {"doubles": "大床", "twins": "双床", "singles": "单间"}
-    return "、".join(f"{name}{counts[k]}间" for k, name in names.items() if k in counts)
+    return "、".join(
+        f"{name}{counts[k]}间" if counts[k] is not None else f"{name}未读准"
+        for k, name in names.items()
+        if k in counts
+    )
 
 
 COUPLE = re.compile(
@@ -334,7 +348,7 @@ def changes(need: Need, understanding, message: str, today: date, *, turn=None):
         if field == "rooms" and said_rooms and isinstance(value, dict):
             # The model has misread "1间大床" as 2. Where the plain count differs, the advisor
             # sees both and decides; neither reading is saved on its own.
-            read = {k: int(value.get(k) or 0) for k in said_rooms}
+            read = {k: room_count(value.get(k)) for k in said_rooms}
             if read != said_rooms:
                 value = {**value, **said_rooms}
                 source, hint = (
