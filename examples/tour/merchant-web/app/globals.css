@@ -527,6 +527,28 @@ tbody tr:last-child td {
 /* Route content uses one daily record for the brief and detailed views. */
 .route-workspace-head{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:24px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .route-workspace-head h2{font-size:26px;letter-spacing:-.025em;margin:4px 0 6px}
+.route-mode-bar { border-top:3px solid var(--accent); }
+.route-mode-buttons { display:flex; flex-wrap:wrap; gap:8px; }
+.route-mode-buttons .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; }
+.route-mode-buttons .btn[aria-pressed="true"] { background:var(--ink); color:var(--surface); border-color:var(--ink); font-weight:650; }
+.route-mode-badge { border:1px solid currentColor; border-radius:4px; padding:0 5px; font-size:11px; line-height:1.6; }
+.route-mode-help { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+.route-mode-help p { margin-top:4px; color:var(--ink-soft); font-size:13px; }
+.route-mode-help .link { flex-shrink:0; }
+.route-review-reference { padding:12px 20px; }
+.route-review-reference summary { cursor:pointer; }
+.route-review-reference summary .muted { margin-left:12px; }
+.route-review-reference[open]>div { margin-top:16px; }
+.route-mode-bar:focus-visible,.route-review-issues:focus-visible { outline:3px solid var(--accent); outline-offset:3px; }
+.route-preview-empty { border-left:4px solid var(--warn); }
+@media(max-width:560px) {
+  .route-mode-bar { padding:14px; }
+  .route-mode-buttons { display:grid; grid-template-columns:1fr 1fr; }
+  .route-mode-buttons .btn { padding:9px 7px; }
+  .route-mode-buttons .btn:last-child { grid-column:1/-1; }
+  .route-mode-help { flex-direction:column; gap:8px; }
+  .route-review-reference summary .muted { display:block; margin:4px 0 0 17px; }
+}
 .route-tags{display:flex;gap:9px;flex-wrap:wrap;align-items:center}.route-tag{display:inline-flex;align-items:center;gap:9px;padding:7px 11px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);color:var(--ink);font-size:13px}
 .route-tag .link{font-size:11px}.tag-remove{font-size:20px;line-height:1;border:0;background:none;color:var(--ink-soft);cursor:pointer}.route-tags.candidates{margin-top:16px}.candidates .route-tag{background:var(--well);border-style:dashed}
 .route-tag-editor{padding:18px;background:var(--chrome);border:1px solid var(--line)}
