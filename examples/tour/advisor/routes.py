@@ -36,6 +36,47 @@ def _days(item):
         return None
 
 
+def listed_days(item):
+    """The supplier's registered day count, which may differ from the title's."""
+    try:
+        return int(item.get("attributes", {}).get("days") or 0) or None
+    except ValueError:
+        return None
+
+
+def day_check(attrs) -> dict:
+    """A departure's calendar length and whether the warehouse found it at odds with the route."""
+    try:
+        days = int(attrs.get("calendar_days") or 0) or None
+    except ValueError:
+        days = None
+    return {
+        "calendar_days": days,
+        "days_differ": str(attrs.get("duration_check", "")).startswith("mismatch"),
+    }
+
+
+def unpublished_reason(product, departures=()) -> str:
+    """Why a route has no itinerary yet, in the words an advisor can take to the supplier.
+
+    A day count that disagrees between the route name, the supplier's registration and the
+    departures holds a parsed itinerary back from publication until the supplier checks it.
+    """
+    title = re.search(r"(\d{1,2})\s*天", product.get("title") or "")
+    named, listed = (int(title.group(1)) if title else None), listed_days(product)
+    odd = sorted(
+        {d["calendar_days"] for d in departures if d.get("days_differ") and d.get("calendar_days")}
+    )
+    parts = []
+    if named and listed and named != listed:
+        parts.append(f"线路名写 {named} 天，供应商登记 {listed} 天")
+    if odd:
+        parts.append("部分团期为 " + "、".join(str(n) for n in odd) + " 天")
+    if parts:
+        return "行程待供应商核对天数（" + "；".join(parts) + "），暂未发布"
+    return "这条线路尚未发布行程"
+
+
 def _city(item):
     return (item.get("attributes", {}).get("depart_city") or "").strip()
 
@@ -440,6 +481,7 @@ async def departures(wh, product_id, need, *, around_days=7):
                 "in_window": bool(window and window.start <= depart <= window.end),
                 "code": item.get("option_values", {}).get("团期", ""),
                 "leave_days": _workdays(depart, date.fromisoformat(back)) if back else None,
+                **day_check(a),
             }
         )
     return out
@@ -477,6 +519,7 @@ async def overview(wh, target, need, *, around_days=10):
                         "departure_id": item["product_id"],
                         "availability": attrs.get("availability", ""),
                         "in_window": bool(window and window.start <= day <= window.end),
+                        **day_check(attrs),
                     }
                 )
             after = page.get("next_cursor")
@@ -540,6 +583,14 @@ async def overview(wh, target, need, *, around_days=10):
         }
 
     dates, itinerary = await asyncio.gather(date_read(), doc_read())
+    if itinerary["status"] == "unpublished":
+        try:
+            product = await wh.product(pid)
+        except WarehouseError as error:
+            if error.status in (401, 403):
+                raise
+            product = {"title": title}
+        itinerary["message"] = unpublished_reason(product or {"title": title}, dates["items"])
     supplier = target.get("supplier")
     if isinstance(supplier, str):
         supplier = {"id": target.get("supplier_id", ""), "name": supplier}

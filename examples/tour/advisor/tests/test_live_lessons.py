@@ -174,3 +174,21 @@ def test_a_senior_is_not_counted_again_as_an_adult():
         },
     )
     assert (party.adults, len(party.seniors), len(party.children), party.total) == (2, 1, 2, 5)
+
+
+def test_an_unpublished_route_says_which_day_counts_disagree():
+    from tour.advisor import routes
+
+    product = {"title": "ACME 海岛7天5晚", "attributes": {"days": "6"}}
+    odd = [
+        routes.day_check(
+            {"calendar_days": "10", "duration_check": "mismatch_requires_confirmation"}
+        )
+    ]
+    fine = [routes.day_check({"calendar_days": "6", "duration_check": "matched"})]
+    assert routes.unpublished_reason(product, fine) == (
+        "行程待供应商核对天数（线路名写 7 天，供应商登记 6 天），暂未发布"
+    )
+    assert "部分团期为 10 天" in routes.unpublished_reason(product, odd)
+    agreed = {"title": "ACME 海岛6天", "attributes": {"days": "6"}}
+    assert routes.unpublished_reason(agreed, fine) == "这条线路尚未发布行程"

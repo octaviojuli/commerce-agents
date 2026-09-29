@@ -12,6 +12,7 @@ type RouteView = {
   days: number | null;
   depart_city: string;
   published: boolean;
+  unpublished_reason?: string;
   reviewed: boolean;
   supplier: SupplierView;
   notice: string;
@@ -80,6 +81,11 @@ function RoutePage() {
           </div>
         </div>
         <div className="pad" style={{ paddingTop: 12 }}>
+          {!route.published && route.unpublished_reason && (
+            <div className="card" style={{ marginBottom: 10 }}>
+              <span className="tag t-sun">行程未发布</span> {route.unpublished_reason}
+            </div>
+          )}
           {route.published && (
             <a
               className="b b-br"

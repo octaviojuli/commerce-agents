@@ -575,6 +575,14 @@ def create_app(settings: Settings, *, model=None, transport=None, judge=None):
                     if (d.get("route") or {}).get("product_id") == product_id:
                         departure = (d.get("departure") or {}).get("departure_id")
             doc = await routes.document(wh, product_id, departure)
+            reason = ""
+            if not (doc or {}).get("body"):
+                # Say why it is unpublished, with the departures' own day counts.
+                page = await wh.departures(product_id, limit=25)
+                reason = routes.unpublished_reason(
+                    detail_,
+                    [routes.day_check(i.get("attributes", {})) for i in page.get("items", [])],
+                )
         finally:
             await wh.aclose()
         view = Route(product_id, routes.display(detail_.get("title", "")), (doc or {}).get("body"))
@@ -587,6 +595,7 @@ def create_app(settings: Settings, *, model=None, transport=None, judge=None):
             "days": routes._days(detail_),
             "depart_city": routes._city(detail_),
             "published": bool(view.days),
+            "unpublished_reason": "" if view.days else reason,
             "reviewed": view.reviewed,
             "notice": view.notice,
             "grid": view.grid(),

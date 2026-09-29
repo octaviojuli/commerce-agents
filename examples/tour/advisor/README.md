@@ -47,6 +47,9 @@ departures, offers and quotes.
 - The advisor can take a chosen route back (`DELETE /api/deals/{id}/route`): the deal returns
   to choosing and the route's departure, sheets and prices are void. Sold deals reject this
   action and route replacement; their financial and confirmation records remain intact.
+- An unpublished route says why when its day counts disagree (the name's, the supplier's
+  registration and the departures'), so the advisor can ask the supplier; the dates page marks
+  each departure whose length is at odds with the route. Customers are only told dates.
 - `GET /api/routes/{id}/page` is the whole published route drawn by the route kit's own page
   (`route_kit.render.page`) in its customer view, with the route's cover picture.
 - A route is taken only through `closing.settle_route` and a sheet confirmed only through
