@@ -325,7 +325,7 @@ async def test_advisor_reads_only_current_reviewed_document_and_keeps_old_versio
     backend = WarehouseAdvisorBackend(runtime, tenant.buyer)
     context = ShoppingSessionContext(session_id="ACME", user_id=str(tenant.buyer.user_id))
     route = "WP-" + str(product["id"])
-    assert "暂无" in (await backend.get_product_details(context, route)).specs["文档状态"]
+    assert "尚未发布行程" in (await backend.get_product_details(context, route)).specs["文档状态"]
     documents.run_once(runtime, tenant.worker, store, parsed)
     assert documents.current(runtime, tenant.buyer, product["id"]) is None
     staged = proposal(runtime, tenant, asset)
@@ -341,7 +341,7 @@ async def test_advisor_reads_only_current_reviewed_document_and_keeps_old_versio
             {"id": product["id"]},
         )
     assert documents.current(runtime, tenant.buyer, product["id"]) is None
-    assert "暂无" in (await backend.get_product_details(context, route)).specs["文档状态"]
+    assert "尚未发布行程" in (await backend.get_product_details(context, route)).specs["文档状态"]
     historical = documents.published(runtime, tenant.buyer, UUID(result["document_id"]))
     assert historical["historical"] and historical["body"] == old["body"]
     # The identical file bound to a changed product creates new evidence, not inherited review.

@@ -11,48 +11,22 @@ def duration_label(days, nights=None):
     return f"{days} 天" + (f"（{nights} 晚）" if nights is not None else "")
 
 
-def departure_mismatch_message(days, nights, departures):
-    """Bounded date examples for every duration group, without inferring flight rules."""
-    groups = {}
-    for _, duration, *span in departures:
-        groups.setdefault(duration, []).append(span)
-    parts = []
-    ordered = sorted(groups.items())
-    for duration, spans in ordered[:5]:
-        examples = sorted(f"{s[0]} 至 {s[1]}" for s in spans if len(s) == 2 and all(s))
-        label = f"{duration} 天，共 {len(spans)} 个团期"
-        if examples:
-            label += "（" + "、".join(examples[:3]) + ("等" if len(examples) > 3 else "") + "）"
-        parts.append(label)
-    if len(ordered) > 5:
-        parts.append(f"另有 {len(ordered) - 5} 种天数，请在团期列表核对")
-    return (
-        f"当前整理稿 {duration_label(days, nights)}；适用团期天数不一致："
-        + "；".join(parts)
-        + "。团期天数按出发、返回日期首尾都计入，请核对原文件与适用范围。"
-    )
-
-
 def basis(doc):
     return fingerprint(doc.model_dump(mode="json", exclude={"quality"}))
 
 
-def checks(doc, departure_days=()):
+def checks(doc):
     result = []
 
     def add(path, code, message, **details):
         result.append({"path": path, "code": code, "message": message, **details})
 
     variants = doc.source.variants
-    if variants and (
-        doc.applicability.version_label not in {v.label for v in variants}
-        or not doc.applicability.start
-        or not doc.applicability.end
-    ):
+    if variants and doc.applicability.version_label not in {v.label for v in variants}:
         add(
             "applicability",
             "VARIANTS_DETECTED",
-            "原文件包含多个版本，请选定原文版本、适用日期并整理对应的完整逐日内容",
+            "原文件包含多个版本，请核对采用的原文版本并整理完整逐日内容",
             ranges=[v.model_dump() for v in variants],
         )
     if bool(doc.applicability.start) != bool(doc.applicability.end):
@@ -121,17 +95,6 @@ def checks(doc, departure_days=()):
     nights = sum(d.overnight in {"hotel", "ship"} for d in doc.days)
     if doc.summary.nights is not None and nights != doc.summary.nights:
         add("summary/nights", "NIGHTS_MISMATCH", "酒店及船上过夜晚数与标称住宿晚数不一致")
-    for departure, days, *span in departure_days:
-        if days is not None and days != doc.summary.days:
-            add(
-                "summary/days",
-                "DEPARTURE_DURATION_MISMATCH",
-                departure_mismatch_message(
-                    doc.summary.days, doc.summary.nights, [(departure, days, *span)]
-                ),
-                departure_id=str(departure),
-                expected_days=days,
-            )
     digest = basis(doc)
     acknowledgements = {
         (r.code, r.path, r.basis_hash) for r in doc.quality.resolutions if r.note.strip()

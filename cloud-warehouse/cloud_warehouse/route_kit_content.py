@@ -9,7 +9,7 @@ from route_kit.models import RouteContent
 from .changes import Conflict
 from .integrations import fingerprint
 from .product_facts import same_city
-from .route_consistency import departure_mismatch_message, duration_label
+from .route_consistency import duration_label
 from .route_doc import RouteDoc
 
 
@@ -79,7 +79,7 @@ def listing_mismatch_message(doc):
     )
 
 
-def issues(doc, departure_days=(), resolutions=(), listing=None):
+def issues(doc, *, resolutions=(), listing=None):
     doc = parse_content(doc)
     digest = basis(doc)
     acknowledged = {
@@ -133,21 +133,6 @@ def issues(doc, departure_days=(), resolutions=(), listing=None):
     scope = doc.applicability
     if bool(scope.start) != bool(scope.end) or (scope.start and scope.end < scope.start):
         add("applicability", "APPLICABILITY_INVALID", "适用日期须完整且结束不早于开始")
-    mismatches = [d for d in departure_days if d[1] is not None and d[1] != doc.days_count]
-    days_decided = bool(listing and listing["days"]["origin"] == "warehouse_decision")
-    if mismatches:
-        covered = (
-            days_decided
-            and listing["days"]["effective"] == doc.days_count
-            and {d[1] for d in mismatches} == {listing["days"]["upstream"]}
-        )
-        add(
-            "days_count",
-            "DEPARTURE_DURATION_MISMATCH",
-            departure_mismatch_message(doc.days_count, doc.nights, mismatches)
-            + (" 已按云仓核定天数处理，团期日期以上游为准。" if covered else ""),
-            covered,
-        )
     expected = listing["days"]["effective"] if listing else doc.quality.days_expected
     if expected and expected != doc.days_count:
         add(
@@ -220,7 +205,10 @@ def issues(doc, departure_days=(), resolutions=(), listing=None):
     informative = {"PDF_DAY_BOUNDARIES_ADJUSTED", "LAST_DAY_TRIMMED", "RETRIED"}
     for issue in doc.quality.issues:
         code = issue.get("code", "PARSE_REVIEW")
-        if code in informative or code == "DAYS_DIFFER_FROM_LISTING":
+        if code in informative or code in {
+            "DAYS_DIFFER_FROM_LISTING",
+            "DEPARTURE_DURATION_MISMATCH",
+        }:
             continue
         add(
             str(issue.get("path", "source")),

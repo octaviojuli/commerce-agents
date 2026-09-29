@@ -1,6 +1,5 @@
 """Fictional integration cases for the new content, approval and sales boundary."""
 
-from datetime import date
 from uuid import UUID
 
 import pytest
@@ -149,34 +148,14 @@ def test_duration_messages_distinguish_parse_evidence_from_edited_draft(found, l
     assert updated["basis_hash"] != issue["basis_hash"]
 
 
-def test_departure_mismatch_examples_cover_each_duration_and_remain_bounded():
+def test_historical_departure_warning_does_not_become_a_content_review_gate():
     doc = content()
-    doc.days_count, doc.nights = 9, 7
-    rows = [(f"ACME-{i}", 8, date(2026, 11, 5), date(2026, 11, 12)) for i in range(100)]
-    rows += [
-        ("ACME-long", 10, date(2026, 10, 25), date(2026, 11, 3)),
-        ("ACME-matched", 9, date(2026, 10, 1), date(2026, 10, 9)),
-        ("ACME-unknown", None, date(2026, 12, 1), None),
-    ]
-    issue = next(x for x in kit.issues(doc, rows) if x["code"] == "DEPARTURE_DURATION_MISMATCH")
-    message = issue["message"]
-    assert "当前整理稿 9 天（7 晚）" in message
-    assert "8 天，共 100 个团期" in message and "10 天，共 1 个团期" in message
-    assert "2026-10-25 至 2026-11-03" in message and "首尾都计入" in message
-    assert "2026-10-01" not in message and "2026-12-01" not in message
-    assert len(message) < 500 and not issue["acknowledgeable"]
-    assert not any(x["code"] == issue["code"] for x in kit.issues(doc, rows[-2:]))
-    # Older callers with only a duration remain supported, without invented dates.
-    message = next(x for x in kit.issues(doc, [("ACME", 6)]) if x["code"] == issue["code"])[
-        "message"
-    ]
-    assert "6 天，共 1 个团期" in message and "2026" not in message
+    doc.quality.issues = [{"code": "DEPARTURE_DURATION_MISMATCH", "path": "days_count"}]
+    assert kit.issues(doc, resolutions=acknowledgements(doc)) == []
 
 
-async def test_review_duration_dates_follow_scope_and_do_not_bypass_publication(
-    database, tenant, source
-):
-    from cloud_warehouse.catalog import synchronize
+async def test_mixed_group_dates_do_not_block_human_content_review(database, tenant, source):
+    from cloud_warehouse.catalog import list_departures, synchronize
     from cloud_warehouse.persistence import Forbidden
 
     from .test_sync import Connector, batch
@@ -184,10 +163,7 @@ async def test_review_duration_dates_follow_scope_and_do_not_bypass_publication(
     _, runtime = database
     store, product, _, _ = source
     data = batch()
-    for number, start, end in [
-        (3, "2026-10-25", "2026-11-03"),
-        (4, "2026-11-05", "2026-11-12"),
-    ]:
+    for number, start, end in [(3, "2026-10-25", "2026-11-03"), (4, "2026-11-05", "2026-11-12")]:
         data.departures.append(
             {**data.departures[0], "periodId": number, "departDate": start, "returnDate": end}
         )
@@ -200,47 +176,46 @@ async def test_review_duration_dates_follow_scope_and_do_not_bypass_publication(
         doc.quality.days_found = 9
         return doc
 
-    assert isinstance(documents.run_once(runtime, tenant.worker, store, parse), str)
+    documents.run_once(runtime, tenant.worker, store, parse)
     current = route_editor.get(runtime, tenant.supplier, product["id"])
-    issue = next(x for x in current["issues"] if x["code"] == "DEPARTURE_DURATION_MISMATCH")
-    assert "2026-10-01 至 2026-10-03" in issue["message"]
-    assert "2026-10-25 至 2026-11-03" in issue["message"]
-    assert "2026-11-05 至 2026-11-12" in issue["message"]
-    assert "2026-11-06" not in issue["message"]
-    assert issue in current["test_publication"]["blockers"]
-    assert not current["test_publication"]["eligible"]
+    assert "departure_days" not in current
+    assert not any(x["code"] == "DEPARTURE_DURATION_MISMATCH" for x in current["issues"])
+    # Source/content disagreement still needs human review; group dates are not evidence gates.
+    assert any(
+        x["code"] == "DAYS_DIFFER_FROM_LISTING" for x in current["test_publication"]["blockers"]
+    )
     cmd = route_editor.SaveDraft(
         expected_revision=current["revision"],
         expected_source_hash=current["source_hash"],
         content=current["content"],
-        source_note="ACME 核对天数",
+        source_note="ACME 核对行程内容",
+        fact_decisions=[product_facts.FactDecision(field="days", upstream=3, value=9)],
         review_resolutions=acknowledgements(current["content"]),
     )
-    assert issue in route_editor.validate(runtime, tenant.supplier, product["id"], cmd)["issues"]
+    assert not route_editor.validate(runtime, tenant.supplier, product["id"], cmd)["issues"]
     saved = route_editor.save(runtime, tenant.supplier, product["id"], cmd)
-    assert issue in saved["issues"]
-    with pytest.raises(Conflict, match="适用团期天数不一致"):
+    assert not saved["issues"]
+    assert documents.current(runtime, tenant.buyer, product["id"]) is None
+    with pytest.raises(Forbidden):
+        route_editor.get(runtime, tenant.buyer, product["id"])
+    commit(
+        runtime,
+        tenant,
         route_editor.propose(
             runtime,
             tenant.supplier,
             route_editor.PublishDraft(
-                target_id=product["id"], revision_id=saved["revision_id"], note="ACME 审核"
+                target_id=product["id"], revision_id=saved["revision_id"], note="ACME 人工审核"
             ),
-        )
-    assert documents.current(runtime, tenant.buyer, product["id"]) is None
-    with pytest.raises(Forbidden):
-        route_editor.get(runtime, tenant.buyer, product["id"])
-    cmd.expected_revision = saved["revision"]
-    cmd.content.applicability.start = cmd.content.applicability.end = date(2026, 10, 25)
-    scoped = route_editor.validate(runtime, tenant.supplier, product["id"], cmd)["issues"]
-    message = next(x for x in scoped if x["code"] == issue["code"])["message"]
-    assert "2026-10-25 至 2026-11-03" in message
-    assert "2026-10-01" not in message and "2026-11-05" not in message
-    cmd.content.applicability.departure_cities = ["ACME 其他出发地"]
-    assert not any(
-        x["code"] == issue["code"]
-        for x in route_editor.validate(runtime, tenant.supplier, product["id"], cmd)["issues"]
+        ),
     )
+    published = documents.current(runtime, tenant.buyer, product["id"])
+    assert published["body"]["days_count"] == 9
+    for departure in list_departures(runtime, tenant.buyer, product_id=product["id"]):
+        assert (
+            documents.current(runtime, tenant.buyer, product["id"], departure_id=departure["id"])
+            == published
+        )
 
 
 def test_kit_draft_publish_and_customer_reads(database, tenant, source):
@@ -405,28 +380,6 @@ def test_answers_given_in_review_bind_to_the_content_they_edited():
     assert kit.issues(doc, resolutions=answers) == []
     doc.days[0].items[0].ticket = "excluded"  # a later change to the same field needs a new answer
     assert kit.issues(doc, resolutions=answers)
-
-
-def test_a_days_decision_covers_only_the_overridden_departure_span():
-    doc = content()
-    decided = {
-        "days": {
-            "upstream": doc.days_count - 1,
-            "effective": doc.days_count,
-            "origin": "warehouse_decision",
-            "state": "pending",
-        },
-        "gateway": {"upstream": None, "effective": None, "origin": "source", "state": "none"},
-    }
-    spans = [("a", doc.days_count - 1), ("b", doc.days_count + 3)]
-    found = {
-        (x["code"], x["acknowledgeable"])
-        for x in kit.issues(doc, spans, listing=decided)
-        if x["code"] == "DEPARTURE_DURATION_MISMATCH"
-    }
-    assert found == {("DEPARTURE_DURATION_MISMATCH", False)}
-    covered = kit.issues(doc, spans[:1], listing=decided)
-    assert any(x["code"] == "DEPARTURE_DURATION_MISMATCH" and x["acknowledgeable"] for x in covered)
 
 
 def test_days_conflict_needs_a_decision_that_follows_the_source(database, tenant, source):

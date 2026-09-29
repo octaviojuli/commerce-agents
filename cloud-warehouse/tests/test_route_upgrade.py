@@ -1,4 +1,4 @@
-"""Real database assertions for additive parsing and departure-scoped publication."""
+"""Real database assertions for additive parsing and stable route publication ownership."""
 
 from datetime import timedelta
 from uuid import UUID
@@ -105,7 +105,7 @@ def test_model_field_provenance_persists_only_in_supplier_parse(database, tenant
         documents.get(runtime, tenant.buyer, asset)
 
 
-def test_published_versions_select_by_departure_date_and_preserve_old_bodies(
+def test_current_route_publication_ignores_descriptive_scope_and_preserves_history(
     database, tenant, source
 ):
     admin, runtime = database
@@ -128,32 +128,41 @@ def test_published_versions_select_by_departure_date_and_preserve_old_bodies(
     )
     first = commit(runtime, tenant, route_editor.propose(runtime, tenant.supplier, command))
     original = documents.published(runtime, tenant.supplier, UUID(first["document_id"]))
-    assert documents.current(runtime, tenant.buyer, product["id"]) is None
+    assert documents.current(runtime, tenant.buyer, product["id"])["id"] == UUID(
+        first["document_id"]
+    )
     preview = documents.current(runtime, tenant.buyer, product["id"], route_preview=True)
     assert preview["id"] == UUID(first["document_id"])
-    assert "尚未选择团期" in preview["body"]["publication_notice"]
+    assert "publication_notice" not in preview["body"]
     assert "source" not in preview["body"] and "quality" not in preview["body"]
     selected = documents.current(runtime, tenant.buyer, product["id"], departure_id=departure["id"])
     assert selected["id"] == UUID(first["document_id"]) and "source" not in selected["body"]
     current = route_editor.get(runtime, tenant.supplier, product["id"])
     content.applicability = Applicability(
-        start=end + timedelta(days=1), end=end + timedelta(days=30), version_label="ACME B"
+        start=end + timedelta(days=1),
+        end=end + timedelta(days=30),
+        version_label="ACME B",
+        departure_cities=["ACME 文中城市"],
     )
+    content.name = "ACME 校对后的标题"
+    content.summary.days -= 1
+    content.days.pop()
     saved = save(runtime, tenant, product, current, content)
     command = route_editor.PublishDraft(
         target_id=product["id"], revision_id=saved["revision_id"], note="ACME scope B reviewed"
     )
-    commit(runtime, tenant, route_editor.propose(runtime, tenant.supplier, command))
+    second = commit(runtime, tenant, route_editor.propose(runtime, tenant.supplier, command))
     preview = documents.current(runtime, tenant.buyer, product["id"], route_preview=True)
     assert preview["body"]["applicability"]["version_label"] == "ACME B"
     selected_preview = documents.current(
         runtime, tenant.buyer, product["id"], departure_id=departure["id"], route_preview=True
     )
-    assert selected_preview["id"] == UUID(first["document_id"])
+    assert selected_preview["id"] == UUID(second["document_id"])
+    assert selected_preview["body"]["title"] == content.name
     assert "publication_notice" not in selected_preview["body"]
     assert documents.current(runtime, tenant.buyer, product["id"], departure_id=departure["id"])[
         "id"
-    ] == UUID(first["document_id"])
+    ] == UUID(second["document_id"])
     assert (
         documents.published(runtime, tenant.supplier, UUID(first["document_id"]))["body"]
         == original["body"]

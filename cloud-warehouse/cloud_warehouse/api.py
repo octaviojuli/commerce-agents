@@ -1391,7 +1391,7 @@ def create_app(
             route_preview=departure_id is None,
         )
         if result is None:
-            raise HTTPException(404, "当前线路或团期暂无适用的已发布行程")
+            raise HTTPException(404, "当前线路暂无可读取的已发布行程")
         return result
 
     @app.get("/v1/advisor/departures", response_model=AdvisorDeparturePage)

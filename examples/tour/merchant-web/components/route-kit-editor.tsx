@@ -56,8 +56,8 @@ export function RouteKitEditor({api,id,initial,writable,publishable=false,onProp
     finally{if(!request.signal.aborted)setPreviewLoading(false);}
   }
   const [savedDecisions,setSavedDecisions]=useState<Row[]>(initial.fact_decisions??[]);
-  const [ctx,setCtx]=useState<Context>({listing:initial.listing,departureDays:initial.departure_days});
-  const [cards,setCards]=useState<Card[]>(()=>buildCards(initial.issues??[],initial.content,initial.content.units??[],{listing:initial.listing,departureDays:initial.departure_days})),[choices,setChoices]=useState<Record<string,Choice>>({});
+  const [ctx,setCtx]=useState<Context>({listing:initial.listing});
+  const [cards,setCards]=useState<Card[]>(()=>buildCards(initial.issues??[],initial.content,initial.content.units??[],{listing:initial.listing})),[choices,setChoices]=useState<Record<string,Choice>>({});
   useEffect(()=>{let stopped=false;const abort=new AbortController();async function check(){try{await api.get(`/merchant/routes/${id}/content`,abort.signal);}catch(e){if(!stopped){setAllowed(false);previewRequest.current?.abort();setContent({});setPreview(null);setSavedDecisions([]);setError(message(e));}}}const timer=setInterval(check,30000);window.addEventListener("focus",check);return()=>{stopped=true;abort.abort();clearInterval(timer);window.removeEventListener("focus",check);};},[api,id]);
   const coverUrl=useRouteCover(api,allowed?(mode==="customer"?preview?.content?.cover_asset_id:content.source?.cover_image):null);
   function edit(next:Row){setContent(next);setDirty(true);setChoices({});setNotice("内容已修改，请重新检查并确认。");}
@@ -119,13 +119,13 @@ export function RouteKitEditor({api,id,initial,writable,publishable=false,onProp
       }else{setDone("proposed");onProposed();}
     }catch(e){setError(`${message(e)} 已保存的草稿不会丢失，可刷新后继续。`);}finally{setBusy(false);}
   }
-  async function adopt(){setBusy(true);try{const fresh=await api.get<Row>(`/merchant/routes/${id}/content?include_source=true`);setDraft(fresh);setCtx({listing:fresh.listing,departureDays:fresh.departure_days});setSavedDecisions([]);edit(clone(fresh.candidate));setCards(buildCards(fresh.issues,fresh.candidate,fresh.candidate.units??[],{listing:fresh.listing,departureDays:fresh.departure_days}));setChoices({});setDay(0);}catch(e){setError(message(e));}finally{setBusy(false);}}
+  async function adopt(){setBusy(true);try{const fresh=await api.get<Row>(`/merchant/routes/${id}/content?include_source=true`);setDraft(fresh);setCtx({listing:fresh.listing});setSavedDecisions([]);edit(clone(fresh.candidate));setCards(buildCards(fresh.issues,fresh.candidate,fresh.candidate.units??[],{listing:fresh.listing}));setChoices({});setDay(0);}catch(e){setError(message(e));}finally{setBusy(false);}}
   if(!allowed)return <p role="alert" className="notice error">访问权限需要重新确认，请重新进入线路详情。{error}</p>;
   const blockedBy=draft.parsing?"附件正在处理，暂不能提交":draft.source_changed?"资料已有新版本，请先采用新候选稿":pending.length?`还有 ${pending.length} 项没有确认`:"";
   return <section className="stack route-kit-workspace"><header className="panel stack"><h2>线路内容工作台</h2><p>{draft.published_review_mode==="test_auto"?"测试自动发布 · 未人工审核":draft.published_review_mode==="human"?"已有人工审核发布内容":"结构化整理稿 · 待人工复核"}　草稿 {draft.revision} 版 / 已发布 {draft.content_version} 版{dirty?" · 有未保存修改":""}</p></header>
     <div ref={modeAnchor} tabIndex={-1} className="panel stack route-mode-bar">
       <div className="route-mode-buttons" role="group" aria-label="行程工作模式">{([...(writable?["review"]:[]),"read",...(writable?["edit"]:[]),"customer"] as Mode[]).map(value=><button key={value} type="button" className="btn" aria-label={modeLabels[value]} aria-pressed={mode===value} aria-controls={contentId} onClick={()=>value==="customer"?customer():showMode(value)}>{modeLabels[value]}{value==="review"&&pending.length>0&&<span className="route-mode-badge">{pending.length} 项</span>}{value==="customer"&&!draft.published_review_mode&&!preview?.published&&<span className="route-mode-badge">未发布</span>}</button>)}</div>
-      <div className="route-mode-help"><div><strong>当前：{modeLabels[mode]}</strong><p>{mode==="review"?"对照原文逐项确认，下方可提交审批或明确确认发布。":mode==="edit"?"修改后保存草稿，再回到审核确认；保存不会发布。":mode==="read"?"查看当前整理稿及其原文依据。":"这里只展示已发布版本，不包含尚未发布的修改。"}</p></div></div>
+      <div className="route-mode-help"><div><strong>当前：{modeLabels[mode]}</strong><p>{mode==="review"?"校对仅更新线路内容，已有团期和附件关联保持不变。对照原文确认后，可提交审批或确认发布。":mode==="edit"?"修改后保存草稿，再回到审核确认；保存不会发布。":mode==="read"?"查看当前整理稿及其原文依据。":"这里只展示已发布版本，不包含尚未发布的修改。"}</p></div></div>
     </div>
     {draft.test_publication&&<details className="panel route-review-reference"><summary>测试发布评估 · 展开查看</summary><div className="stack"><p>有效内容覆盖率 <strong>{draft.test_publication.coverage_percent}%</strong> / 门槛 85%</p><p className="muted">直接引用原文的单元比例；不把推断续句和原样挂入算作整理完成，不代表事实准确率。</p><p>{draft.test_publication.enabled?"测试自动发布已启用":"自动发布未在当前账号启用"} · {draft.test_publication.eligible?"已达到发布门槛":"保留草稿"}</p>{draft.test_publication.blockers?.map((x:Row,i:number)=><p key={i} className="notice warning">{x.message}</p>)}</div></details>}
     {draft.parsing&&<p className="notice">附件正在处理或需要重试，当前保留上一版内容供对照。</p>}{draft.source_changed&&<p className="notice warning">资料已有新版本，请对照后采用新候选稿。<button className="btn" disabled={busy||dirty} onClick={adopt}>采用新候选稿</button></p>}

@@ -20,7 +20,7 @@ def read(engine, actor, product_id, *, departure_id=None, section="overview", da
     if not published:
         return {
             "status": "unavailable",
-            "message": "暂无适用的已复核行程，请先核对具体团期或等待商户发布。",
+            "message": "暂无可读取的已发布行程，请向商户核实线路内容。",
         }
     # current() already projects buyer reads. Supplier readers still require projection.
     raw = published["body"]

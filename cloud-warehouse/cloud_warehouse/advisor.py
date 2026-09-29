@@ -122,7 +122,7 @@ class WarehouseAdvisorBackend(StorefrontBackend):
                 "return_date": str(row["return_date"]),
                 "route_days": str(route_days) if route_days is not None else "",
                 "calendar_days": str(calendar_days) if calendar_days is not None else "",
-                "duration_check": "mismatch_requires_confirmation"
+                "duration_check": "different_calendar_span"
                 if route_days and calendar_days and route_days != calendar_days
                 else "matched"
                 if route_days and calendar_days
@@ -512,9 +512,7 @@ class WarehouseAdvisorBackend(StorefrontBackend):
         from .route_content import customer_projection
 
         if not document:
-            return {
-                "文档状态": "暂无适用的已复核行程；线路可能需要先选择具体团期。不能据名称推断游览范围、节奏、门票或航班。"
-            }
+            return {"文档状态": "这条线路尚未发布行程。不能据名称推断游览范围、节奏、门票或航班。"}
         content = customer_projection(
             document["body"], review_mode=document.get("review_mode", "human")
         )

@@ -156,7 +156,7 @@ export default function DatesPage() {
                       ["成团", (d: Dep) => <span className={d.sales_status.includes("核实") ? "n" : "y"}>{d.sales_status || "—"}</span>],
                       ["返程", (d: Dep) => `${d.return_date.slice(5).replace("-", "/")} 周${d.return_weekday}`],
                       // A departure longer or shorter than the supplier registered is theirs to explain.
-                      ["天数", (d: Dep) => (d.days_differ ? <span className="n">{d.calendar_days} 天 · {d.route_days ? `供应商登记 ${d.route_days} 天` : "与供应商登记不一致"}</span> : d.calendar_days ? `${d.calendar_days} 天` : "—")],
+                      ["日期跨度", (d: Dep) => d.calendar_days ? `${d.calendar_days} 天${d.days_differ && d.route_days ? ` · 行程展示 ${d.route_days} 天` : ""}` : "—"],
                       ["请假", (d: Dep) => (d.leave_days != null ? `${d.leave_days} 天` : "—")],
                       ["余位", (d: Dep) => <span className="y">{status(d)}</span>],
                     ] as [string, (d: Dep) => React.ReactNode][]

@@ -12,7 +12,6 @@ from . import route_kit_content as kit
 from .changes import Conflict, audit
 from .integrations import canonical, fingerprint
 from .persistence import Forbidden, require_role, transaction
-from .route_applicability import departure_durations
 from .route_doc import Quality, RouteDoc, Source, Summary
 
 
@@ -54,19 +53,9 @@ def _product(conn, product_id, *, lock=False):
     return row
 
 
-def _issues(conn, product, doc, resolutions, decisions=()):
+def _issues(product, doc, resolutions, decisions=()):
     listing = product_facts.listing(product, decisions) if kit.is_kit(doc) else None
-    return route_content.issues(
-        doc,
-        departure_durations(
-            conn,
-            product["id"],
-            doc,
-            gateway=listing["gateway"]["effective"] if listing else None,
-        ),
-        resolutions,
-        listing,
-    )
+    return route_content.issues(doc, resolutions=resolutions, listing=listing)
 
 
 def _parse(conn, product):
@@ -147,7 +136,7 @@ def _body(product, parsed, command):
         raise Conflict("解析结构已升级，请对照原稿后采用新候选稿")
     if any(
         getattr(doc, k) != getattr(original, k)
-        for k in ("route_id", "route_code", "name", "department", "source", "twin_of")
+        for k in ("route_id", "route_code", "department", "source", "twin_of")
     ):
         raise Conflict("请使用当前候选稿，不可改写原文来源或产品身份")
     if (
@@ -249,7 +238,7 @@ def get(engine, actor, product_id, *, include_source=True):
             else None,
             "test_publication": {
                 "enabled": enabled(actor, product["connection_id"]),
-                **assess(prepared, departure_durations(conn, product_id, prepared)),
+                **assess(prepared),
             }
             if kit.is_kit(prepared)
             else None,
@@ -278,22 +267,12 @@ def get(engine, actor, product_id, *, include_source=True):
             "asset_id": parsed["asset_id"] if parsed else None,
             "asset_product_version": parsed["product_version"] if parsed else None,
             "issues": _issues(
-                conn,
                 product,
                 effective,
                 draft["review_resolutions"] if draft else (),
                 pending_facts,
             ),
             "listing": product_facts.listing(product, pending_facts),
-            "departure_days": [
-                dict(row)
-                for row in conn.execute(
-                    text("""SELECT (d.return_date-d.depart_date+1) AS days,count(*) AS count
-              FROM departure d WHERE d.product_id=:id AND d.status='published' AND d.return_date IS NOT NULL
-              GROUP BY 1 ORDER BY 2 DESC,1 LIMIT 5"""),
-                    {"id": product_id},
-                ).mappings()
-            ],
             "fact_decisions": pending_facts,
             "saved_at": draft["created_at"] if draft else None,
             "review_resolutions": draft["review_resolutions"] if draft else [],
@@ -367,9 +346,7 @@ def save(engine, actor, product_id, command):
             "revision_id": identifier,
             "revision": revision,
             "content": body,
-            "issues": _issues(
-                conn, product, doc, command.review_resolutions, command.fact_decisions
-            ),
+            "issues": _issues(product, doc, command.review_resolutions, command.fact_decisions),
         }
 
 
@@ -396,23 +373,14 @@ def _review(conn, command, *, lock=False, actor=None):
         raise Conflict("原文件已有新解析稿，请重新复核")
     _original(product, parsed, draft["source_kind"])
     body = kit.parse_content(draft["body"])
-    if (
-        product["days"] is not None
-        and kit.day_count(body) != product["days"]
-        and not kit.is_kit(body)
-    ):
-        raise Conflict("文档天数与线路不一致")
-    durations = departure_durations(conn, product["id"], body)
     product_facts.check(product, draft["fact_decisions"])
     if command.review_mode == "test_auto":
         from .route_test_publication import validate
 
         if actor is None:
             raise Forbidden("测试发布缺少操作员")
-        validate(actor, product, parsed, body, durations)
-    elif found := _issues(
-        conn, product, body, draft["review_resolutions"], draft["fact_decisions"]
-    ):
+        validate(actor, product, parsed, body)
+    elif found := _issues(product, body, draft["review_resolutions"], draft["fact_decisions"]):
         raise Conflict(found[0]["message"])
     if not command.note.strip():
         raise Conflict("请填写发布复核说明")
@@ -441,7 +409,7 @@ def apply_command(conn, actor, change_id, payload):
     if command.review_mode == "test_auto":
         from .route_test_publication import assess
 
-        metrics = assess(doc, departure_durations(conn, product["id"], doc))
+        metrics = assess(doc)
     if not kit.is_kit(doc):
         doc.quality.reviewed_by = str(actor.user_id)
         doc.quality.reviewed_at = datetime.now(UTC)
@@ -582,7 +550,6 @@ def revision_detail(engine, actor, identifier):
             "fact_decisions": revision["fact_decisions"],
             "listing": product_facts.listing(product, revision["fact_decisions"]),
             "issues": _issues(
-                conn,
                 product,
                 kit.parse_content(revision["body"]),
                 revision["review_resolutions"],
@@ -604,8 +571,4 @@ def validate(engine, actor, product_id, command):
             raise Conflict("草稿或来源已变化，请重新核对")
         doc = _body(product, parsed, command)
         product_facts.check(product, command.fact_decisions)
-        return {
-            "issues": _issues(
-                conn, product, doc, command.review_resolutions, command.fact_decisions
-            )
-        }
+        return {"issues": _issues(product, doc, command.review_resolutions, command.fact_decisions)}

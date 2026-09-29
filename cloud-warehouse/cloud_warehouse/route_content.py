@@ -75,9 +75,9 @@ def candidate(body, *, normalize_titles=False):
     return doc
 
 
-def issues(doc, departure_days=(), resolutions=(), listing=None):
+def issues(doc, *, resolutions=(), listing=None):
     if kit.is_kit(doc):
-        return kit.issues(doc, departure_days, resolutions, listing)
+        return kit.issues(doc, resolutions=resolutions, listing=listing)
     result = []
 
     def issue(path, code, message):
@@ -85,7 +85,7 @@ def issues(doc, departure_days=(), resolutions=(), listing=None):
 
     from .route_consistency import checks
 
-    result.extend(item for item in checks(doc, departure_days) if not item["resolved"])
+    result.extend(item for item in checks(doc) if not item["resolved"])
 
     expected = list(range(1, doc.summary.days + 1))
     if not doc.days or [d.day for d in doc.days] != expected:

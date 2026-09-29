@@ -640,7 +640,6 @@ def _review(conn, payload, *, lock=False):
         for field in (
             "route_id",
             "route_code",
-            "name",
             "department",
             "source",
             "schema_version",
@@ -652,15 +651,12 @@ def _review(conn, payload, *, lock=False):
         raise Conflict("复核身份由当前审批人确定，须填写复核说明")
     if not doc.days or [day.day for day in doc.days] != list(range(1, doc.summary.days + 1)):
         raise Conflict("逐日行程必须完整、连续并与声明天数一致")
-    if product["days"] is not None and doc.summary.days != product["days"]:
-        raise Conflict("文档天数与产品不一致，请先核对产品资料")
     if any(not day.title.strip() or not day.text.strip() for day in doc.days):
         raise Conflict("每天行程必须有标题和内容")
     if doc.schema_version in {"2.0", "3.0"}:
-        from .route_applicability import departure_durations
         from .route_content import issues
 
-        if found := issues(doc, departure_durations(conn, product["id"], doc)):
+        if found := issues(doc):
             raise Conflict(found[0]["message"])
     if len(canonical(doc.model_dump(mode="json")).encode()) > MAX_CONTENT_BYTES:
         raise Conflict("复核文档超过大小上限")
@@ -789,29 +785,11 @@ def current_in_transaction(conn, product_id, *, departure_id=None, sales=False):
 def current(engine, actor, product_id, *, departure_id=None, route_preview=False):
     with transaction(engine, actor) as conn:
         require_role(conn, "advisor", "buyer_admin", "supplier_admin", "product_editor", "auditor")
-        # A route-level reference is readable before choosing a departure. It never
-        # replaces departure-aware selection used by quotes and itinerary commitments.
-        preview = route_preview and departure_id is None
-        result = current_in_transaction(
-            conn, product_id, departure_id=departure_id, sales=not preview
-        )
-        if result and preview:
-            result = _sales_document(result)
-            existing = result["body"].get("publication_notice", "")
-            result["body"]["publication_notice"] = "；".join(
-                item
-                for item in (
-                    existing,
-                    "线路参考行程：尚未选择团期，适用日期、出发地和行程版本须在选定团期后核实。",
-                )
-                if item
-            )
-            return result
-        if result and result["supplier_org_id"] != actor.organization_id:
+        # Keep route_preview as a compatible argument; all route reads use the
+        # current publication, whether or not a departure has been selected.
+        result = current_in_transaction(conn, product_id, departure_id=departure_id, sales=True)
+        if result and (route_preview or result["supplier_org_id"] != actor.organization_id):
             return _sales_document(result)
-        if result and result["supplier_org_id"] != actor.organization_id:
-            result.pop("review_note", None)
-            result.pop("change_id", None)
         return result
 
 

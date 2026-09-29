@@ -3,7 +3,7 @@
 import re
 import unicodedata
 
-VERSION = 1
+VERSION = 2
 # Small operator-owned vocabulary; country codes are identifiers, not a geographic
 # claim about a supplier itinerary. No third-party database is bundled.
 COUNTRIES = {

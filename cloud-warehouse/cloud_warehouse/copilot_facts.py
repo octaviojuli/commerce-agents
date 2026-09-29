@@ -42,7 +42,7 @@ def read(engine, actor, product_id, departure_id=None, *, day=None):
             conn, product, departure_id=departure, sales=departure is not None
         )
         if not row:
-            return {"facts": facts, "notice": "暂无适用的已发布行程，具体安排待商户核实。"}
+            return {"facts": facts, "notice": "暂无已发布行程，具体安排待商户核实。"}
         human = row.get("review_mode", "human") == "human"
         content = route_content.customer_projection(
             row["body"], review_mode=row.get("review_mode", "human")

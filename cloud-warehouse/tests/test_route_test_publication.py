@@ -120,7 +120,7 @@ def test_auto_publish_preserves_provenance_scope_and_idempotence(
     assert pub["review_mode"] == "test_auto" and pub["quality_metrics"]["policy"] == testpub.POLICY
 
 
-def test_scoped_test_publication_has_reference_preview_before_departure_selection(
+def test_content_version_label_does_not_require_departure_selection(
     database, tenant, source, monkeypatch
 ):
     _, runtime = database
@@ -137,10 +137,11 @@ def test_scoped_test_publication_has_reference_preview_before_departure_selectio
         testpub.run_once(runtime, tenant.supplier, tenant.connection_id)["status"]
         == "test_published"
     )
-    assert documents.current(runtime, tenant.buyer, product["id"]) is None
+    published = documents.current(runtime, tenant.buyer, product["id"])
     preview = documents.current(runtime, tenant.buyer, product["id"], route_preview=True)
     assert "测试自动发布" in preview["body"]["publication_notice"]
-    assert "尚未选择团期" in preview["body"]["publication_notice"]
+    assert published == preview
+    assert "尚未选择团期" not in preview["body"]["publication_notice"]
     assert preview["body"]["applicability"]["version_label"] == "ACME scoped version"
     assert "source" not in preview["body"] and "quality" not in preview["body"]
 

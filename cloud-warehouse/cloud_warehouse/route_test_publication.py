@@ -42,7 +42,7 @@ def require_enabled(actor, connection_id):
         raise Forbidden("测试自动发布未启用，或不在指定组织、来源与操作员范围内")
 
 
-def assess(content, departure_days=()):
+def assess(content):
     doc = kit.parse_content(content)
     if not kit.is_kit(doc):
         return {
@@ -52,7 +52,7 @@ def assess(content, departure_days=()):
             "blockers": [{"code": "NEW_PARSE_REQUIRED", "message": "须先使用新版附件解析"}],
         }
     q = doc.quality
-    blockers = [x for x in kit.issues(doc, departure_days) if x["code"] not in SOFT]
+    blockers = [x for x in kit.issues(doc) if x["code"] not in SOFT]
 
     def block(code, message):
         if not any(x["code"] == code for x in blockers):
@@ -89,7 +89,7 @@ def assess(content, departure_days=()):
     }
 
 
-def validate(actor, product, parsed, body, departure_days):
+def validate(actor, product, parsed, body):
     require_enabled(actor, product["connection_id"])
     if (
         parsed is None
@@ -97,7 +97,7 @@ def validate(actor, product, parsed, body, departure_days):
         or kit.basis(body) != kit.basis(kit.prepare(parsed["body"]))
     ):
         raise Conflict("测试自动发布只接受当前解析原稿，人工修改须走正常审核")
-    metrics = assess(body, departure_days)
+    metrics = assess(body)
     if not metrics["eligible"]:
         raise Conflict(metrics["blockers"][0]["message"])
     return metrics
@@ -105,8 +105,6 @@ def validate(actor, product, parsed, body, departure_days):
 
 def run_once(engine, actor, connection_id):
     """Process one new parse; unchanged/failed assessments never create repeat publications."""
-    from .route_applicability import departure_durations
-
     require_enabled(actor, connection_id)
     with transaction(engine, actor) as conn:
         require_role(conn, "supplier_admin")
@@ -133,10 +131,7 @@ def run_once(engine, actor, connection_id):
         if row is None:
             return None
         row = dict(row)
-        metrics = assess(
-            row["body"],
-            departure_durations(conn, row["product_id"], kit.parse_content(row["body"])),
-        )
+        metrics = assess(row["body"])
         if row["draft_created_at"] and row["draft_created_at"] > row["created_at"]:
             # Resume our saved draft after a crash, but never replace an operator edit.
             revision = (

@@ -192,22 +192,19 @@ def test_an_added_adult_is_kept_and_an_old_total_gives_way():
     assert (new.adults, new.total_count, new.total) == (3, None, 4)
 
 
-def test_an_unpublished_route_says_which_day_counts_disagree():
+def test_unpublished_notice_does_not_infer_a_departure_publication_gate():
     from tour.advisor import routes
 
     product = {"title": "ACME 海岛7天5晚", "attributes": {"days": "6"}}
-    odd = [
-        routes.day_check(
-            {"calendar_days": "10", "duration_check": "mismatch_requires_confirmation"}
-        )
-    ]
+    odd = [routes.day_check({"calendar_days": "10", "duration_check": "different_calendar_span"})]
     fine = [routes.day_check({"calendar_days": "6", "duration_check": "matched"})]
     assert routes.unpublished_reason(product, fine) == (
-        "行程待供应商核对天数（线路名写 7 天，供应商登记 6 天），暂未发布"
+        "这条线路尚未发布行程；线路名写 7 天，线路登记 6 天，请供应商核对内容"
     )
-    assert "部分团期为 10 天" in routes.unpublished_reason(product, odd)
+    assert routes.unpublished_reason(product, odd) == routes.unpublished_reason(product, fine)
     agreed = {"title": "ACME 海岛6天", "attributes": {"days": "6"}}
     assert routes.unpublished_reason(agreed, fine) == "这条线路尚未发布行程"
+    assert routes.unpublished_reason(agreed, odd) == "这条线路尚未发布行程"
 
 
 def test_room_counts_are_read_from_the_words_beside_them():
@@ -265,7 +262,7 @@ def test_a_departure_carries_the_day_count_it_is_compared_with():
         {
             "calendar_days": "10",
             "route_days": "8",
-            "duration_check": "mismatch_requires_confirmation",
+            "duration_check": "different_calendar_span",
         }
     )
     assert check == {"calendar_days": 10, "route_days": 8, "days_differ": True}

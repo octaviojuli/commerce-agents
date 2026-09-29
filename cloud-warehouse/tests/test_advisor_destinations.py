@@ -273,7 +273,7 @@ async def test_full_recall_pagination_exclusions_date_and_stale_projection(datab
 
 
 @pytest.mark.parametrize("scoped", [False, True])
-async def test_only_global_reviewed_itinerary_supplies_country_evidence(
+async def test_current_reviewed_itinerary_supplies_country_evidence_regardless_of_descriptive_scope(
     database, tenant, tmp_path, scoped
 ):
     from cloud_warehouse import documents
@@ -302,15 +302,12 @@ async def test_only_global_reviewed_itinerary_supplies_country_evidence(
         if rebuild:
             outbox.run_once(runtime, tenant.worker)
         items = backend.catalog_page(session(tenant.buyer), **args)["items"]
-        if scoped:
-            assert items == []
-        else:
-            assert len(items) == 1
-            assert json.loads(items[0].attributes["match_reasons"])[0]["verdict"] == "ok"
-            assert (
-                json.loads(items[0].attributes["destination_facts"])["countries"][0]["origin"]
-                == "published_itinerary"
-            )
+        assert len(items) == 1
+        assert json.loads(items[0].attributes["match_reasons"])[0]["verdict"] == "ok"
+        assert (
+            json.loads(items[0].attributes["destination_facts"])["countries"][0]["origin"]
+            == "published_itinerary"
+        )
 
 
 async def test_gateway_is_not_visited_country(database, tenant):

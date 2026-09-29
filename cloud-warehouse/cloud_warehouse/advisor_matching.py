@@ -245,7 +245,7 @@ def reasons(row, attrs, query="", facts=None):
                 "text": {
                     "ok": "已复核行程：无购物店",
                     "conflict": "已复核行程含购物店，与需求冲突",
-                    "unknown": "暂无适用的已复核稿，购物情况待确认",
+                    "unknown": "暂无已发布行程，购物情况待确认",
                 }[row["shopping_match"]],
             }
         )

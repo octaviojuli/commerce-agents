@@ -2,18 +2,12 @@
 
 from . import destinations as geo
 
-# Global search cannot adopt a date/city-specific publication as a general fact.
-# The same conditions are shared by the projection and the live fallback.
+# Search and itinerary reads share the route's current published content.
+# Descriptive applicability fields do not change upstream product ownership.
 PUBLICATION = """SELECT pub.body FROM document_publication pub
  WHERE pub.id=p.published_document_id AND pub.product_id=p.id
  AND (pub.content_version>0 OR pub.product_version=p.version)
- AND pub.reviewed_by IS NOT NULL
- AND NOT EXISTS (SELECT 1 FROM document_publication other
-   WHERE other.product_id=p.id AND other.source_content_hash IS NOT DISTINCT FROM pub.source_content_hash
-   AND (NULLIF(other.body#>>'{applicability,start}','') IS NOT NULL
-     OR NULLIF(other.body#>>'{applicability,end}','') IS NOT NULL
-     OR COALESCE(other.body#>'{applicability,departure_cities}','[]')<>'[]'::jsonb
-     OR COALESCE(other.body#>>'{applicability,version_label}','')<>''))"""
+ AND pub.reviewed_by IS NOT NULL"""
 # Only named, structured destination fields enter search. Prose, private originals,
 # flights, disclaimers and gateway cities are not proof of visited countries.
 SOURCE_TEXT = "concat_ws(' ',p.source->>'countries',p.source->>'countryNames',p.source->>'destinationCountries',p.source->>'cities',p.source->>'destinationCities')"

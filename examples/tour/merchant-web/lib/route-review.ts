@@ -4,7 +4,7 @@
 export type Row = Record<string, any>;
 export type Unit = { id: number; text: string; page?: number | null };
 export type Listing = Record<"days" | "gateway", { upstream: number | string | null; effective: number | string | null; origin: string; state: string }>;
-export type Context = { daysConflict?: boolean; listing?: Listing; departureDays?: { days: number; count: number }[] };
+export type Context = { listing?: Listing };
 export type Witness = { source: string; value: string };
 export type Decision = { field: "days" | "gateway"; value: number | string };
 export type Option = {
@@ -34,7 +34,7 @@ export type Card = {
 };
 
 // Rebuild server questions even when the issue key and severity stay the same:
-// resolving a day decision can turn a waiting card into an actionable scope edit.
+// retain explicit display decisions and drop confirmations for newly blocking content.
 export function reconcileCards<T extends { option: string }>(previous: Card[], fresh: Card[], choices: Record<string, T>) {
   const retained = previous.filter(c => !fresh.some(n => n.serverKey === c.serverKey)
     && c.options.some(o => o.id === choices[c.key]?.option && o.decide));
@@ -102,16 +102,16 @@ export function buildCards(issues: Row[], content: Row, units: Unit[], ctx: Cont
   const entries: Entry[] = (content.quality?.issues || []).map((e: Row) => ({ code: e.code, path: String(e.path ?? "source"), detail: String(e.detail ?? ""), subject: e.subject }));
   const cards: Card[] = [];
   for (const issue of issues) {
-    if (issue.code === "CONTENT_FACT_REVIEW") continue;
+    if (["CONTENT_FACT_REVIEW", "DEPARTURE_DURATION_MISMATCH"].includes(issue.code)) continue;
     const serverKey = `${issue.code}|${issue.path}`;
     const found = entries.filter((e) => e.code === issue.code && e.path === issue.path);
     const made = (found.length ? found : [{ code: issue.code, path: issue.path, detail: "" } as Entry]).flatMap((entry, n) => {
-      const card = one(issue, entry, content, units, `${serverKey}|${n}`, serverKey, {...ctx,daysConflict:issues.some(i=>i.code==="DAYS_DIFFER_FROM_LISTING")});
+      const card = one(issue, entry, content, units, `${serverKey}|${n}`, serverKey, ctx);
       return card ? [{ ...card, ack: !!issue.acknowledgeable }] : [];
     });
     cards.push(...made);
   }
-  // Conflicts with the listing come first, then the card that waits on them.
+  // Display facts come before detailed content questions.
   const rank = (c: Card) => (c.waiting ? 1 : c.facts ? 0 : 2);
   return cards.map((c, i) => ({ c, i })).sort((a, b) => rank(a.c) - rank(b.c) || a.i - b.i).map((x) => x.c);
 }
@@ -125,7 +125,7 @@ function one(issue: Row, entry: Entry, content: Row, units: Unit[], key: string,
   const base = { key, serverKey, code, where, day: m ? Number(m[1]) : undefined };
   const keep = (text = "保持现状"): Option => ({ id: "keep", label: text, keeps: true, apply: () => {} });
   const edit = (question: string, title: string): Omit<Card, "ack"> => ({ ...base, title, question, evidence: evidenceFor(content, units, day, undefined, undefined, detail), options: [], editOnly: true });
-  const facts = conflictCard(base, code, issue, content, ctx);
+  const facts = conflictCard(base, code, content, ctx);
   if (facts) return facts;
   if (!issue.acknowledgeable) return edit(issue.message, "需要先修改这一处");
 
@@ -321,31 +321,20 @@ const titleDays = (content: Row) => {
 
 // Where the content disagrees with the route's listing (days, gateway): the choice is a warehouse
 // decision recorded beside the upstream value, or an edit of the content. A note never settles it.
-function conflictCard(base: Base, code: string, issue: Row, content: Row, ctx: Context): Omit<Card, "ack"> | undefined {
+function conflictCard(base: Base, code: string, content: Row, ctx: Context): Omit<Card, "ack"> | undefined {
   const none = { lines: [], needle: "", wide: [] };
   if (code === "DAYS_DIFFER_FROM_LISTING" && ctx.listing) {
     const upstream = ctx.listing.days.upstream;
     const mine = content.days_count;
     const title = titleDays(content);
-    const spans = (ctx.departureDays ?? []).map((d) => `${d.days} 天（${d.count} 个团期）`).join("、");
     const facts: Witness[] = [
       ...(title ? [{ source: "线路标题", value: title.text }] : []),
       { source: "上游登记", value: `${upstream} 天` },
-      ...(spans ? [{ source: "团期日期跨度", value: spans }] : []),
       { source: "附件行程", value: `${mine} 天${content.nights != null ? `${content.nights} 晚` : ""}` },
     ];
-    return { ...base, title: "行程天数以哪个为准", question: `附件行程是 ${mine} 天，上游登记是 ${upstream} 天。云仓不改上游数据，选定后本线路在云仓里统一按选定的天数展示和检索。`, facts, evidence: none, options: [
+    return { ...base, title: "行程天数以哪个为准", question: `附件行程是 ${mine} 天，上游登记是 ${upstream} 天。云仓不改上游数据，选定后本线路在云仓里统一按选定的天数展示和检索，已有团期和附件关联保持不变。`, facts, evidence: none, options: [
       { id: "mine", label: `以行程为准：${mine} 天（云仓核定，上游保持 ${upstream} 天）`, decide: { field: "days", value: mine }, apply: () => {} },
       { id: "upstream", label: `以上游为准：${upstream} 天（回到高级编辑，改行程）`, jump: true, apply: () => {} },
-    ] };
-  }
-  if (code === "DEPARTURE_DURATION_MISMATCH") {
-    const facts = (ctx.departureDays ?? []).map((d) => ({ source: "团期日期跨度", value: `${d.days} 天（${d.count} 个团期）` }));
-    if (!issue.acknowledgeable) return ctx.daysConflict
-      ? { ...base, title: "团期日期与行程天数不一致", question: `${issue.message} 请先处理行程天数取舍，随后重新检查团期。`, facts, evidence: none, options: [], waiting: "先处理行程天数" }
-      : { ...base, title: "仍有团期不适用当前行程", question: `${issue.message} 这些跨度不能由当前核定放行，请核对行程适用日期或采用对应版本。`, facts, evidence: none, options: [], editOnly: true };
-    return { ...base, title: "团期日期与行程天数不一致", question: "已按云仓核定的天数处理。团期日期来自上游，仍是其他天数，请确认可以照此发布。", facts, evidence: none, options: [
-      { id: "ok", label: "确认，团期日期以上游为准", keeps: true, apply: () => {} },
     ] };
   }
   if (code === "GATEWAY_DIFFERS_FROM_LISTING" && ctx.listing) {

@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from cloud_warehouse import route_consistency, route_content, route_extraction
-from cloud_warehouse.route_applicability import matches
 from cloud_warehouse.route_doc import Applicability, Money, ReviewResolution, RouteDoc
 from tour.api.erp_client import RouteRecord
 from tour.api.route_parser import parse_route
@@ -90,12 +89,8 @@ def test_variant_and_day_failures_require_real_content_corrections():
     doc = parsed("season_variants")
     assert len(doc.source.variants) == 2
     assert "VARIANTS_DETECTED" in codes(doc)
-    doc.applicability = Applicability(
-        version_label=doc.source.variants[0].label, start=date(2026, 4, 1), end=date(2026, 6, 30)
-    )
+    doc.applicability = Applicability(version_label=doc.source.variants[0].label)
     assert "VARIANTS_DETECTED" not in codes(doc)
-    assert matches(doc.applicability, date(2026, 5, 1), "ACME")
-    assert not matches(doc.applicability, date(2026, 7, 1), "ACME")
     assert "DAYS_INCOMPLETE" in codes(parsed("missing_day"))
     assert "DAYS_INCOMPLETE" in codes(parsed("duplicate_day"))
 
@@ -125,13 +120,12 @@ def test_cross_field_conflicts_are_locatable():
     doc.days[0].hotel.grade = "四星"
     doc.days[0].overnight = "flight"
     doc.summary.nights = 3
-    issues = route_consistency.checks(doc, [("ACME", 5)])
+    issues = route_consistency.checks(doc)
     assert {
         "FEE_CONFLICT",
         "HOTEL_GRADE_CONFLICT",
         "OVERNIGHT_FLIGHT_MISSING",
         "NIGHTS_MISMATCH",
-        "DEPARTURE_DURATION_MISMATCH",
     } <= {i["code"] for i in issues}
     assert all(i["path"] for i in issues)
     assert "MEAL_OVERVIEW_CONFLICT" in codes(parsed("overview_conflict"))

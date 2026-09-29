@@ -1,98 +1,16 @@
-"""Departure-aware selection of immutable, human-approved route publications."""
+"""Read a route's current publication using its existing departure ownership."""
 
-from route_kit.models import Applicability as KitApplicability
 from sqlalchemy import text
-
-from .route_doc import Applicability
-from .route_kit_content import day_count
-
-
-def matches(scope, departure_date, city):
-    return (
-        (not scope.start or departure_date >= scope.start)
-        and (not scope.end or departure_date <= scope.end)
-        and (not scope.departure_cities or city in scope.departure_cities)
-    )
-
-
-def scoped(body):
-    value = (
-        KitApplicability if body.get("schema") == "route-kit/1" else Applicability
-    ).model_validate(body.get("applicability", {}))
-    return bool(value.start or value.end or value.departure_cities or value.version_label)
 
 
 def select_publication(conn, current, departure_id):
-    publications = [
-        dict(r)
-        for r in conn.execute(
-            text("""SELECT d.* FROM document_publication d
-      WHERE d.product_id=:product AND d.source_content_hash IS NOT DISTINCT FROM :source
-      ORDER BY d.content_version DESC,d.created_at DESC LIMIT 101"""),
-            {"product": current["product_id"], "source": current.get("source_content_hash")},
-        ).mappings()
-    ]
-    # Legacy publications without a source hash use only the selected current record.
-    if not current.get("source_content_hash"):
-        publications = [current]
-    if not publications or len(publications) > 100:
-        return None
-    bounded = publications[:100]
-    has_scope = any(scoped(p["body"]) for p in bounded)
-    if not departure_id:
-        return None if has_scope else current
-    departure = (
-        conn.execute(
-            text("""SELECT d.depart_date,d.return_date,p.effective_gateway AS gateway,p.days_origin,p.days AS upstream_days,p.effective_days
-      FROM departure d JOIN product_listing p ON p.id=d.product_id WHERE d.id=:id AND p.id=:product"""),
+    # Content dates, cities and day counts describe the itinerary. They never
+    # establish or revoke the upstream route/departure relationship.
+    if departure_id is not None:
+        owned = conn.execute(
+            text("SELECT id FROM departure WHERE id=:id AND product_id=:product"),
             {"id": departure_id, "product": current["product_id"]},
-        )
-        .mappings()
-        .one_or_none()
-    )
-    if not departure:
-        return None
-    if len(publications) > 100:
-        return None  # Never select from a truncated version history.
-    for item in bounded:
-        if has_scope and not scoped(item["body"]):
-            continue
-        scope = (
-            KitApplicability if item["body"].get("schema") == "route-kit/1" else Applicability
-        ).model_validate(item["body"].get("applicability", {}))
-        if not matches(scope, departure["depart_date"], departure["gateway"]):
-            continue
-        duration = (
-            (departure["return_date"] - departure["depart_date"]).days + 1
-            if departure["return_date"]
-            else None
-        )
-        # The decision covers the overridden source span only for content with the decided days.
-        decided_span = (
-            departure["days_origin"] == "warehouse_decision"
-            and duration == departure["upstream_days"]
-            and day_count(item["body"]) == departure["effective_days"]
-        )
-        if duration is not None and duration != day_count(item["body"]) and not decided_span:
-            continue
-        return item
-    return None
-
-
-def departure_durations(conn, product_id, doc, *, gateway=None):
-    """Return durations in the publication scope, including a pending gateway decision."""
-    scope = doc.applicability
-    rows = conn.execute(
-        text("""SELECT d.id,(d.return_date-d.depart_date+1) AS days,d.depart_date,d.return_date,p.effective_gateway AS gateway
-      FROM departure d JOIN product_listing p ON p.id=d.product_id WHERE p.id=:id AND d.status='published'
-      AND (CAST(:start AS date) IS NULL OR d.depart_date>=:start)
-      AND (CAST(:end AS date) IS NULL OR d.depart_date<=:end)
-      ORDER BY d.depart_date,d.return_date,d.id"""),
-        {"id": product_id, "start": scope.start, "end": scope.end},
-    ).mappings()
-    return [
-        (row["id"], row["days"], row["depart_date"], row["return_date"])
-        for row in rows
-        if not scope.departure_cities
-        or (gateway if gateway is not None else row["gateway"]) in scope.departure_cities
-    ]
+        ).scalar_one_or_none()
+        if owned is None:
+            return None  # Live departure RLS and product ownership still apply.
+    return current

@@ -30,7 +30,7 @@ def session(actor):
     return ShoppingSessionContext(session_id=str(uuid4()), user_id=str(actor.user_id))
 
 
-async def test_advisor_flags_source_duration_conflict_without_rewriting_dates(database, tenant):
+async def test_advisor_displays_calendar_span_without_requiring_reselection(database, tenant):
     admin, runtime = database
     await synchronize(runtime, tenant.worker, tenant.connection_id, Connector(batch()))
     with admin.begin() as conn:
@@ -47,7 +47,12 @@ async def test_advisor_flags_source_duration_conflict_without_rewriting_dates(da
     departure = backend.departures_page(context, product.product_id)["items"][0]
     assert departure.attributes["route_days"] == "3"
     assert departure.attributes["calendar_days"] == "4"
-    assert departure.attributes["duration_check"] == "mismatch_requires_confirmation"
+    assert departure.attributes["duration_check"] == "different_calendar_span"
+    assert departure.variant_of == product.product_id
+    assert (
+        "先选择具体团期"
+        not in (await backend.get_product_details(context, product.product_id)).specs["文档状态"]
+    )
 
 
 async def test_advisor_pagination_unknown_stock_and_revocation(database, tenant):

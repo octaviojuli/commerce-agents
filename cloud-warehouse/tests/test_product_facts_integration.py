@@ -1,9 +1,8 @@
-"""Publication decisions retain scoped supplier names and only cover matching content."""
+"""Content corrections preserve upstream ownership and live sales permissions."""
 
 from datetime import date
-from unittest.mock import MagicMock
+from uuid import uuid4
 
-import pytest
 from sqlalchemy import text
 
 from cloud_warehouse import (
@@ -11,12 +10,11 @@ from cloud_warehouse import (
     copilot_inquiries,
     documents,
     product_facts,
-    route_applicability,
     route_editor,
 )
 from cloud_warehouse import route_kit_content as kit
 from cloud_warehouse.advisor import WarehouseAdvisorBackend
-from cloud_warehouse.catalog import list_departures
+from cloud_warehouse.catalog import list_departures, synchronize
 from cloud_warehouse.merchant import WarehouseMerchantBackend
 from cloud_warehouse.persistence import transaction
 from shopping_agent import SearchFilters
@@ -25,60 +23,70 @@ from . import test_documents
 from .test_advisor import session
 from .test_route_editor import commit
 from .test_route_kit_content import content
+from .test_sync import Connector, batch
 
 source = test_documents.source
 
 
-@pytest.mark.parametrize(
-    "span,content_days,origin,accepted",
-    [
-        (6, 7, "warehouse_decision", True),
-        (7, 7, "warehouse_decision", True),
-        (10, 7, "warehouse_decision", False),
-        (6, 9, "warehouse_decision", False),
-        (6, 7, "source", False),
-    ],
-)
-def test_decision_never_adopts_an_unrelated_historical_itinerary(
-    span, content_days, origin, accepted
-):
-    from datetime import timedelta
-
-    start = date(2030, 10, 1)
-    publication = {
-        "id": "ACME-publication",
-        "product_id": "ACME-product",
-        "source_content_hash": "ACME-source",
-        "body": content(
-            {
-                "file_hash": "a" * 64,
-                "file_name": "ACME.docx",
-                "product_snapshot": {"code": "ACME", "name": "ACME", "days": content_days},
-            }
-        ).model_dump(mode="json", by_alias=True),
-    }
-    connection = MagicMock()
-    publications, departure = MagicMock(), MagicMock()
-    publications.mappings.return_value = [publication]
-    departure.mappings.return_value.one_or_none.return_value = {
-        "depart_date": start,
-        "return_date": start + timedelta(days=span - 1),
-        "gateway": "ACME",
-        "days_origin": origin,
-        "upstream_days": 6,
-        "effective_days": 7,
-    }
-    connection.execute.side_effect = [publications, departure]
-    result = route_applicability.select_publication(connection, publication, "ACME-departure")
-    assert (result is not None) == accepted
+def linked_records(admin, product):
+    """Compare entire linked records, not merely their IDs, across content publication."""
+    with admin.connect() as conn:
+        linked = {
+            table: conn.execute(
+                text(f"SELECT to_jsonb(t) FROM {table} t WHERE {where} ORDER BY id"),
+                {"id": product},
+            )
+            .scalars()
+            .all()
+            for table, where in {
+                "departure": "product_id=:id",
+                "document_asset": "product_id=:id",
+                "document_parse": "product_id=:id",
+                "offer": "departure_id IN (SELECT id FROM departure WHERE product_id=:id)",
+                "inventory_pool": "departure_id IN (SELECT id FROM departure WHERE product_id=:id)",
+                "contract_price": "offer_id IN (SELECT o.id FROM offer o JOIN departure d ON d.id=o.departure_id WHERE d.product_id=:id)",
+            }.items()
+        }
+        linked["upstream_product"] = dict(
+            conn.execute(
+                text(
+                    "SELECT id,supplier_org_id,connection_id,external_id,code,name,days,gateway,source,source_hash FROM supplier_product WHERE id=:id"
+                ),
+                {"id": product},
+            )
+            .mappings()
+            .one()
+        )
+    return linked
 
 
-async def test_published_facts_reach_advisor_and_mixed_departures_stay_blocked(
+async def test_content_corrections_preserve_all_linked_departures_and_records(
     database, tenant, source, monkeypatch
 ):
     admin, runtime = database
     store, product, _, _ = source
+    data = batch()
+    data.routes.append({**data.routes[0], "routeId": 9, "routeCode": "ACME-R9"})
+    data.departures.extend(
+        [
+            {
+                **data.departures[0],
+                "periodId": 3,
+                "departDate": "2026-10-25",
+                "returnDate": "2026-11-03",
+            },
+            {
+                **data.departures[0],
+                "periodId": 4,
+                "departDate": "2026-11-05",
+                "returnDate": "2026-11-12",
+            },
+            {**data.departures[0], "periodId": 9, "routeId": 9},
+        ]
+    )
+    await synchronize(runtime, tenant.worker, tenant.connection_id, Connector(data))
     documents.run_once(runtime, tenant.worker, store, lambda work, body: content(work))
+    before = linked_records(admin, product["id"])
     initial = route_editor.get(runtime, tenant.supplier, product["id"])
     doc = kit.parse_content(initial["content"])
     extra = doc.days[-1].model_copy(deep=True)
@@ -89,7 +97,11 @@ async def test_published_facts_reach_advisor_and_mixed_departures_stay_blocked(
             child.node_id = ""
     doc.days.append(extra)
     doc.days_count += 1
+    doc.title = "ACME 校对后的线路标题"
     doc.depart_city = "ACME 核定口岸"
+    doc.applicability.start = doc.applicability.end = date(2035, 1, 1)
+    doc.applicability.departure_cities = ["ACME 文中城市"]
+    doc.applicability.version_label = "ACME 文字版本"
     doc = kit.prepare(doc)
     decisions = [
         product_facts.FactDecision(
@@ -154,36 +166,47 @@ async def test_published_facts_reach_advisor_and_mixed_departures_stay_blocked(
         assert facts["days"] == doc.days_count and facts["gateway"] == doc.depart_city
         monkeypatch.setattr(copilot_explore, "direction_label", lambda _: "ACME 方向")
         directions = copilot_explore._directions(conn)
-        assert directions[0]["days_min"] == directions[0]["days_max"] == doc.days_count
+        assert directions[0]["days_min"] == initial["listing"]["days"]["upstream"]
+        assert directions[0]["days_max"] == doc.days_count
     departures = list_departures(runtime, tenant.buyer)
-    departure = next(d for d in departures if str(d["product_id"]) == str(product["id"]))
+    owned = [d for d in departures if str(d["product_id"]) == str(product["id"])]
+    assert len(owned) == 3
+    current = documents.current(runtime, tenant.buyer, product["id"])
+    assert current["body"]["title"] == doc.title
+    assert current["body"]["days_count"] == doc.days_count
+    assert "publication_notice" not in current["body"]
+    for departure in owned:
+        assert (
+            documents.current(runtime, tenant.buyer, product["id"], departure_id=departure["id"])
+            == current
+        )
+    assert linked_records(admin, product["id"]) == before
+    assert not route_editor.revision_detail(runtime, tenant.supplier, saved["revision_id"])[
+        "issues"
+    ]
+    foreign = next(d for d in departures if str(d["product_id"]) != str(product["id"]))
+    for invalid in (foreign["id"], uuid4()):
+        assert documents.current(runtime, tenant.buyer, product["id"], departure_id=invalid) is None
+    # A paused group and a revoked distribution grant remain inaccessible.
+    with admin.begin() as conn:
+        conn.execute(
+            text("UPDATE departure SET status='paused' WHERE id=:id"), {"id": owned[0]["id"]}
+        )
     assert (
-        documents.current(runtime, tenant.buyer, product["id"], departure_id=departure["id"])
-        is not None
+        documents.current(runtime, tenant.buyer, product["id"], departure_id=owned[0]["id"]) is None
     )
     with admin.begin() as conn:
         conn.execute(
-            text("UPDATE departure SET return_date=depart_date+9 WHERE id=:id"),
-            {"id": departure["id"]},
+            text("UPDATE distribution_grant SET active=false WHERE connection_id=:id"),
+            {"id": tenant.connection_id},
         )
+    assert documents.current(runtime, tenant.buyer, product["id"]) is None
     assert (
-        documents.current(runtime, tenant.buyer, product["id"], departure_id=departure["id"])
-        is None
+        documents.current(runtime, tenant.buyer, product["id"], departure_id=owned[1]["id"]) is None
     )
-    changed = route_editor.revision_detail(runtime, tenant.supplier, saved["revision_id"])
-    assert any(
-        i["code"] == "DEPARTURE_DURATION_MISMATCH" and not i["acknowledgeable"]
-        for i in changed["issues"]
-    )
-    with admin.connect() as conn:
-        row = conn.execute(
-            text("SELECT days,gateway FROM supplier_product WHERE id=:id"), {"id": product["id"]}
-        ).one()
-        assert row.days == initial["listing"]["days"]["upstream"]
-        assert row.gateway == initial["listing"]["gateway"]["upstream"]
 
 
-def test_pending_gateway_decision_checks_departures_in_its_future_scope(database, tenant, source):
+def test_gateway_content_review_is_independent_of_group_dates(database, tenant, source):
     admin, runtime = database
     store, product, _, _ = source
     documents.run_once(runtime, tenant.worker, store, lambda work, body: content(work))
@@ -210,6 +233,5 @@ def test_pending_gateway_decision_checks_departures_in_its_future_scope(database
         ],
     )
     issues = route_editor.validate(runtime, tenant.supplier, product["id"], command)["issues"]
-    assert any(
-        i["code"] == "DEPARTURE_DURATION_MISMATCH" and not i["acknowledgeable"] for i in issues
-    )
+    assert all(i["acknowledgeable"] for i in issues)
+    assert not any(i["code"] == "DEPARTURE_DURATION_MISMATCH" for i in issues)

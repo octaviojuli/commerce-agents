@@ -366,11 +366,11 @@ PYTHONPATH=examples warehouse document-worker --organization <supplier_uuid> --u
 
 `0034_document_extraction` 保留历史 MinerU/hybrid 证据，只读接口仍限供应商文档角色。`0037_native_documents` 停用旧外部任务并撤销写授权，供应商重新解析产生新一代原生结果。历史解析、人工稿与发布哈希不变。
 
-`route_consistency.py` 检查版本、三餐、餐住、费用及团期时长冲突；人工核对说明绑定内容哈希，修改后需重新核对。`route_applicability.py` 按团期日期和出发城市选择同一来源下的已审批版本，未选团期或没有匹配时不返回含糊的行程。`route_extraction.py` 将可选模型字段逐项回查源行，仅补有效缺失字段，并把 provenance 保存到原有 `document_parse.field_sources`。`TOUR_EXTRACTION_MODEL` 留空时不发模型请求。`TOUR_REVIEW_MODEL` 可单独指定复核模型；未配时复用改写模型并如实标注。人工抽查比例由 `TOUR_REVIEW_SAMPLE_PERCENT` 控制。
+`route_consistency.py` 检查原文版本、三餐、餐住及费用等内容一致性；人工核对说明绑定内容哈希，修改后需重新核对。`route_applicability.py` 读取线路当前已发布行程，指定团期时只核验其现有线路归属和读取权限。行程天数、文字中的适用日期、出发城市和版本标签均不建立或解除关联，未选择团期也可读取已发布行程。`route_extraction.py` 将可选模型字段逐项回查源行，仅补有效缺失字段，并把 provenance 保存到原有 `document_parse.field_sources`。`TOUR_EXTRACTION_MODEL` 留空时不发模型请求。`TOUR_REVIEW_MODEL` 可单独指定复核模型；未配时复用改写模型并如实标注。人工抽查比例由 `TOUR_REVIEW_SAMPLE_PERCENT` 控制。
 
 `reparse_diff.py` 提供 `warehouse reparse-diff --organization UUID --user UUID --report /private/new-report.json`，默认只在内存比较最新解析；显式 `--apply` 才排队新一代解析。报告不得放入公开目录。每页 100 项，使用返回的 `next_cursor` 继续。`scripts/eval_route_parser.py` 校验虚构字段基线，`--private .warehouse/... --report .warehouse/...` 保存真实样本私有报告。
 
-供应商通过 `GET /v1/documents?product_id=...` 分页列出文档，通过 `GET /v1/documents/{id}` 读取解析结果和字段来源。复核内容使用 `POST /v1/document-proposals` 提议，再复用 `/v1/changes/{id}/approve` 与 `/apply`。源文件身份不可修改，逐日行程须连续完整并符合产品天数；审批人由平台身份确定，不能让解析器填写。发布与产品版本、审计、Outbox 同事务提交。文件解析不修改价格或库存。
+供应商通过 `GET /v1/documents?product_id=...` 分页列出文档，通过 `GET /v1/documents/{id}` 读取解析结果和字段来源。复核内容使用 `POST /v1/document-proposals` 提议，再复用 `/v1/changes/{id}/approve` 与 `/apply`。源文件身份不可修改，逐日行程须连续完整并符合文档声明天数；审批人由平台身份确定，不能让解析器填写。发布与产品版本、审计、Outbox 同事务提交。文件解析不修改价格或库存。
 
 `Source.page_locations` 是可选的原始 PDF 段落定位，保存封面、解析原稿各日与条款的物理页序；页码随标准化文本合并、拆分和重排，不通过相似文字猜测。定位随源文件指纹及解析版本入库，在复核中不可改写；人工改动仍记录 `human_review`，不继承原文证明。DOCX 和旧解析稿默认为空，旧发布版本不回填。商户文档页及审批页用受权限保护的原文件临时预览并跳页，权限复查失败即清除预览；浏览器不支持 PDF 显示时可下载核对。发布前仍对采购方不可见。
 
@@ -384,12 +384,13 @@ PYTHONPATH=examples warehouse document-worker --organization <supplier_uuid> --u
 
 ### 天数与出发口岸的云仓核定
 
-上游登记的 `days`、`gateway` 与附件行程、团期日期不一致时，云仓不回写上游，而是在 `supplier_product` 旁记录一条核定（`product_facts.py`，迁移 `0048_product_facts`）。
+上游登记的 `days`、`gateway` 与附件行程内容不一致时，云仓不回写上游，而是在 `supplier_product` 旁记录一条核定（`product_facts.py`，迁移 `0048_product_facts`）。
 
 - 核定随内容修订保存（`route_content_revision.fact_decisions`），发布时在同一事务写入 `days_override` / `gateway_override`，并记下当时的上游值 `*_source_at_override`。
-- `product_listing` 的 `effective_days`、`effective_gateway` 仅在上游仍是核定时的值时采用核定值；上游改为第三个值则回到上游并重新提问，改为与核定值相同则核定自然失效。`days_origin`、`gateway_origin` 标注 `source` 或 `warehouse_decision`。检索、顾问匹配、团期匹配和商户列表都读有效值；附件绑定与 `_source_hash` 仍读上游原值。
-- 有列表数据时，`DAYS_DIFFER_FROM_LISTING` 不能靠备注放行，必须取舍或改内容；核定后，仅当所有不符团期的跨度都等于被覆盖的上游天数时，`DEPARTURE_DURATION_MISMATCH` 才可确认；其他跨度仍拦截。团期只可匹配天数等于核定值的相应已发布行程。`GATEWAY_DIFFERS_FROM_LISTING` 可确认。
-- 待发布的口岸核定按发布后口岸检查行程适用范围，不能因旧口岸不匹配而漏检团期天数。迁移 `0048` 必须接在 `0047_supplier_name_scope` 后，升级时停 API 与所有写入 Worker，再迁移并刷新 runtime 授权；不得替换已有 `0045–0047`。
+- `product_listing` 的 `effective_days`、`effective_gateway` 仅在上游仍是核定时的值时采用核定值；上游改为第三个值则回到上游并重新提问，改为与核定值相同则核定自然失效。`days_origin`、`gateway_origin` 标注 `source` 或 `warehouse_decision`。检索、顾问匹配和商户列表都读有效展示值；附件绑定与 `_source_hash` 仍读上游原值。
+- 有列表数据时，`DAYS_DIFFER_FROM_LISTING` 需要对内容及展示天数取舍，`GATEWAY_DIFFERS_FROM_LISTING` 可核对确认。两者只更新线路内容或展示值，不修改线路、团期、附件的 ID 及关联，也不改动团期日期、库存、报价或销售控制。
+- 线路与团期、附件的关系由供应源与线路 ID 确定。审核不查询团期日期跨度，不产生 `DEPARTURE_DURATION_MISMATCH` 确认项；同线路所有有权限读取的团期使用该线路当前已发布行程。历史行程保留为不可修改的版本记录，不按日期或口岸自动重新分配。
+- 迁移 `0048` 必须接在 `0047_supplier_name_scope` 后，升级时停 API 与所有写入 Worker，再迁移并刷新 runtime 授权；不得替换已有 `0045–0047`。
 - `GET /v1/merchant/product-fact-conflicts` 列出仍在生效或已失效的核定，供交给上游更正。
 
 ### B2B 来源附件
