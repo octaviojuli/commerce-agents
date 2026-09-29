@@ -37,10 +37,18 @@ VERIFY = re.compile(
 TOPIC_SPAN = re.compile(r"[^，。；：:]*?(?:这|那)[两三四五六几\d]+(?:项|点|件事|个问题)")
 # "自费项目、含餐和签证这三项": naming what was asked, not saying what it is.
 TOPIC_LIST = re.compile(r"(?:这|那)?[两三四五六几\d]+(?:项|点|件事|个问题)$|(?:这些|这几个)?问题$")
+RECAP_PREFIX = re.compile(
+    r"^(?:您|你|客人|客户)(?:希望|想要?|要求|计划|打算|的(?:需求|要求|偏好)(?:是|为)?)"
+    r"|^按(?:您|你|客人|客户)的(?:需求|要求|偏好)"
+)
+RECAP_END = re.compile(r"(?:这些|以上)(?:需求|要求|偏好)?我都?记(?:下|好)了[。\s]*$")
+SERVICE_CLAIM = re.compile(
+    r"^(?:这条|该|本)?(?:线(?:路)?|行程|团|全程|签证|费用)|已(?:经)?(?:含|包|安排)"
+)
 
 
-def restates(clause: str, stated: str) -> bool:
-    """A clause that only repeats what the customer stated: same checkable words and numbers."""
+def matches_said(clause: str, stated: str) -> bool:
+    """Whether words match customer input; this is never supplier evidence."""
     if not stated:
         return False
     words = [m.group(0) for m in FACTUAL.finditer(clause) if not m.group(0).isdigit()]
@@ -53,6 +61,14 @@ def restates(clause: str, stated: str) -> bool:
         and numbers(clause) <= numbers(stated)
         and set(polar(clause)) <= set(polar(stated))
     )
+
+
+def restates(clause: str, stated: str, *, recap=False) -> bool:
+    """A matching requirement must still be attributed to the customer."""
+    prefix = RECAP_PREFIX.match(clause)
+    if not prefix and (not recap or SERVICE_CLAIM.search(clause)):
+        return False
+    return matches_said(clause[prefix.end() :] if prefix else clause, stated)
 
 
 # Negations and limits, longest first so "无须" is never read as "须".
@@ -322,6 +338,14 @@ def check(
     # A route with no reviewed document is cited from what it has; each claim says which.
     checked = {f.get("product_id") for f in facts if f.get("reviewed", True)}
     reviewed = [f for f in facts if f.get("reviewed", True) or f.get("product_id") not in checked]
+    customer = [
+        f
+        for f in reviewed
+        if f.get("section") == "客人原话"
+        or str(f.get("fact_id", "")).startswith(("need:preferences:", "need:themes:"))
+    ]
+    reviewed = [f for f in reviewed if f not in customer]
+    said = [*said, *(f["text"] for f in customer)]
     said_numbers = set().union(*(numbers(s) for s in said)) if said else set()
     # What the customer stated, without their questions: "含早餐吗" backs nothing.
     stated = "".join(
@@ -363,7 +387,9 @@ def check(
                 if not FACTUAL.search(clause):
                     continue
                 if (
-                    VERIFY.search(clause) or TOPIC_LIST.search(clause) or restates(clause, stated)
+                    VERIFY.search(clause)
+                    or TOPIC_LIST.search(clause)
+                    or restates(clause, stated, recap=bool(RECAP_END.search(stripped)))
                 ) and not PROMISE.search(clause):
                     allowed = set().union(*(numbers(f["text"]) for f in reviewed)) | said_numbers
                     if numbers(clause) <= allowed:
@@ -395,7 +421,9 @@ def check(
                         found.append({"text": clause, "fact_id": None})
                         continue
                 if fact is None:
-                    reason = "unproven"
+                    # Customer wishes and hearsay cannot become supplier facts, even if a
+                    # later judge mistakes the overlapping words for supporting evidence.
+                    reason = "customer_claim" if matches_said(clause, stated) else "unproven"
                     break
                 found.append(
                     {
@@ -448,7 +476,7 @@ def check(
 
 
 # Reasons the program keeps whatever the judge says: they are rules, not readings.
-HARD = {"private", "promise", "asks_known", "too_many_questions", "conflict"}
+HARD = {"private", "promise", "asks_known", "too_many_questions", "conflict", "customer_claim"}
 # The judge overturns the rules only when sure enough: "safe" at TRUST, "unsafe" at DOUBT.
 # Measured on live replies, an "unsafe" below DOUBT is a coin toss (a correct route list at 0.02).
 TRUST, DOUBT = 0.5, 0.3

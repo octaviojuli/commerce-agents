@@ -94,6 +94,10 @@ COUPLE = re.compile(
 )
 # An older couple: both travellers are the seniors, not two adults beside two seniors.
 ELDERLY = re.compile(r"老伴|老两口|老头子|老太婆")
+COMPANIONS = re.compile(
+    r"孩子|小孩|儿童|宝宝|娃|小朋友|儿子|女儿|老人|长辈|爸|妈|父母|公婆|岳"
+    r"|朋友|同事|亲戚|亲友|兄|弟|姐|妹|另外|还有|再加"
+)
 
 
 def couple(value: dict, elderly: bool) -> dict:
@@ -101,7 +105,7 @@ def couple(value: dict, elderly: bool) -> dict:
     if elderly:
         seniors = (seniors + [{"age": None}, {"age": None}])[:2]
         return {**value, "adults": 0, "children": [], "seniors": seniors}
-    return {**value, "adults": 2, "children": [], "seniors": []}
+    return {**value, "adults": 2 - len(seniors), "children": [], "seniors": seniors}
 
 
 def merge_party(saved: needs.Party | None, change: dict) -> dict:
@@ -178,10 +182,16 @@ def changes(need: Need, understanding, message: str, today: date, *, turn=None):
             if window_hint:
                 source, hint = "inferred", hint or window_hint
         if field == "party" and isinstance(value, dict):
-            if COUPLE.search(message) and not re.search(
-                r"孩子|小孩|儿童|宝宝|娃|小朋友|儿子|女儿|老人|长辈|爸|妈|父母|公婆|岳", message
+            if (
+                need.get("party") is None
+                and COUPLE.search(message)
+                and not COMPANIONS.search(message)
+                and value.get("adults") in (None, 0, 2)
+                and not value.get("children")
+                and len(value.get("seniors") or []) <= 2
             ):
-                # "我跟老婆" names everyone who goes: two people and no child to ask about.
+                # Only an initial, complete two-person party can use this shorthand.
+                # Later partial answers must retain the already recorded travellers.
                 value = couple(value, bool(ELDERLY.search(message)))
             value = merge_party(need.get("party"), value)
         if (
