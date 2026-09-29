@@ -335,6 +335,8 @@ class Turns:
         ) and not NO_RESEARCH.search(text)
         named = routes_named(text, context["visible"])
         action = queries.action(text, understanding, named)
+        if action == "search" and not NO_RESEARCH.search(text):
+            research = True
         if action in {"view", "departures", "select"}:
             research = False
         if not gates["search"]["ready"]:

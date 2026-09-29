@@ -35,7 +35,8 @@ class DialogueModel:
             return Understanding.model_validate(
                 {
                     "action": "search",
-                    "kinds": ["research"],
+                    # The real model may omit redundant intent tags.
+                    "kinds": [],
                     "changes": [
                         {
                             "field": "party",
