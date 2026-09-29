@@ -526,3 +526,11 @@ def test_visible_trial_departure_does_not_claim_wrong_route(dialogue):
     dep = dates["items"][0]["departure_id"]
     price = client.post(f"/api/deals/{deal}/dates/{dep}/price")
     assert "不属于当前线路" not in price.text, price.json()
+
+
+def test_a_failed_departure_lookup_does_not_cost_the_route_page(dialogue):
+    client, deal, state, model = dialogue
+    state["error"] = True
+    page = client.get(f"/api/routes/{SLOW}", params={"deal": deal})
+    assert page.status_code == 200, page.text
+    assert page.json()["published"] is False and page.json()["unpublished_reason"]

@@ -253,3 +253,16 @@ def test_a_reply_states_no_head_count_the_customer_has_not_given():
     stated = grounding.check("2位成人、1个孩子和1位老人。", [], said=said, counts=counts)
     assert stated["reasons"] == []
     assert grounding.check("2大2小出行。", [], said=said, counts=counts)["reasons"] == ["party"]
+
+
+def test_a_departure_carries_the_day_count_it_is_compared_with():
+    from tour.advisor import routes
+
+    check = routes.day_check(
+        {
+            "calendar_days": "10",
+            "route_days": "8",
+            "duration_check": "mismatch_requires_confirmation",
+        }
+    )
+    assert check == {"calendar_days": 10, "route_days": 8, "days_differ": True}

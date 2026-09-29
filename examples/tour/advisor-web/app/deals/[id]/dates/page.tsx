@@ -19,6 +19,7 @@ type Dep = {
   leave_days: number | null;
   calendar_days: number | null;
   days_differ: boolean;
+  route_days: number | null;
   price: QuoteView | null;
 };
 type Dates = { route: { product_id: string; title: string; supplier?: string }; items: Dep[]; compare: Dep[]; formation: { text: string } | null; window: string };
@@ -154,8 +155,8 @@ export default function DatesPage() {
                       ["客人价", (d: Dep) => (d.price?.per_person ? <span className="y">{money(d.price.per_person)}/人</span> : <button className="b sm b-soft" disabled={!!pricing} onClick={() => price(d)}>{pricing === d.departure_id ? "核价中…" : "核价"}</button>)],
                       ["成团", (d: Dep) => <span className={d.sales_status.includes("核实") ? "n" : "y"}>{d.sales_status || "—"}</span>],
                       ["返程", (d: Dep) => `${d.return_date.slice(5).replace("-", "/")} 周${d.return_weekday}`],
-                      // A departure longer or shorter than the route is for the supplier to explain.
-                      ["天数", (d: Dep) => (d.days_differ ? <span className="n">{d.calendar_days} 天 · 与行程不一致</span> : d.calendar_days ? `${d.calendar_days} 天` : "—")],
+                      // A departure longer or shorter than the supplier registered is theirs to explain.
+                      ["天数", (d: Dep) => (d.days_differ ? <span className="n">{d.calendar_days} 天 · {d.route_days ? `供应商登记 ${d.route_days} 天` : "与供应商登记不一致"}</span> : d.calendar_days ? `${d.calendar_days} 天` : "—")],
                       ["请假", (d: Dep) => (d.leave_days != null ? `${d.leave_days} 天` : "—")],
                       ["余位", (d: Dep) => <span className="y">{status(d)}</span>],
                     ] as [string, (d: Dep) => React.ReactNode][]

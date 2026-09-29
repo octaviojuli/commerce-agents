@@ -577,8 +577,12 @@ def create_app(settings: Settings, *, model=None, transport=None, judge=None):
             doc = await routes.document(wh, product_id, departure)
             reason = ""
             if not (doc or {}).get("body"):
-                # Say why it is unpublished, with the departures' own day counts.
-                page = await wh.departures(product_id, limit=25)
+                # Say why it is unpublished, with the departures' own day counts; without
+                # them, from the route alone: a failed lookup never costs the page.
+                try:
+                    page = await wh.departures(product_id, limit=25)
+                except WarehouseError:
+                    page = {}
                 reason = routes.unpublished_reason(
                     detail_,
                     [routes.day_check(i.get("attributes", {})) for i in page.get("items", [])],

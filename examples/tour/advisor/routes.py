@@ -45,13 +45,18 @@ def listed_days(item):
 
 
 def day_check(attrs) -> dict:
-    """A departure's calendar length and whether the warehouse found it at odds with the route."""
-    try:
-        days = int(attrs.get("calendar_days") or 0) or None
-    except ValueError:
-        days = None
+    """A departure's calendar length, the supplier's registered length, and whether the
+    warehouse found the two at odds."""
+
+    def number(key):
+        try:
+            return int(attrs.get(key) or 0) or None
+        except ValueError:
+            return None
+
     return {
-        "calendar_days": days,
+        "calendar_days": number("calendar_days"),
+        "route_days": number("route_days"),
         "days_differ": str(attrs.get("duration_check", "")).startswith("mismatch"),
     }
 
