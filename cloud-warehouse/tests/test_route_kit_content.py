@@ -112,6 +112,28 @@ def test_answers_given_in_review_bind_to_the_content_they_edited():
     assert kit.issues(doc, resolutions=answers)
 
 
+def test_a_days_decision_covers_only_the_overridden_departure_span():
+    doc = content()
+    decided = {
+        "days": {
+            "upstream": doc.days_count - 1,
+            "effective": doc.days_count,
+            "origin": "warehouse_decision",
+            "state": "pending",
+        },
+        "gateway": {"upstream": None, "effective": None, "origin": "source", "state": "none"},
+    }
+    spans = [("a", doc.days_count - 1), ("b", doc.days_count + 3)]
+    found = {
+        (x["code"], x["acknowledgeable"])
+        for x in kit.issues(doc, spans, listing=decided)
+        if x["code"] == "DEPARTURE_DURATION_MISMATCH"
+    }
+    assert found == {("DEPARTURE_DURATION_MISMATCH", False)}
+    covered = kit.issues(doc, spans[:1], listing=decided)
+    assert any(x["code"] == "DEPARTURE_DURATION_MISMATCH" and x["acknowledgeable"] for x in covered)
+
+
 def test_evidence_cannot_be_rewritten_and_projection_is_allowlisted():
     doc = content()
     original = doc.model_copy(deep=True)

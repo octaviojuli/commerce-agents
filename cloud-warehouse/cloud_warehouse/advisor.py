@@ -467,7 +467,7 @@ class WarehouseAdvisorBackend(StorefrontBackend):
             row = (
                 conn.execute(
                     text(
-                        "SELECT p.id,p.supplier_org_id,p.effective_name AS name,p.effective_description AS description,p.name_origin,p.description_origin,p.days,p.gateway,p.version,c.name AS source_name FROM product_listing p JOIN supplier_connection c ON c.id=p.connection_id WHERE p.id=:id AND p.status='published'"
+                        "SELECT p.id,p.supplier_org_id,p.effective_name AS name,p.effective_description AS description,p.name_origin,p.description_origin,p.effective_days AS days,p.effective_gateway AS gateway,p.version,c.name AS source_name FROM product_listing p JOIN supplier_connection c ON c.id=p.connection_id WHERE p.id=:id AND p.status='published'"
                     ),
                     {"id": route_id},
                 )

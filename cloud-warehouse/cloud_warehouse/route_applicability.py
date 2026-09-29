@@ -43,7 +43,7 @@ def select_publication(conn, current, departure_id):
         return None if has_scope else current
     departure = (
         conn.execute(
-            text("""SELECT d.depart_date,d.return_date,p.effective_gateway AS gateway,p.days_origin AS days_origin
+            text("""SELECT d.depart_date,d.return_date,p.effective_gateway AS gateway,p.days_origin AS days_origin,p.days AS upstream_days
       FROM departure d JOIN product_listing p ON p.id=d.product_id WHERE d.id=:id AND p.id=:product"""),
             {"id": departure_id, "product": current["product_id"]},
         )
@@ -67,13 +67,13 @@ def select_publication(conn, current, departure_id):
             if departure["return_date"]
             else None
         )
-        # A warehouse-decided day count overrides the listing, not the departure dates,
-        # so those dates cannot be used to rule the decided content out.
-        if (
-            duration is not None
-            and duration != day_count(item["body"])
-            and departure["days_origin"] != "warehouse_decision"
-        ):
+        # A decided day count overrides the listing, not the departure dates, which come from
+        # the same upstream: only a span equal to the value that was overridden is let through.
+        decided_span = (
+            departure["days_origin"] == "warehouse_decision"
+            and duration == departure["upstream_days"]
+        )
+        if duration is not None and duration != day_count(item["body"]) and not decided_span:
             continue
         return item
     return None

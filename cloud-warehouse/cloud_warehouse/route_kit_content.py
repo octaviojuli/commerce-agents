@@ -125,15 +125,18 @@ def issues(doc, departure_days=(), resolutions=(), listing=None):
     # With the route's listing at hand, a days conflict is settled by a warehouse decision or
     # by the content, never by a note; a departure that spans other days then needs only a note.
     days_decided = bool(listing and listing["days"]["origin"] == "warehouse_decision")
-    for _, days in departure_days:
-        if days is not None and days != doc.days_count:
-            add(
-                "days_count",
-                "DEPARTURE_DURATION_MISMATCH",
-                "适用团期的出发及返回日期与行程天数不一致"
-                + ("；已按云仓核定天数处理，团期日期以上游为准" if days_decided else ""),
-                days_decided,
-            )
+    off = {days for _, days in departure_days if days is not None and days != doc.days_count}
+    if off:
+        # A decision covers only departures spanning the overridden upstream value; a departure
+        # with any other span really disagrees with the content and stays blocking.
+        covered = days_decided and off == {listing["days"]["upstream"]}
+        add(
+            "days_count",
+            "DEPARTURE_DURATION_MISMATCH",
+            "适用团期的出发及返回日期与行程天数不一致"
+            + ("；已按云仓核定天数处理，团期日期以上游为准" if covered else ""),
+            covered,
+        )
     expected = listing["days"]["effective"] if listing else doc.quality.days_expected
     if expected and expected != doc.days_count:
         add(
