@@ -19,6 +19,8 @@ LINE_LABELS = {
     "room.doubles": "大床房调整",
     "room.twins": "双床房调整",
     "room.singles": "单间调整",
+    "child.occupied": "儿童占床价",
+    "child.unoccupied": "儿童不占床价",
 }
 
 

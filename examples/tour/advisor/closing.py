@@ -568,6 +568,10 @@ def set_sales_total(engine, owner, deal_id, quote_id, total):
         total = Decimal(str(total))
         if total <= 0:
             raise ValueError("销售价必须大于 0")
+        ok, reason = pricing.validity(row, deal, Need.model_validate(deal["need"]))
+        if not ok:
+            # A sales price is set against a price that holds; an incomplete one has no total.
+            raise store.Conflict(reason + "，先补齐价格再定销售价")
         row = store.change(conn, owner, db.quotes, quote_id, sales_total=total)
         return quote_view(row, deal, Need.model_validate(deal["need"]))
 

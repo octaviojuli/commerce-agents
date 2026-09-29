@@ -11,11 +11,16 @@ INTERNAL = re.compile(r"(?<![A-Za-z0-9])(?:W[PDO]-[A-Za-z0-9-]+|[A-Z]{1,5}\d{1,5
 PRIVATE = re.compile(
     r"同[行业]价|结算价|毛利|利润|(?:余位|剩余名额|库存)[：:\s]*[\d一二三四五六七八九十]+|\{\s*\""
 )
-PROMISE = re.compile(r"(?<!不)(?<!无法)(?<!不能)(?:保证|一定|肯定|确保|包退|绝对|百分百)")
+# Guarantees, and holds or bookings: the advisor app neither holds seats nor books in phase one.
+PROMISE = re.compile(
+    r"(?<!不)(?<!无法)(?<!不能)(?:保证|一定|肯定|确保|包退|绝对|百分百"
+    r"|锁定|锁位|占位|留位|保留名额|帮您订|给您订|订好了|已预订)"
+)
 # Clauses that state something checkable. Wishes, questions and connectives do not.
 FACTUAL = re.compile(
     r"\d|[￥¥]|(?<!旦)元(?!旦)|包含|不含|含[早午晚三]?餐|赠送|免费|入住|[1-5一二三四五]星|购物|自费|另付|退改|退款|"
     r"手续费|签证|保险|占床|自理|强制|自愿|天气|气温|雨季|旱季|季节|已(?:经)?(?:安排|订好|预订|预留|确认)"
+    r"|(?:价格|价钱|费用|团费).{0,6}(?:差|贵|便宜|高|低|涨|降)|(?:含|包)在.{0,4}(?:团费|费用|价格|价钱)"
 )
 # "资料没写明，我去跟供应商确认": saying what is not known is not a claim.
 # Restating the customer's question ("您问的有没有购物店") is not a claim either.
@@ -24,6 +29,28 @@ VERIFY = re.compile(
     r"|正在.{0,8}(?:核对|确认|核实)|(?:去|再|帮您|会|跟供应商|向供应商)(?:确认|核实|问)|问清|一并.{0,4}问"
     r"|您问的|有没有|是否|要不要|能不能"
 )
+# "自费项目、含餐和签证这三项": the list a reply names while saying it is still being checked.
+TOPIC_SPAN = re.compile(r"[^，。；：:]*?(?:这|那)[两三四五六几\d]+(?:项|点|件事|个问题)")
+# "自费项目、含餐和签证这三项": naming what was asked, not saying what it is.
+TOPIC_LIST = re.compile(r"(?:这|那)?[两三四五六几\d]+(?:项|点|件事|个问题)$|(?:这些|这几个)?问题$")
+
+
+def restates(clause: str, stated: str) -> bool:
+    """A clause that only repeats what the customer stated: same checkable words and numbers."""
+    if not stated:
+        return False
+    words = [m.group(0) for m in FACTUAL.finditer(clause) if not m.group(0).isdigit()]
+    own = bigrams(clause)
+    return (
+        bool(own)
+        # A recap reuses the customer's own wording; "行程里没有购物店" is not "不想进购物店".
+        and len(own & bigrams(stated)) >= 0.6 * len(own)
+        and all(w in stated for w in words)
+        and numbers(clause) <= numbers(stated)
+        and set(polar(clause)) <= set(polar(stated))
+    )
+
+
 # Negations and limits, longest first so "无须" is never read as "须".
 POLAR = (
     "无须",
@@ -292,6 +319,10 @@ def check(
     checked = {f.get("product_id") for f in facts if f.get("reviewed", True)}
     reviewed = [f for f in facts if f.get("reviewed", True) or f.get("product_id") not in checked]
     said_numbers = set().union(*(numbers(s) for s in said)) if said else set()
+    # What the customer stated, without their questions: "含早餐吗" backs nothing.
+    stated = "".join(
+        part for s in said for part in re.split(r"[^。！？\n]*[？?吗][。！？\n]?", s) if part
+    )
     known = set(known)
     kept, claims, removed, reasons = [], [], [], []
     questions = 0
@@ -315,19 +346,21 @@ def check(
         ):
             reason = "private"
         if not reason and not question:
-            parts = [
-                c.strip()
-                for c in clauses(
-                    re.sub(r"^\s*(?:\d{1,2}|[①②③④⑤⑥⑦⑧⑨])\s*[)）.、]?\s*", "", stripped)
-                )
-            ]
+            body = re.sub(r"^\s*(?:\d{1,2}|[①②③④⑤⑥⑦⑧⑨])\s*[)）.、]?\s*", "", stripped)
+            if VERIFY.search(body):
+                # "自费、含餐和签证这三项，资料没写明": the named list is what is open, not a claim;
+                # every other clause in the sentence is still checked.
+                body = TOPIC_SPAN.sub("所问事项", body)
+            parts = [c.strip() for c in clauses(body)]
             k = 0
             while k < len(parts):
                 clause = parts[k]
                 k += 1
                 if not FACTUAL.search(clause):
                     continue
-                if VERIFY.search(clause) and not PROMISE.search(clause):
+                if (
+                    VERIFY.search(clause) or TOPIC_LIST.search(clause) or restates(clause, stated)
+                ) and not PROMISE.search(clause):
                     allowed = set().union(*(numbers(f["text"]) for f in reviewed)) | said_numbers
                     if numbers(clause) <= allowed:
                         found.append({"text": clause, "fact_id": None})

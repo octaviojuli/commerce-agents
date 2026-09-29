@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
-from . import closing, db, memory, papers, routes, selling, store, suppliers
+from . import closing, db, memory, papers, privacy, routes, selling, store, suppliers
 from . import need as needs
 from .facts import Route
 from .model import ModelUnavailable, TypedModel
@@ -575,7 +575,7 @@ def create_app(settings: Settings, *, model=None, transport=None):
                     fake_deal,
                     Need(),
                     {"visible": []},
-                    [Question(text=body.question, route="")],
+                    [Question(text=privacy.mask(body.question)[0], route="")],
                 )
                 if facts
                 else ([], [])
@@ -787,7 +787,7 @@ def create_app(settings: Settings, *, model=None, transport=None):
             body.day,
             body.node,
             body.category,
-            body.text,
+            privacy.mask(body.text)[0],
             body.amount,
             body.currency,
             body.quantity,

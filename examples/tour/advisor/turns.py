@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 from cloud_warehouse import destinations
 
-from . import closing, db, grounding, memory, pricing, routes, store
+from . import closing, db, grounding, memory, pricing, privacy, routes, store
 from . import need as needs
 from . import suppliers as supplier_notes
 from .facts import Route
@@ -186,6 +186,7 @@ class Turns:
         self.model = model
 
     async def run(self, owner: Owner, wh, deal_id, text: str, kind="customer"):
+        text, hidden = privacy.mask(text)
         with self.engine.begin() as conn:
             deal = store.deal(conn, owner, deal_id, lock=True)
             seq = store.next_seq(conn, owner, deal_id)
@@ -193,6 +194,10 @@ class Turns:
             context = self._context(conn, owner, deal)
         need = Need.model_validate(deal["need"])
         result = {"seq": seq, "kind": kind, "text": text, "cards": [], "chips": [], "notes": []}
+        if hidden:
+            result["notes"].append(
+                "已隐藏" + "、".join(hidden) + "，没有保存也没有交给助手；证件请在证件页上传"
+            )
         try:
             understanding = await self.model.call(
                 "understand", self._understand_input(deal, need, context, text)
@@ -400,7 +405,8 @@ class Turns:
             result["cards"].append({"type": "answers", "items": answered})
             facts += used
             draft_extra["answers"] = [
-                {"q": a["question"], "a": a["answer"], "kind": a["kind"]} for a in answered
+                {"q": a["question"], "route": a["route"], "a": a["answer"], "kind": a["kind"]}
+                for a in answered
             ]
             with self.engine.begin() as conn:
                 memory.book(conn, owner, deal_id, answered, seq)
@@ -652,6 +658,13 @@ class Turns:
         by_route = {}
         for index, q in enumerate(questions):
             target = routes_named(q.route, context["visible"]) if q.route else None
+            if not target and COMPARING.search(q.text) and len(context["visible"]) >= 2:
+                # "哪条吃得好" is answered on each route shown, so the advisor can weigh them.
+                for route in context["visible"][:3]:
+                    by_route.setdefault(route["product_id"], {"route": route, "items": []})[
+                        "items"
+                    ].append((index, q))
+                continue
             if (
                 not target
                 and not deal.get("route")
@@ -720,6 +733,10 @@ class Turns:
                 if a and a.kind in ("fact", "advice") and a.fact_ids:
                     cited = [ids[i] for i in a.fact_ids if i in ids]
                     checked = grounding.check(a.answer, cited)
+                    if cited and checked["removed"] and len(cited) > 1:
+                        # An answer may draw one sentence from the several units it cites.
+                        together = {**cited[0], "text": "；".join(f["text"] for f in cited)}
+                        checked = grounding.check(a.answer, [together])
                     if cited and checked["text"] and not checked["removed"]:
                         item.update(
                             answer=a.answer,
@@ -833,9 +850,22 @@ def supplier_names(context, deal) -> list:
     return sorted(n for n in names if n and n != "供应商未标注")
 
 
+INSTRUCTION = re.compile(
+    r"^(?:帮我|麻烦)?(?:跟|和|给)?(?:她|他|客人)?(?:说一下|说说|回一下|问一下|讲一下)?"
+)
+ASKED = re.compile(r"^(?:[^，。：:]{0,6}(?:问|说)[：:，]?)")
+
+
 def pending_line(answers):
-    asked = "、".join(re.sub(r"^.{0,16}?那条", "", a["q"]).rstrip("？?") for a in answers[:4])
-    return f"您问的{asked}，资料里没写明，我去跟供应商确认后回您。"
+    """The program's own sentence for what is being checked, in the customer's terms."""
+    topics = []
+    for a in answers:
+        q = re.sub(r"^.{0,16}?那条", "", a["q"]).rstrip("？?。 ").removesuffix("吗")
+        q = ASKED.sub("", INSTRUCTION.sub("", q)) or q
+        if q and q not in topics:
+            topics.append(q)
+    asked = "、".join(topics[:4])
+    return f"您问的{asked}，我去跟供应商确认后回您。"
 
 
 def fallback(extra, *, forbidden=()):
@@ -881,6 +911,7 @@ def fits(card, need: Need) -> bool:
     )
 
 
+COMPARING = re.compile(r"哪条|哪个|哪一条|哪家|两条|几条|对比|比较|区别|更好|更适合")
 PRICE_TOPICS = {"费用", "价格", "报价"}
 PRICE_WORDS = re.compile(r"价格|多少钱|报价|团费|费用")
 # What a question's topic is usually written as in a document.

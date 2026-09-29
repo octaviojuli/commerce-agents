@@ -174,25 +174,38 @@ async def compare(engine, owner, wh, deal_id, product_ids):
         )
         for i in range(len(views))
     ]
-    best = max(range(len(views)), key=lambda i: scores[i])
-    first = rows[0] if rows else None
-    other = max((i for i in range(len(views)) if i != best), key=lambda i: scores[i], default=None)
-    verdict = (
-        f"“{first['concern']}”排第一，推荐 {views[best][0]['title']}：{first['cells'][best]['text'].rstrip('。')}。"
-        if first
-        else ""
-    )
-    if other is not None and len(rows) > 1:
+    rank = {"y": 2, "q": 1, "n": 0}
+    # Only a concern the routes answer differently can decide; an unknown on both says nothing.
+    deciding = [
+        row
+        for row in rows
+        if len({c["mark"] for c in row["cells"]}) > 1
+        and any(c["mark"] != "q" for c in row["cells"])
+    ]
+    unknown = [row["concern"] for row in rows if all(c["mark"] == "q" for c in row["cells"])]
+    verdict = ""
+    if deciding:
+        first = deciding[0]
+        best = max(range(len(views)), key=lambda i: (rank[first["cells"][i]["mark"]], scores[i]))
+        verdict = (
+            f"“{first['concern']}”上 {views[best][0]['title']} 更合适："
+            f"{first['cells'][best]['text'].rstrip('。')}。"
+        )
         second = next(
             (
                 row
-                for row in rows[1:]
-                if row["cells"][other]["mark"] == "y" and row["cells"][best]["mark"] != "y"
+                for row in deciding[1:]
+                if max(range(len(views)), key=lambda i: rank[row["cells"][i]["mark"]]) != best
             ),
             None,
         )
         if second:
+            other = max(range(len(views)), key=lambda i: rank[second["cells"][i]["mark"]])
             verdict += f"如果更看重“{second['concern']}”，{views[other][0]['title']}更合适。"
+    else:
+        verdict = "资料还分不出高下。"
+    if unknown:
+        verdict += "待核实：" + "、".join(unknown) + "。"
     return {
         "routes": [
             {
@@ -291,7 +304,8 @@ async def _build(engine, owner, wh, deal_id, product_ids):
             {
                 "product_id": pid,
                 "title": route.title,
-                "days": detail.get("attributes", {}).get("days"),
+                # The day count the cards show: the title's, which the customer also reads.
+                "days": routes._days(detail),
                 "reasons": reasons[:3],
                 "tell": tell[:1],
                 "price": money,

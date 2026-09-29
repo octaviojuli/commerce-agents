@@ -47,6 +47,9 @@ departures, offers and quotes.
 - The warehouse owns the login: a 401 from it ends the local session, and every five minutes
   the session checks that its organisation still grants the advisor role.
 - The customer's plan page withdraws a price past its validity, and every reason drawn from it.
+- Mobile, ID and passport numbers in pasted text are masked before a turn is stored or read by
+  the model; documents go through the document screen, where they are sealed.
+- A reply never promises a hold or a booking; the app holds nothing in phase one.
 - Every route the advisor sees carries its supplier's short name, the advisor's own mark and
   note for that supplier, and the other suppliers selling the same kind of route (same
   countries, days within one); the search can be narrowed to chosen suppliers. Supplier names
@@ -68,6 +71,7 @@ departures, offers and quotes.
 | `suppliers.py` | The advisor's own supplier notes (常用 / 慎用 and a line of their own) |
 | `closing.py` | Change adoption, dates, confirmation sheet, formal quote, sale, tasks, notes |
 | `papers.py` | Encrypted document scans and local passport MRZ reading |
+| `privacy.py` | Mobile, ID and passport numbers masked out of pasted text, route questions and notes |
 | `warehouse.py` | The warehouse HTTP client |
 | `store.py`, `db.py` | Owner-scoped row access and the schema |
 | `api.py`, `serve.py` | HTTP interface and entry point |

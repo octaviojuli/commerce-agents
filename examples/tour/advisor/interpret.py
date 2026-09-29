@@ -88,9 +88,20 @@ def window(message: str, value, today: date):
 
 
 COUPLE = re.compile(
-    r"(?:我|俺)(?:跟|和|带)(?:老婆|老公|媳妇|爱人|太太|先生|对象|女朋友|男朋友)"
-    r"|夫妻(?:俩|两个|二人)?|两口子|小两口|我们俩|二人世界|就我们两个"
+    r"(?:我|俺)(?:跟|和|带)(?:老婆|老公|媳妇|爱人|太太|先生|对象|女朋友|男朋友|老伴)"
+    r"|夫妻(?:俩|两个|二人)?|两口子|小两口|老两口|我们俩|二人世界|就我们两个"
+    r"|(?:两|2|俩)(?:个|位)?大人"
 )
+# An older couple: both travellers are the seniors, not two adults beside two seniors.
+ELDERLY = re.compile(r"老伴|老两口|老头子|老太婆")
+
+
+def couple(value: dict, elderly: bool) -> dict:
+    seniors = [x for x in value.get("seniors") or [] if isinstance(x, dict)]
+    if elderly:
+        seniors = (seniors + [{"age": None}, {"age": None}])[:2]
+        return {**value, "adults": 0, "children": [], "seniors": seniors}
+    return {**value, "adults": 2, "children": [], "seniors": []}
 
 
 def merge_party(saved: needs.Party | None, change: dict) -> dict:
@@ -167,13 +178,11 @@ def changes(need: Need, understanding, message: str, today: date, *, turn=None):
             if window_hint:
                 source, hint = "inferred", hint or window_hint
         if field == "party" and isinstance(value, dict):
-            if (
-                value.get("children") is None
-                and COUPLE.search(message)
-                and not re.search(r"孩子|小孩|儿童|宝宝|娃|小朋友|儿子|女儿", message)
+            if COUPLE.search(message) and not re.search(
+                r"孩子|小孩|儿童|宝宝|娃|小朋友|儿子|女儿|老人|长辈|爸|妈|父母|公婆|岳", message
             ):
-                # "我跟老婆" names everyone who goes; there is no child to ask about.
-                value = {**value, "children": []}
+                # "我跟老婆" names everyone who goes: two people and no child to ask about.
+                value = couple(value, bool(ELDERLY.search(message)))
             value = merge_party(need.get("party"), value)
         if (
             field == "preferences"

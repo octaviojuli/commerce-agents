@@ -9,6 +9,12 @@ import hashlib
 import re
 
 MEAL_NAMES = {"breakfast": "早", "lunch": "午", "dinner": "晚"}
+# A meal slot the customer pays nothing extra for; "×", 自理 and the like are not meals.
+NO_MEAL = re.compile(r"自理|不含|自费|敬请|^\s*[×xX✕无—\-/]+\s*$")
+
+
+def included(value) -> bool:
+    return bool(value) and not NO_MEAL.search(str(value))
 
 
 def fact_id(scope, text):
@@ -286,6 +292,18 @@ class Route:
                 add(f"{label}：{text}", "行程", day, item["node_id"])
             for note in d["notes"]:
                 add(f"{label}提示：{note}", "注意事项", day)
+        if self.days:
+            # Derived from the days: how many meals the price includes, by kind.
+            counts = {
+                k: sum(1 for d in self.days if included(d["meals"].get(k))) for k in MEAL_NAMES
+            }
+            if any(counts.values()):
+                add(
+                    f"餐食安排：行程含 {sum(counts.values())} 餐（"
+                    + "、".join(f"{MEAL_NAMES[k]}餐 {n}" for k, n in counts.items())
+                    + "）",
+                    "行程概要",
+                )
         if not b.get("shopping") and self.days:
             # Derived from the days: the document lists no shop, and where the outlets are.
             stops = self.outlets(out)
@@ -320,12 +338,7 @@ class Route:
             return None
 
         grades = [d["stay"] for d in self.days if d["stay"]]
-        meals = sum(
-            1
-            for d in self.days
-            for v in d["meals"].values()
-            if v and not re.search(r"自理|敬请自理|不含|自费", v)
-        )
+        meals = sum(1 for d in self.days for v in d["meals"].values() if included(v))
         shopping = [f for f in facts if f["section"] == "购物说明"]
         outlets = self.outlets(facts)
         optional = [f for f in facts if f["section"] == "自费说明"]
