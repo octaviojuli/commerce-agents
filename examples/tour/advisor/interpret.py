@@ -99,6 +99,63 @@ def window(message: str, value, today: date):
     return {**value, "label": label}, "", hint
 
 
+ROOM_KINDS = {
+    "大床": "doubles",
+    "双人": "doubles",
+    "双床": "twins",
+    "标间": "twins",
+    "单人": "singles",
+    "单间": "singles",
+    "单住": "singles",
+}
+ROOM_TOKEN = re.compile(r"(" + "|".join(ROOM_KINDS) + r")|(\d+)\s*[间个]")
+# "再加一间单人间" changes a count the message does not state; the model reads it.
+ROOM_STEP = re.compile(r"再加|增加|多加|多订|多要|减少|少订|少要|去掉")
+
+
+def rooms(message: str) -> dict:
+    """Room counts stated in the message, by rule: {"doubles": 1, ...} for each kind it counts.
+
+    A count belongs to the room word beside it ("1间大床房", "大床房1间"). A count between
+    two room words ("2间大床1间双床") goes to the one that has no count yet; one that stays
+    unclear is left to the model's reading.
+    """
+    text = chinese_numbers(message)
+    if ROOM_STEP.search(text):
+        return {}
+    tokens = list(ROOM_TOKEN.finditer(text))
+    owners, unclear = {}, []
+    for i, token in enumerate(tokens):
+        if token[2] is None:
+            continue
+        near = []
+        if (
+            i > 0
+            and tokens[i - 1][1]
+            and re.fullmatch(r"[\s房]*", text[tokens[i - 1].end() : token.start()])
+        ):
+            near.append(i - 1)
+        if (
+            i + 1 < len(tokens)
+            and tokens[i + 1][1]
+            and re.fullmatch(r"[\s的]*", text[token.end() : tokens[i + 1].start()])
+        ):
+            near.append(i + 1)
+        if len(near) == 1:
+            owners[i] = near[0]
+        elif near:
+            unclear.append((i, near))
+    for i, near in unclear:
+        free = [k for k in near if k not in owners.values()]
+        if len(free) == 1:
+            owners[i] = free[0]
+    counts = {}
+    for i, k in owners.items():
+        kind = ROOM_KINDS[tokens[k][1]]
+        counts[kind] = counts.get(kind, 0) + int(tokens[i][2])
+    return counts
+
+
 COUPLE = re.compile(
     r"(?:我|俺)(?:跟|和|带)(?:老婆|老公|媳妇|爱人|太太|先生|对象|女朋友|男朋友|老伴)"
     r"|夫妻(?:俩|两个|二人)?|两口子|小两口|老两口|我们俩|二人世界|就我们两个"
@@ -214,12 +271,15 @@ def changes(need: Need, understanding, message: str, today: date, *, turn=None):
     adult_evidence = bool(
         re.search(r"成人|大人|\d+大(?:\d|$)|全是大人|都是大人", chinese_numbers(message))
     )
-    if total_match and "party" not in by_field:
-        from .model import Change
+    from .model import Change
 
+    if total_match and "party" not in by_field:
         by_field["party"] = Change(
             field="party", value={"total_count": int(total_match[1])}, evidence=message[:200]
         )
+    said_rooms = rooms(message)
+    if said_rooms and "rooms" not in by_field:
+        by_field["rooms"] = Change(field="rooms", value={}, evidence=message[:200])
     if parsed_places is not None:
         candidates.append(("destinations", parsed_places, "said", place_evidence, ""))
     holiday_value, holiday_evidence, holiday_hint = window(message, None, today)
@@ -258,6 +318,10 @@ def changes(need: Need, understanding, message: str, today: date, *, turn=None):
                 # Later partial answers must retain the already recorded travellers.
                 value = couple(value, bool(ELDERLY.search(message)))
             value = merge_party(need.get("party"), value)
+        if field == "rooms" and said_rooms:
+            # The counts the message states are read by rule; the model has misread "1间大床" as 2.
+            value = {**(value if isinstance(value, dict) else {}), **said_rooms}
+            evidence = evidence or grounded(message, message[:200])
         if (
             field == "preferences"
             and isinstance(value, list)

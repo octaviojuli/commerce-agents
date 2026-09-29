@@ -50,6 +50,47 @@ SERVICE_CLAIM = re.compile(
 )
 
 
+# "按3位成人来安排": a head count by kind, which the reply may say only when it is known.
+PARTY_COUNT = re.compile(
+    r"(\d+)\s*(?:位|个|名)?\s*(成人|大人|儿童|小孩|孩子|小朋友|老人|长辈)|(\d+)大(\d+)小"
+)
+PARTY_KINDS = {
+    "成人": "adults",
+    "大人": "adults",
+    "儿童": "children",
+    "小孩": "children",
+    "孩子": "children",
+    "小朋友": "children",
+    "老人": "seniors",
+    "长辈": "seniors",
+}
+
+
+def party_counts(text: str) -> set:
+    """Each head count by kind the text states, as ("adults", 3)."""
+    found = set()
+    for m in PARTY_COUNT.finditer(chinese_numbers(text or "")):
+        if m[1]:
+            found.add((PARTY_KINDS[m[2]], int(m[1])))
+        else:
+            found |= {("adults", int(m[3])), ("children", int(m[4]))}
+    return found
+
+
+def known_counts(party) -> set:
+    """The head counts a saved party settles: "三个客人" settles none of them."""
+    if party is None:
+        return set()
+    found = set()
+    if party.adults is not None:
+        found |= {("adults", party.adults), ("seniors", len(party.seniors))}
+    elif party.seniors:
+        found.add(("seniors", len(party.seniors)))
+    if party.children is not None:
+        found.add(("children", len(party.children)))
+    return found
+
+
 def matches_said(clause: str, stated: str) -> bool:
     """Whether words match customer input; this is never supplier evidence."""
     if not stated:
@@ -331,12 +372,14 @@ def check(
     forbidden=(),
     conflicts=(),
     max_questions=None,
+    counts=None,
 ):
     """Return the kept draft, the claims found for each kept factual clause, and what was cut.
 
     ``said`` is the customer's own words: they may back a restated number, never a fact.
     ``conflicts`` are route names that do not fit the need; they may only appear as an
-    alternative that still needs confirming.
+    alternative that still needs confirming. ``counts`` are the head counts the saved party
+    settles (``known_counts``); a reply states no other unless the customer or a fact says it.
     """
     # A route with no reviewed document is cited from what it has; each claim says which.
     checked = {f.get("product_id") for f in facts if f.get("reviewed", True)}
@@ -355,6 +398,10 @@ def check(
         part for s in said for part in re.split(r"[^。！？\n]*[？?吗][。！？\n]?", s) if part
     )
     known = set(known)
+    if counts is not None:
+        counts = set(counts).union(
+            *(party_counts(s) for s in said), *(party_counts(f["text"]) for f in reviewed)
+        )
     kept, claims, removed, reasons, decisions = [], [], [], [], []
     questions = 0
     for sentence in re.findall(r"[^。！？\n]+[。！？]?", text or ""):
@@ -447,6 +494,13 @@ def check(
         ):
             hard = hard or "conflict"
         if (
+            counts is not None
+            and not question
+            and not VERIFY.search(stripped)
+            and not party_counts(stripped) <= counts
+        ):
+            hard = hard or "party"
+        if (
             INTERNAL.search(stripped)
             or PRIVATE.search(stripped)
             or KEPT_PERSONAL.search(stripped)
@@ -479,7 +533,15 @@ def check(
 
 
 # Reasons the program keeps whatever the judge says: they are rules, not readings.
-HARD = {"private", "promise", "asks_known", "too_many_questions", "conflict", "customer_claim"}
+HARD = {
+    "private",
+    "promise",
+    "asks_known",
+    "too_many_questions",
+    "conflict",
+    "customer_claim",
+    "party",
+}
 # The judge overturns the rules only when sure enough: "safe" at TRUST, "unsafe" at DOUBT.
 # Measured on live replies, an "unsafe" below DOUBT is a coin toss (a correct route list at 0.02).
 TRUST, DOUBT = 0.5, 0.3

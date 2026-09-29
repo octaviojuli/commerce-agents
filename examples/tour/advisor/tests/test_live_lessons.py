@@ -208,3 +208,48 @@ def test_an_unpublished_route_says_which_day_counts_disagree():
     assert "部分团期为 10 天" in routes.unpublished_reason(product, odd)
     agreed = {"title": "ACME 海岛6天", "attributes": {"days": "6"}}
     assert routes.unpublished_reason(agreed, fine) == "这条线路尚未发布行程"
+
+
+def test_room_counts_are_read_from_the_words_beside_them():
+    from tour.advisor.interpret import rooms
+
+    family = "阿姨单住一间，我们一家四口住一间大床房加一间双床房"
+    assert rooms(family) == {"singles": 1, "doubles": 1, "twins": 1}
+    assert rooms("2间大床1间双床") == {"doubles": 2, "twins": 1}
+    assert rooms("大床房2间，双床房1间") == {"doubles": 2, "twins": 1}
+    assert rooms("三个人住两个标间") == {"twins": 2}
+    assert rooms("大床还是双床都行") == {}
+    assert rooms("再加一间单人间") == {}
+    fills, _, _ = changes(
+        Need(),
+        reading(
+            {
+                "field": "rooms",
+                "value": {"doubles": 2, "twins": 1, "singles": 1},
+                "evidence": family,
+            }
+        ),
+        family,
+        TODAY,
+    )
+    assert fills["rooms"]["new"] == {"doubles": 1, "twins": 1, "singles": 1, "note": ""}
+
+
+def test_a_reply_states_no_head_count_the_customer_has_not_given():
+    three = needs.parse("party", {"total_count": 3, "children": []})
+    said = ["三个客人，没有孩子"]
+    counts = grounding.known_counts(three)
+    cut = grounding.check("好的，按3位成人来安排。", [], said=said, counts=counts)
+    assert cut["reasons"] == ["party"]
+    kept = grounding.check("好的，3位客人，没有孩子。", [], said=said, counts=counts)
+    assert kept["reasons"] == []
+    asked = grounding.check("3位都是成人吗？", [], said=said, counts=counts, max_questions=1)
+    assert asked["reasons"] == []
+    family = needs.parse(
+        "party", {"adults": 2, "children": [{"age": 8, "bed": True}], "seniors": [{"age": 70}]}
+    )
+    counts = grounding.known_counts(family)
+    said = ["2大1小 + 1位长辈"]
+    stated = grounding.check("2位成人、1个孩子和1位老人。", [], said=said, counts=counts)
+    assert stated["reasons"] == []
+    assert grounding.check("2大2小出行。", [], said=said, counts=counts)["reasons"] == ["party"]

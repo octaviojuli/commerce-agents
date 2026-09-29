@@ -1142,6 +1142,7 @@ class Turns:
             forbidden=forbidden,
             conflicts=conflicts,
             max_questions=1 if extra.get("ask_next") else 0,
+            counts=grounding.known_counts(need.get("party")),
         )
         said = [text, needs.summary(need)]
         verdicts = await self.judge.check_draft(
