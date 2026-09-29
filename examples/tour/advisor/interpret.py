@@ -109,19 +109,23 @@ ROOM_KINDS = {
     "单住": "singles",
 }
 ROOM_TOKEN = re.compile(r"(" + "|".join(ROOM_KINDS) + r")|(\d+)\s*[间个]")
-# "再加一间单人间" changes a count the message does not state; the model reads it.
-ROOM_STEP = re.compile(r"再加|增加|多加|多订|多要|减少|少订|少要|去掉")
+# Counts that are not the rooms wanted now: steps ("再加一间"), refusals ("不要两间大床房"),
+# earlier counts ("原来两间"), choices, questions and suppositions. The model reads these.
+ROOM_UNCLEAR = re.compile(
+    r"再加|增加|多加|多订|多要|减少|少订|少要|去掉|不要|不用|不住|不是|别|没|原来|之前|本来"
+    r"|改成|改为|换成|变成|还是|或者|或是|如果|假如|要是|的话|多少|几|吗|呢|[？?]"
+)
 
 
 def rooms(message: str) -> dict:
-    """Room counts stated in the message, by rule: {"doubles": 1, ...} for each kind it counts.
+    """Room counts a plain statement gives, by rule: {"doubles": 1, ...} for each kind it counts.
 
-    A count belongs to the room word beside it ("1间大床房", "大床房1间"). A count between
+    A message that refuses, corrects, compares or asks gives none. A count belongs to the room word beside it ("1间大床房", "大床房1间"). A count between
     two room words ("2间大床1间双床") goes to the one that has no count yet; one that stays
     unclear is left to the model's reading.
     """
     text = chinese_numbers(message)
-    if ROOM_STEP.search(text):
+    if ROOM_UNCLEAR.search(text):
         return {}
     tokens = list(ROOM_TOKEN.finditer(text))
     owners, unclear = {}, []
@@ -277,9 +281,8 @@ def changes(need: Need, understanding, message: str, today: date, *, turn=None):
         by_field["party"] = Change(
             field="party", value={"total_count": int(total_match[1])}, evidence=message[:200]
         )
-    said_rooms = rooms(message)
-    if said_rooms and "rooms" not in by_field:
-        by_field["rooms"] = Change(field="rooms", value={}, evidence=message[:200])
+    # The rule corrects the model's room counts; it never makes a room request of its own.
+    said_rooms = rooms(message) if "rooms" in by_field else {}
     if parsed_places is not None:
         candidates.append(("destinations", parsed_places, "said", place_evidence, ""))
     holiday_value, holiday_evidence, holiday_hint = window(message, None, today)

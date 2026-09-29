@@ -534,3 +534,95 @@ def test_a_failed_departure_lookup_does_not_cost_the_route_page(dialogue):
     page = client.get(f"/api/routes/{SLOW}", params={"deal": deal})
     assert page.status_code == 200, page.text
     assert page.json()["published"] is False and page.json()["unpublished_reason"]
+
+
+# Room counts and head counts: the rule corrects only a plain statement, and a reply
+# states only the head counts the customer gave.
+ROOM_CASES = [
+    ("不要两间大床房，就一间双床房", {"doubles": 0, "twins": 1}),
+    ("原来两间大床房，改成一间大床房", {"doubles": 1}),
+]
+
+
+@pytest.mark.parametrize("message,expected", ROOM_CASES, ids=["negated", "corrected"])
+def test_rule_preserves_a_correct_model_room_count(message, expected):
+    reading = Understanding.model_validate(
+        {"changes": [{"field": "rooms", "value": expected, "evidence": message}]}
+    )
+    fills, proposals, rejected = interpret.changes(
+        needs.Need(), reading, message, date(2026, 9, 29)
+    )
+    assert fills["rooms"]["new"] == needs.Rooms.model_validate(expected).model_dump(), (
+        fills,
+        proposals,
+        rejected,
+    )
+
+
+@pytest.mark.parametrize(
+    "message", ["一间大床房多少钱？", "如果住两间标间会贵多少？"], ids=["question", "hypothetical"]
+)
+def test_room_inquiry_does_not_fill_a_confirmed_requirement(message):
+    fills, proposals, rejected = interpret.changes(
+        needs.Need(), Understanding(), message, date(2026, 9, 29)
+    )
+    assert "rooms" not in fills and not any(p["field"] == "rooms" for p in proposals), (
+        fills,
+        proposals,
+        rejected,
+    )
+
+
+@pytest.mark.parametrize("message,expected", ROOM_CASES, ids=["negated", "corrected"])
+def test_http_persists_current_room_count_only(dialogue, monkeypatch, message, expected):
+    client, deal, state, model = dialogue
+
+    async def correct_reading(name, data):
+        if name == "understand":
+            return Understanding.model_validate(
+                {"changes": [{"field": "rooms", "value": expected, "evidence": message}]}
+            )
+        if name == "draft":
+            return Draft(to_customer="好的，已收到您的需求。", to_advisor="已整理")
+        raise AssertionError(name)
+
+    monkeypatch.setattr(model, "call", correct_reading)
+    say(client, deal, message, "customer")
+    assert value(detail(client, deal), "rooms") == needs.Rooms.model_validate(expected).model_dump()
+
+
+UNSUPPORTED = [
+    "按3位成人来安排，酒店需要再核实。",
+    "按三名成人来安排。",
+    "按二大一小来安排。",
+]
+
+
+@pytest.mark.parametrize(
+    "draft", UNSUPPORTED, ids=["unrelated-uncertainty", "chinese-counter", "chinese-shorthand"]
+)
+def test_draft_does_not_invent_a_known_party_composition(draft):
+    checked = grounding.check(
+        draft, [], said=["三个客人"], counts=grounding.known_counts(needs.Party(total_count=3))
+    )
+    assert not checked["text"] and "party" in checked["reasons"], checked
+
+
+@pytest.mark.parametrize(
+    "draft", UNSUPPORTED, ids=["unrelated-uncertainty", "chinese-counter", "chinese-shorthand"]
+)
+def test_http_does_not_return_invented_party_composition(dialogue, monkeypatch, draft):
+    client, deal, state, model = dialogue
+    first(client, deal)
+    assert value(detail(client, deal), "party")["adults"] is None
+
+    async def wrong_draft(name, data):
+        if name == "understand":
+            return Understanding()
+        if name == "draft":
+            return Draft(to_customer=draft, to_advisor="已整理")
+        raise AssertionError(name)
+
+    monkeypatch.setattr(model, "call", wrong_draft)
+    result = say(client, deal, "收到，谢谢。", "customer")
+    assert draft not in result["draft"]["text"], result["draft"]

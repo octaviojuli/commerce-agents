@@ -51,8 +51,9 @@ SERVICE_CLAIM = re.compile(
 
 
 # "按3位成人来安排": a head count by kind, which the reply may say only when it is known.
+HEADS = r"[\d零一二两三四五六七八九十]+"
 PARTY_COUNT = re.compile(
-    r"(\d+)\s*(?:位|个|名)?\s*(成人|大人|儿童|小孩|孩子|小朋友|老人|长辈)|(\d+)大(\d+)小"
+    rf"({HEADS})\s*(?:位|个|名)?\s*(成人|大人|儿童|小孩|孩子|小朋友|老人|长辈)|({HEADS})大({HEADS})小"
 )
 PARTY_KINDS = {
     "成人": "adults",
@@ -67,14 +68,35 @@ PARTY_KINDS = {
 
 
 def party_counts(text: str) -> set:
-    """Each head count by kind the text states, as ("adults", 3)."""
+    """Each head count by kind the text states, as ("adults", 3): "三名成人", "二大一小"."""
     found = set()
-    for m in PARTY_COUNT.finditer(chinese_numbers(text or "")):
+    for m in PARTY_COUNT.finditer(text or ""):
         if m[1]:
-            found.add((PARTY_KINDS[m[2]], int(m[1])))
+            found.add((PARTY_KINDS[m[2]], heads(m[1])))
         else:
-            found |= {("adults", int(m[3])), ("children", int(m[4]))}
+            found |= {("adults", heads(m[3])), ("children", heads(m[4]))}
     return found
+
+
+def heads(value: str) -> int:
+    if value.isdigit():
+        return int(value)
+    if "十" in value:
+        tens, _, ones = value.partition("十")
+        return CN_DIGITS.get(tens, 1) * 10 + CN_DIGITS.get(ones, 0)
+    return CN_DIGITS.get(value, 0)
+
+
+def unsettled(clause: str, counts: set) -> bool:
+    """A head count the clause states that the party does not settle. "一个孩子" may name one
+    of the children the party has."""
+    known = {}
+    for kind, n in counts:
+        known[kind] = max(n, known.get(kind, 0))
+    return any(
+        (kind, n) not in counts and not (n == 1 and known.get(kind, 0) >= 1)
+        for kind, n in party_counts(clause)
+    )
 
 
 def known_counts(party) -> set:
@@ -496,8 +518,8 @@ def check(
         if (
             counts is not None
             and not question
-            and not VERIFY.search(stripped)
-            and not party_counts(stripped) <= counts
+            # Each clause: "酒店需要再核实" does not make "按3位成人来安排" known.
+            and any(unsettled(c, counts) for c in clauses(stripped) if not VERIFY.search(c))
         ):
             hard = hard or "party"
         if (
