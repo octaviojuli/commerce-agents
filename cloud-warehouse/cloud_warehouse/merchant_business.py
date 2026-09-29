@@ -10,7 +10,8 @@ from .persistence import Forbidden, require_role, transaction
 # The operator's explicit acceptance selection is independent of publication and sales state.
 ROUTE_SCOPE = "(NOT c.capabilities ? 'catalog_selection' OR c.capabilities->'catalog_selection'->'route_ids' ? p.external_id)"
 DEPARTURE_SCOPE = "(NOT c.capabilities ? 'catalog_selection' OR c.capabilities->'catalog_selection'->'departure_ids' ? d.external_id)"
-ROUTE_FIELDS = """p.id,p.code,p.effective_name AS name,p.status,p.days,p.gateway,
+ROUTE_FIELDS = """p.id,p.code,p.effective_name AS name,p.status,p.effective_days AS days,p.effective_gateway AS gateway,
+ p.days AS source_days,p.gateway AS source_gateway,p.days_origin,p.gateway_origin,p.facts_version,
  p.effective_description AS description,p.name_origin,p.description_origin,p.version,p.display_version,
  p.observed_at,p.connection_id,c.name AS source_name,c.connector_type,
  c.capabilities->'catalog_selection'->>'note' AS selection_note,

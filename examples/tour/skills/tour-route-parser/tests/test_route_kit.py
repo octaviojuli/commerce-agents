@@ -141,6 +141,11 @@ def test_checker_drops_invented_names_and_numbers(tmp_path):
     codes = {i["code"] for i in day.issues}
     assert {"NAME_NOT_IN_SOURCE", "ATTRIBUTE_UNSUPPORTED", "NUMBER_NOT_IN_SOURCE"} <= codes
     assert lighthouse in cited and museum in cited
+    # A node's issues carry its name: `path` indexes the model's list, not the kept one.
+    by_code = {(i["code"], i.get("subject")) for i in day.issues}
+    assert ("NAME_NOT_IN_SOURCE", "虚构不存在的塔") in by_code
+    assert ("ATTRIBUTE_UNSUPPORTED", "ACME 灯塔") in by_code
+    assert ("NUMBER_NOT_IN_SOURCE", "ACME 博物馆") in by_code
 
 
 def test_clean_name_strips_visit_and_ticket_notes():

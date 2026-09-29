@@ -6,10 +6,12 @@ import {RouteDetail} from "web-shared/route-detail";
 import {WarehouseClient,message} from "../lib/api";
 import {DocumentEvidence} from "./documents";
 import {Field} from "./common";
+import {buildCards,reconcileCards,type Card,type Context} from "../lib/route-review";
+import {RouteKitReview,type Choice} from "./route-kit-review";
 
 type Row=Record<string,any>;
-type Mode="read"|"edit"|"customer";
-const modeLabels:Record<Mode,string>={read:"阅读与原文对照",edit:"整理行程",customer:"已发布客户预览"};
+type Mode="review"|"read"|"edit"|"customer";
+const modeLabels:Record<Mode,string>={review:"审核",read:"阅读行程",edit:"高级编辑",customer:"已发布客户预览"};
 const clone=(x:Row)=>structuredClone(x);
 const names:Record<string,string>={title:"标题",subtitle:"副标题",days_count:"行程天数",nights:"住宿晚数",depart_city:"出发地",countries:"到访国家",cities:"到访城市",day:"日序",day_end:"连续日期结束日",summary:"当天简述",travel_text:"参考里程与车程",items:"行程节点",name:"名称",local_name:"当地名称",description:"说明",type:"节点类型",visit_mode:"游览方式",ticket:"门票",inclusion:"是否包含",duration_text:"参考时长",price_text:"附件费用",min_participants:"项目最低人数",booking_note:"预约说明",includes:"包含内容",children:"子项目",alternative:"替代安排",disclaimer:"限制条件",extra_cost_note:"另付费用",condition:"适用条件",text:"正文",meals:"三餐",breakfast:"早餐",lunch:"午餐",dinner:"晚餐",stay:"住宿",kind:"类型",names:"酒店名称",city:"城市",grade_text:"住宿标准",grade_basis:"标准依据",or_similar:"或同级",check_in_text:"入住说明",room_type:"房型",consecutive_nights:"连住晚数",status:"状态",notes:"当日提示",transport:"交通",mode:"交通类型",from_place:"出发地",to_place:"目的地",distance_text:"里程",service_no:"航班或车次",times_text:"参考起降时间",reference:"参考班次",departure_local_time:"当地出发时间",arrival_local_time:"当地到达时间",arrival_day_offset:"到达跨日数",clock_text:"参考时间",part_of_day:"时段",highlight:"特别安排",spot_label:"原文机位标识",shopping_kind:"购物类别",categories:"品类",services:"用车与导游",coach:"用车",guide:"导游",note:"说明",port_call:"邮轮靠港",port:"港口",arrive_text:"到港",depart_text:"离港",all_aboard_text:"最迟返船",day_kind:"行程日类型",cover_facts:"吃住行概览",selling_points:"卖点标签",highlights:"行程亮点",prices:"附件参考价格",label:"价格名称",amount:"金额",currency:"币种",basis:"计价单位",audience:"适用人群",category:"分类",inclusions:"费用包含",exclusions:"费用不含",shopping:"购物点",optional_items:"自费项目",policies:"费用与退改",single_room:"单房差",child:"儿童",senior:"老人",tips:"服务费",cancellation:"退改",deposit:"定金",notices:"温馨提示",applicability:"行程适用范围",start:"适用开始日期",end:"适用结束日期",departure_cities:"适用出发城市",version_label:"版本名称",formation:"成团要求",minimum_travelers:"最低成团人数",failure_action:"不成团处理",booking_deadline:"收客截止说明",traveler_requirements:"报名限制",minimum_age:"最低年龄",maximum_age:"最高年龄",bed_policy:"占床要求",conditions:"限制条件",pregnancy:"孕妇",visa:"签证",submission_deadline:"材料截止说明",passport_validity:"护照有效期",insurance:"保险",included:"是否包含",raw:"原文依据",meeting:"集合与联运",location:"地点",time:"时间",domestic_connection:"国内联运",cancellation_tiers:"退改区间",days_before_min:"出发前最少天数",days_before_max:"出发前最多天数",penalty_percent:"扣费比例",penalty_money:"扣费金额",unit:"计费单位",shopping_status:"购物安排状态",reason:"原因"};
 const hidden=new Set(["cite","title_cite","shopping_cite","departure_dates_cite","day_id","node_id","units","overview_units","issues","auto","review"]);
@@ -31,70 +33,116 @@ function Fields({value,name,onChange,shape}:{value:any;name:string;onChange:(x:a
   if(spec.format==="date")return <Field label={names[name]??name}><input className="input" type="date" value={value??""} onChange={e=>onChange(e.target.value||null)}/></Field>;
   return <Field label={names[name]??name}><textarea className="input" rows={String(value??"").length>70?4:2} value={value??""} onChange={e=>onChange(e.target.value)}/></Field>;
 }
-export function RouteKitEditor({api,id,initial,writable,onProposed}:{api:WarehouseClient;id:string;initial:Row;writable:boolean;onProposed:()=>void}) {
-  const [draft,setDraft]=useState(initial),[content,setContent]=useState(clone(initial.content)),[mode,setMode]=useState<Mode>("read"),[day,setDay]=useState(0),[note,setNote]=useState(initial.source_note??""),[issues,setIssues]=useState<Row[]>(initial.issues??[]),[resolutions,setResolutions]=useState<Row[]>(initial.review_resolutions??[]),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[dirty,setDirty]=useState(false),[allowed,setAllowed]=useState(true),[preview,setPreview]=useState<Row|null>(null);
-  const [previewLoading,setPreviewLoading]=useState(false),[previewError,setPreviewError]=useState(""),[focusRequest,setFocusRequest]=useState(0);
-  const modeAnchor=useRef<HTMLDivElement>(null),issueAnchor=useRef<HTMLElement>(null),focusIssues=useRef(false),previewRequest=useRef<AbortController|null>(null);
+export function RouteKitEditor({api,id,initial,writable,publishable=false,onProposed,onPublished}:{api:WarehouseClient;id:string;initial:Row;writable:boolean;publishable?:boolean;onProposed:()=>void;onPublished?:()=>void}) {
+  const [draft,setDraft]=useState(initial),[content,setContent]=useState(clone(initial.content)),[mode,setMode]=useState<Mode>(writable?"review":"read"),[day,setDay]=useState(0),[extra,setExtra]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[dirty,setDirty]=useState(false),[allowed,setAllowed]=useState(true),[preview,setPreview]=useState<Row|null>(null),[done,setDone]=useState<"proposed"|"published"|null>(null);
+  const [previewLoading,setPreviewLoading]=useState(false),[previewError,setPreviewError]=useState("");
+  const [focusRequest,setFocusRequest]=useState(0);
+  const modeAnchor=useRef<HTMLDivElement>(null),previewRequest=useRef<AbortController|null>(null);
   const contentId=useId();
   useEffect(()=>()=>previewRequest.current?.abort(),[]);
   useEffect(()=>{
-    if(!focusRequest)return;
-    const target=focusIssues.current?issueAnchor.current:modeAnchor.current;
-    if(!target)return;
-    const scroller=target.closest<HTMLElement>(".portal-main");
-    const heading=scroller?.querySelector<HTMLElement>(".business-detail-head");
-    // The sticky route title changes height when its name wraps on narrow screens.
+    if(!focusRequest||!modeAnchor.current)return;
+    const target=modeAnchor.current;
+    const heading=target.closest<HTMLElement>(".portal-main")?.querySelector<HTMLElement>(".business-detail-head");
     target.style.scrollMarginTop=`${(heading?.offsetHeight??0)+16}px`;
-    target.scrollIntoView({block:"start",behavior:"instant"});
-    target.focus({preventScroll:true});
+    target.scrollIntoView({block:"start",behavior:"instant"});target.focus({preventScroll:true});
   },[focusRequest]);
-  function showMode(next:Mode,toIssues=false){
-    previewRequest.current?.abort();
-    setPreviewLoading(false);
-    focusIssues.current=toIssues;
-    setMode(next);
-    setFocusRequest(n=>n+1);
-  }
+  function showMode(next:Mode){previewRequest.current?.abort();setPreviewLoading(false);setMode(next);setFocusRequest(n=>n+1);}
   async function customer(){
-    showMode("customer");
-    const request=new AbortController();
-    previewRequest.current=request;
+    showMode("customer");const request=new AbortController();previewRequest.current=request;
     setPreview(null);setPreviewError("");setPreviewLoading(true);
-    try{
-      const result=await api.get<Row>(`/merchant/routes/${id}/customer-preview`,request.signal);
-      if(!request.signal.aborted)setPreview(result);
-    }catch(e){if(!request.signal.aborted)setPreviewError(message(e));}
+    try{const result=await api.get<Row>(`/merchant/routes/${id}/customer-preview`,request.signal);if(!request.signal.aborted)setPreview(result);}
+    catch(e){if(!request.signal.aborted)setPreviewError(message(e));}
     finally{if(!request.signal.aborted)setPreviewLoading(false);}
   }
-  useEffect(()=>{let stopped=false;const abort=new AbortController();async function check(){try{await api.get(`/merchant/routes/${id}/content`,abort.signal);}catch(e){if(!stopped){setAllowed(false);setContent({});setPreview(null);setResolutions([]);setError(message(e));}}}const timer=setInterval(check,30000);window.addEventListener("focus",check);return()=>{stopped=true;abort.abort();clearInterval(timer);window.removeEventListener("focus",check);};},[api,id]);
+  const [savedDecisions,setSavedDecisions]=useState<Row[]>(initial.fact_decisions??[]);
+  const [ctx,setCtx]=useState<Context>({listing:initial.listing,departureDays:initial.departure_days});
+  const [cards,setCards]=useState<Card[]>(()=>buildCards(initial.issues??[],initial.content,initial.content.units??[],{listing:initial.listing,departureDays:initial.departure_days})),[choices,setChoices]=useState<Record<string,Choice>>({});
+  useEffect(()=>{let stopped=false;const abort=new AbortController();async function check(){try{await api.get(`/merchant/routes/${id}/content`,abort.signal);}catch(e){if(!stopped){setAllowed(false);previewRequest.current?.abort();setContent({});setPreview(null);setSavedDecisions([]);setError(message(e));}}}const timer=setInterval(check,30000);window.addEventListener("focus",check);return()=>{stopped=true;abort.abort();clearInterval(timer);window.removeEventListener("focus",check);};},[api,id]);
   const coverUrl=useRouteCover(api,allowed?(mode==="customer"?preview?.content?.cover_asset_id:content.source?.cover_image):null);
-  function edit(next:Row){setContent(next);setDirty(true);setResolutions([]);setNotice("内容已修改，需要重新校验并确认。");}
-  async function save(validate=false){setBusy(true);setError("");try{const r=await api.post<Row>(`/merchant/routes/${id}/content${validate?"/validate":""}`,{expected_revision:draft.revision,expected_source_hash:draft.source_hash,source_kind:draft.source_kind,source_note:note,content,review_resolutions:resolutions});setIssues(r.issues);if(!validate){setDraft({...draft,revision:r.revision,revision_id:r.revision_id});setContent(r.content);setDirty(false);setNotice("草稿已保存，尚未发布。");}else setNotice(r.issues.length?"请处理或确认以下问题。":"校验通过，可保存后提交审批。");}catch(e){setError(message(e));}finally{setBusy(false);}}
-  async function propose(){setBusy(true);try{await api.post("/route-content-proposals",{target_id:id,revision_id:draft.revision_id,note});onProposed();}catch(e){setError(message(e));}finally{setBusy(false);}}
-  async function adopt(){setBusy(true);try{const fresh=await api.get<Row>(`/merchant/routes/${id}/content?include_source=true`);setDraft(fresh);edit(clone(fresh.candidate));setIssues(fresh.issues);setDay(0);}catch(e){setError(message(e));}finally{setBusy(false);}}
+  function edit(next:Row){setContent(next);setDirty(true);setChoices({});setNotice("内容已修改，请重新检查并确认。");}
+  const decisions=(chosen:Record<string,Choice>)=>{
+    const result=new Map(savedDecisions.map(d=>[d.field,d]));
+    for(const c of cards){const o=c.options.find(x=>x.id===chosen[c.key]?.option);const at=ctx.listing?.[o?.decide?.field??"days"];if(o?.decide&&at)result.set(o.decide.field,{field:o.decide.field,upstream:at.upstream,value:o.decide.value,basis:c.facts??[]});}
+    return [...result.values()];
+  };
+  function choose(card:Card,option:string,input?:string){
+    const picked=card.options.find(o=>o.id===option);if(!picked)return;
+    const next=clone(content);picked.apply(next,input);setContent(next);setDirty(true);setNotice("");
+    const chosen={...choices,[card.key]:{option,input}};setChoices(chosen);
+    if(picked.decide)void recheck(chosen,next);
+  }
+  function undo(card:Card){setChoices(old=>Object.fromEntries(Object.entries(old).filter(([k])=>k!==card.key)));}
+  function keepAll(){
+    let next=clone(content);const made:Record<string,Choice>={};
+    for(const card of cards){if(choices[card.key]||card.editOnly||card.facts||card.waiting)continue;const keep=card.options.find(o=>o.keeps);if(keep){keep.apply(next);made[card.key]={option:keep.id};}}
+    setContent(next);setDirty(true);setChoices(old=>({...old,...made}));
+  }
+  function merge(found:Row[],now:Row,chosen=choices,context=ctx){
+    const fresh=buildCards(found,now,now.units??[],context);
+    const next=reconcileCards(cards,fresh,chosen);
+    setCards(next.cards);setChoices(next.choices);
+  }
+
+  const decided=(serverKey:string)=>{const group=cards.filter(c=>c.serverKey===serverKey);return group.length>0&&group.every(c=>choices[c.key]);};
+  const pending=cards.filter(c=>!choices[c.key]);
+  const summary=()=>{const made=cards.filter(c=>choices[c.key]);return `供应商在审核页逐项确认 ${made.length} 项：`+made.map(c=>`${c.where}${c.title}→${c.options.find(o=>o.id===choices[c.key].option)?.label??""}`).join("；")+(extra.trim()?`。补充：${extra.trim()}`:"");};
+  const body=(resolutions:Row[],source_note=summary().slice(0,2000),chosen=choices,doc=content)=>({expected_revision:draft.revision,expected_source_hash:draft.source_hash,source_kind:draft.source_kind,source_note,content:doc,review_resolutions:resolutions,fact_decisions:decisions(chosen)});
+  async function save(){
+    setBusy(true);setError("");
+    try{const r=await api.post<Row>(`/merchant/routes/${id}/content`,body([],extra.trim()||"高级编辑保存草稿"));setDraft({...draft,revision:r.revision,revision_id:r.revision_id});setContent(r.content);setDirty(false);merge(r.issues,r.content);setNotice("草稿已保存，尚未发布。请回到“审核”确认剩余事项。");}
+    catch(e){setError(message(e));}finally{setBusy(false);}
+  }
+  async function recheck(chosen=choices,doc=content){
+    setBusy(true);setError("");
+    try{const r=await api.post<Row>(`/merchant/routes/${id}/content/validate`,body([],undefined,chosen,doc));merge(r.issues,doc,chosen);setNotice(r.issues.filter((i:Row)=>i.code!=="CONTENT_FACT_REVIEW").length?"已重新检查，请处理剩余事项。":"重新检查通过，没有剩余事项。");}
+    catch(e){setError(message(e));}finally{setBusy(false);}
+  }
+  async function finish(){
+    setBusy(true);setError("");setNotice("");
+    try{
+      const note=summary().slice(0,2000);
+      const check=await api.post<Row>(`/merchant/routes/${id}/content/validate`,body([],note));
+      const open=check.issues.filter((i:Row)=>i.code!=="CONTENT_FACT_REVIEW");
+      const blocked=open.filter((i:Row)=>!i.acknowledgeable||!decided(`${i.code}|${i.path}`));
+      if(blocked.length){merge(check.issues,content);setError(`还有 ${blocked.length} 项没有处理，请先完成上面的确认。`);return;}
+      const saying=(i:Row)=>i.code==="CONTENT_FACT_REVIEW"?"供应商已对照原文核对景点、餐宿、费用与限制条件，确认整理内容与原文一致":cards.filter(c=>c.serverKey===`${i.code}|${i.path}`).map(c=>`${c.title}：${c.options.find(o=>o.id===choices[c.key]?.option)?.label}`).join("；");
+      const resolutions=check.issues.filter((i:Row)=>i.acknowledgeable).map((i:Row)=>({code:i.code,path:i.path,basis_hash:i.basis_hash,note:saying(i)}));
+      const saved=await api.post<Row>(`/merchant/routes/${id}/content`,body(resolutions,note));
+      setDraft({...draft,revision:saved.revision,revision_id:saved.revision_id});setContent(saved.content);setDirty(false);
+      if(saved.issues.length){merge(saved.issues,saved.content);setError("内容已保存，但仍有事项未通过检查，请查看。");return;}
+      const change=await api.post<Row>("/route-content-proposals",{target_id:id,revision_id:saved.revision_id,note});
+      if(publishable){
+        await api.post(`/changes/${change.id}/approve`,{payload_hash:change.payload_hash});
+        await api.post(`/changes/${change.id}/apply`);
+        setDone("published");onPublished?.();
+      }else{setDone("proposed");onProposed();}
+    }catch(e){setError(`${message(e)} 已保存的草稿不会丢失，可刷新后继续。`);}finally{setBusy(false);}
+  }
+  async function adopt(){setBusy(true);try{const fresh=await api.get<Row>(`/merchant/routes/${id}/content?include_source=true`);setDraft(fresh);setCtx({listing:fresh.listing,departureDays:fresh.departure_days});setSavedDecisions([]);edit(clone(fresh.candidate));setCards(buildCards(fresh.issues,fresh.candidate,fresh.candidate.units??[],{listing:fresh.listing,departureDays:fresh.departure_days}));setChoices({});setDay(0);}catch(e){setError(message(e));}finally{setBusy(false);}}
   if(!allowed)return <p role="alert" className="notice error">访问权限需要重新确认，请重新进入线路详情。{error}</p>;
+  const blockedBy=draft.parsing?"附件正在处理，暂不能提交":draft.source_changed?"资料已有新版本，请先采用新候选稿":pending.length?`还有 ${pending.length} 项没有确认`:"";
   return <section className="stack route-kit-workspace"><header className="panel stack"><h2>线路内容工作台</h2><p>{draft.published_review_mode==="test_auto"?"测试自动发布 · 未人工审核":draft.published_review_mode==="human"?"已有人工审核发布内容":"结构化整理稿 · 待人工复核"}　草稿 {draft.revision} 版 / 已发布 {draft.content_version} 版{dirty?" · 有未保存修改":""}</p></header>
-    {(draft.test_publication||draft.asset_id)&&<details className="panel route-review-reference"><summary><span>审核信息与原文件</span><span className="muted">{issues.length?`${issues.length} 项待处理 · 展开查看`:"展开查看"}</span></summary><div className="stack">
-      {draft.test_publication&&<section className="stack"><h3>测试发布评估</h3><p>有效内容覆盖率 <strong>{draft.test_publication.coverage_percent}%</strong> / 门槛 85%</p><p className="muted">直接引用原文的单元比例；不把推断续句和原样挂入算作整理完成，不代表事实准确率。</p><p>{draft.test_publication.enabled?"测试自动发布已启用":"自动发布未在当前账号启用"} · {draft.test_publication.eligible?"已达到发布门槛":"保留草稿"}</p>{draft.test_publication.blockers?.map((x:Row,i:number)=><p key={i} className="notice warning">{x.message}</p>)}</section>}
-      {draft.asset_id&&<DocumentEvidence api={api} asset={draft.asset_id} name={content.source?.file_name} hash={content.source?.sha256} version={draft.asset_product_version} parser={content.source?.parser}/>}
-    </div></details>}
     <div ref={modeAnchor} tabIndex={-1} className="panel stack route-mode-bar">
-      <div className="route-mode-buttons" role="group" aria-label="行程工作模式">
-        {(["read",...(writable?["edit"]:[]),"customer"] as Mode[]).map(value=><button key={value} type="button" className="btn" aria-label={modeLabels[value]} aria-pressed={mode===value} aria-controls={contentId} onClick={()=>value==="customer"?customer():showMode(value)}>{modeLabels[value]}{value==="customer"&&!draft.published_review_mode&&!preview?.published&&<span className="route-mode-badge">未发布</span>}</button>)}
-      </div>
-      <div className="route-mode-help"><div><strong>当前：{modeLabels[mode]}</strong><p>{mode==="read"?"点击行程中的“对照原文”或“查看当天原文”，展开对应依据。":mode==="edit"?"下方可直接编辑。修改后请保存草稿，发布仍需审批。":"这里只展示已发布版本，不包含尚未发布的修改。"}</p></div>{mode==="edit"&&issues.length>0&&<button type="button" className="link" onClick={()=>showMode("edit",true)}>查看 {issues.length} 项待处理</button>}</div>
+      <div className="route-mode-buttons" role="group" aria-label="行程工作模式">{([...(writable?["review"]:[]),"read",...(writable?["edit"]:[]),"customer"] as Mode[]).map(value=><button key={value} type="button" className="btn" aria-label={modeLabels[value]} aria-pressed={mode===value} aria-controls={contentId} onClick={()=>value==="customer"?customer():showMode(value)}>{modeLabels[value]}{value==="review"&&pending.length>0&&<span className="route-mode-badge">{pending.length} 项</span>}{value==="customer"&&!draft.published_review_mode&&!preview?.published&&<span className="route-mode-badge">未发布</span>}</button>)}</div>
+      <div className="route-mode-help"><div><strong>当前：{modeLabels[mode]}</strong><p>{mode==="review"?"对照原文逐项确认，下方可提交审批或明确确认发布。":mode==="edit"?"修改后保存草稿，再回到审核确认；保存不会发布。":mode==="read"?"查看当前整理稿及其原文依据。":"这里只展示已发布版本，不包含尚未发布的修改。"}</p></div></div>
     </div>
-    {draft.parsing&&<p className="notice">附件正在处理或需要重试，当前保留上一版内容供对照。</p>}{draft.source_changed&&<p className="notice warning">资料已有新版本，请对照后采用新候选稿。<button disabled={busy||dirty} onClick={adopt}>采用新候选稿</button></p>}
+    {draft.test_publication&&<details className="panel route-review-reference"><summary>测试发布评估 · 展开查看</summary><div className="stack"><p>有效内容覆盖率 <strong>{draft.test_publication.coverage_percent}%</strong> / 门槛 85%</p><p className="muted">直接引用原文的单元比例；不把推断续句和原样挂入算作整理完成，不代表事实准确率。</p><p>{draft.test_publication.enabled?"测试自动发布已启用":"自动发布未在当前账号启用"} · {draft.test_publication.eligible?"已达到发布门槛":"保留草稿"}</p>{draft.test_publication.blockers?.map((x:Row,i:number)=><p key={i} className="notice warning">{x.message}</p>)}</div></details>}
+    {draft.parsing&&<p className="notice">附件正在处理或需要重试，当前保留上一版内容供对照。</p>}{draft.source_changed&&<p className="notice warning">资料已有新版本，请对照后采用新候选稿。<button className="btn" disabled={busy||dirty} onClick={adopt}>采用新候选稿</button></p>}
     {error&&<p className="notice error" role="alert">{error}</p>}{notice&&<p className="notice" role="status">{notice}</p>}
+    {(["days","gateway"] as const).map(k=>{const f=draft.listing?.[k];const name=k==="days"?"行程天数":"出发口岸";return f&&(f.state==="active"?<p key={k} className="notice" role="status">{name}“{String(f.effective)}”是云仓核定值，上游登记为“{String(f.upstream)}”。</p>:f.state==="stale"?<p key={k} className="notice warning" role="status">此前核定的{name}已失效：上游现在是“{String(f.upstream)}”。下次审核会重新提问。</p>:null);})}
+    {savedDecisions.map(d=><p key={d.field} className="notice" role="status">待发布核定：{d.field==="days"?"行程天数":"出发口岸"}由“{String(d.upstream??"未提供")}”改为“{String(d.value)}”。{writable&&<button className="link" disabled={busy} onClick={()=>{setSavedDecisions(old=>old.filter(x=>x.field!==d.field));setDirty(true);setNotice("已撤销该核定，请重新检查。");}}>撤销此核定</button>}</p>)}
+    {done&&<p className="notice" role="status">{done==="published"?"已发布。顾问现在可以看到这条线路的最新行程。":"已提交，请到审批中心确认发布。"}</p>}
+    {draft.asset_id&&<details className="panel"><summary>原文件与来源记录</summary><DocumentEvidence api={api} asset={draft.asset_id} name={content.source?.file_name} hash={content.source?.sha256} version={draft.asset_product_version} parser={content.source?.parser}/></details>}
     <div id={contentId} role="region" aria-label={`${modeLabels[mode]}内容`} className="stack" aria-busy={mode==="customer"&&previewLoading}>
+    {mode==="review"&&writable&&!done&&<fieldset className="document-fieldset" disabled={busy||!!draft.parsing}><RouteKitReview cards={cards} choices={choices} onChoose={choose} onKeepAll={keepAll} onJump={(d,card)=>{if(card)undo(card);if(d){const at=content.days.findIndex((x:Row)=>x.day===d);if(at>=0)setDay(at);}showMode("edit");}}
+      footer={<div className="panel stack review-submit"><details><summary>补充说明（可选）</summary><input className="input" aria-label="补充说明" value={extra} maxLength={500} onChange={e=>setExtra(e.target.value)} placeholder="例如：已电话向供应商确认第 5 天用餐"/></details><div className="row between"><span className="muted">{blockedBy||"点击即表示已对照原文核对景点、餐宿、费用与限制条件。"}</span><div className="row"><button className="btn" disabled={busy} onClick={()=>recheck()}>重新检查</button><button className="btn primary" disabled={busy||!!blockedBy} onClick={finish}>{busy?"处理中…":publishable?"确认无误并发布":"确认无误并提交审批"}</button></div></div></div>}/></fieldset>}
     {mode==="read"&&<RouteDetail content={content} review coverUrl={coverUrl}/>}
-    {mode==="customer"&&(previewLoading?<p className="notice" role="status">正在读取已发布行程…</p>:previewError?<section className="panel stack"><p role="alert" className="notice error">预览读取失败：{previewError}</p><button type="button" className="btn" onClick={customer}>重试预览</button></section>:preview?.published?<RouteDetail content={preview.content} coverUrl={coverUrl}/>:<section className="panel stack route-preview-empty"><h3>这条线路尚未发布</h3><p>完成行程复核并通过发布审批后，才会显示客户版本。当前整理稿可在“阅读与原文对照”中查看。</p><div className="row"><button type="button" className="btn" onClick={()=>showMode("read")}>查看当前整理稿</button>{writable&&<button type="button" className="btn primary" onClick={()=>showMode("edit")}>去整理行程</button>}</div></section>)}
+    {mode==="customer"&&(previewLoading?<p className="notice" role="status">正在读取已发布行程…</p>:previewError?<section className="panel stack"><p role="alert" className="notice error">预览读取失败：{previewError}</p><button type="button" className="btn" onClick={customer}>重试预览</button></section>:preview?.published?<RouteDetail content={preview.content} coverUrl={coverUrl}/>:<section className="panel stack route-preview-empty"><h3>这条线路尚未发布</h3><p>完成行程复核并通过发布审批后，才会显示客户版本。</p><div className="row"><button type="button" className="btn" onClick={()=>showMode("read")}>查看当前整理稿</button>{writable&&<button type="button" className="btn primary" onClick={()=>showMode("review")}>去审核行程</button>}</div></section>)}
     {mode==="edit"&&writable&&<fieldset disabled={busy||!!draft.parsing} className="stack document-fieldset"><div className="row"><label>选择日期 <select className="input" value={day} onChange={e=>setDay(Number(e.target.value))}>{content.days.map((d:Row,i:number)=><option key={d.day_id??i} value={i}>D{d.day} · {d.title}</option>)}</select></label><button className="btn" onClick={()=>{const c=clone(content);c.days.push({day_id:crypto.randomUUID(),day:c.days.length+1,day_end:null,title:"",summary:"",cities:[],countries:[],travel_text:"",day_kind:"regular",items:[node()],meals:{breakfast:{status:"unknown",text:"",cite:[]},lunch:{status:"unknown",text:"",cite:[]},dinner:{status:"unknown",text:"",cite:[]}},stay:{kind:"unknown",names:[],city:"",grade_text:"",grade_basis:"unknown",room_type:"",consecutive_nights:null,or_similar:false,check_in_text:"",cite:[]},notes:[],units:[],overview_units:[],status:"extracted",issues:[],title_cite:[]});edit(c);setDay(c.days.length-1);}}>＋ 添加一天</button></div>
       {content.days[day]&&<div className="panel stack"><h3>第 {content.days[day].day} 天</h3><Fields name="day" value={content.days[day]} onChange={value=>{const c=clone(content);c.days[day]=value;edit(c);}}/><button className="link" onClick={()=>{const c=clone(content);c.days.splice(day,1);edit(c);setDay(Math.max(0,day-1));}}>移除此日</button></div>}
       <details className="panel"><summary>线路概览、价格、费用与报名条件</summary><div className="stack">{["title","subtitle","days_count","nights","depart_city","countries","cover_facts","selling_points","highlights","prices","inclusions","exclusions","shopping_status","shopping","optional_items","policies","notices","applicability","formation","traveler_requirements","meeting","cancellation_tiers"].map(k=><Fields key={k} name={k} value={content[k]} onChange={value=>edit({...content,[k]:value})}/>)}</div></details>
-      <section ref={issueAnchor} tabIndex={-1} className="panel stack route-review-issues"><h3>待处理与待确认事项</h3>{issues.map((item,i)=><div key={i} className="panel"><p>{item.message}</p>{item.acknowledgeable&&<Resolution item={item} confirmed={resolutions.some(r=>r.code===item.code&&r.path===item.path&&r.basis_hash===item.basis_hash)} onConfirm={r=>{setResolutions(old=>[...old.filter(x=>x.code!==r.code||x.path!==r.path),r]);setDirty(true);}}/>}</div>)}{!issues.length&&<p>当前校验通过。</p>}</section>
-      <Field label="整理与复核说明"><textarea className="input" value={note} maxLength={2000} onChange={e=>{setNote(e.target.value);setDirty(true);}}/></Field><div className="row"><button className="btn primary" disabled={!note.trim()} onClick={()=>save()}>保存草稿</button><button className="btn" disabled={!note.trim()} onClick={()=>save(true)}>重新校验</button><button className="btn" disabled={dirty||!draft.revision_id||issues.length>0||!note.trim()} onClick={propose}>提交发布审批</button></div><p className="muted">仅写入云仓。人工审批通过后才向顾问展示。</p></fieldset>}
+      <div className="row"><button className="btn primary" disabled={busy||!dirty} onClick={save}>保存草稿</button><button className="btn" onClick={()=>showMode("review")}>回到审核</button></div><p className="muted">高级编辑保存后回到“审核”确认剩余事项并发布；保存草稿不会改变已发布内容。</p></fieldset>}
     </div>
   </section>;
 }
-function Resolution({item,onConfirm,confirmed}:{item:Row;onConfirm:(r:Row)=>void;confirmed:boolean}){const [note,setNote]=useState("");return <div className="stack"><Field label="对照原文后的处理依据"><input className="input" value={note} maxLength={1000} onChange={e=>setNote(e.target.value)}/></Field><button className="btn" disabled={!note.trim()||confirmed} onClick={()=>onConfirm({code:item.code,path:item.path,basis_hash:item.basis_hash,note})}>{confirmed?"已记录，保存时复核":"确认此项"}</button></div>;}

@@ -290,6 +290,10 @@ function Workbench({
     setNotice("变更已提交。请在审批中心核对内容后应用。");
     setView("approvals");
   }, [refresh,setView]);
+  const published = useCallback(() => {
+    refresh();
+    setNotice("线路内容已发布。");
+  }, [refresh]);
   const mayInventory = organization.roles.some((role) =>
     ["supplier_admin", "inventory_manager"].includes(role),
   );
@@ -397,7 +401,7 @@ function Workbench({
         )}
         {supplier && ["routes","departures","orders"].includes(view) && (
           <Business api={api} location={segment ? location : scoped("/routes",organization.id)} revision={revision}
-            onProposed={proposed} writable={organization.roles.some(role=>["supplier_admin","product_editor"].includes(role))}
+            onProposed={proposed} onPublished={published} publishable={organization.roles.includes("supplier_admin")} writable={organization.roles.some(role=>["supplier_admin","product_editor"].includes(role))}
             documents={organization.roles.some(role=>["supplier_admin","product_editor","auditor"].includes(role))}
             orders={organization.roles.includes("supplier_admin")} />
         )}

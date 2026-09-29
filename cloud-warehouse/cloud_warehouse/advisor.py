@@ -251,11 +251,11 @@ class WarehouseAdvisorBackend(StorefrontBackend):
         # Only fixed SQL fragments are selected here; all input values stay bound.
         # Distinct filter shapes can reuse plans without optional-parameter ORs.
         predicates = ["p.connection_id=c.id", "p.status='published'"]
-        for key, predicate in (("after", "p.id>:after"), ("days", "p.days=:days")):
+        for key, predicate in (("after", "p.id>:after"), ("days", "p.effective_days=:days")):
             if parameters[key] is not None:
                 predicates.append(predicate)
         if parameters["city"] != "":
-            predicates.append("p.gateway=:city")
+            predicates.append("p.effective_gateway=:city")
         search_join = search.JOIN if parameters["excluded_patterns"] else ""
         if parameters["excluded_patterns"]:
             predicates.append(travel_search.EXCLUDE)
@@ -283,7 +283,7 @@ class WarehouseAdvisorBackend(StorefrontBackend):
                     # Keep filters/cursor inside that window and RLS on every table.
                     text(f"""SELECT candidate.*,c.name AS source_name,warehouse_supplier_name(c.supplier_org_id) AS supplier_name
                 FROM supplier_connection c CROSS JOIN LATERAL (
-                SELECT p.id,p.supplier_org_id,p.effective_name AS name,p.days,p.gateway,p.effective_description AS description,p.name_origin,p.description_origin,p.version
+                SELECT p.id,p.supplier_org_id,p.effective_name AS name,p.effective_days AS days,p.effective_gateway AS gateway,p.effective_description AS description,p.name_origin,p.description_origin,p.version
                 FROM product_listing p {search_join} WHERE {where}
                 ORDER BY p.id LIMIT :limit) candidate
                 ORDER BY candidate.id LIMIT :limit"""),
@@ -440,7 +440,7 @@ class WarehouseAdvisorBackend(StorefrontBackend):
         return (
             conn.execute(
                 text(f"""SELECT {outside} AS outside_rank,d.id,d.product_id,d.supplier_org_id,d.code,d.depart_date,d.return_date,
-          d.version,d.observed_at,d.sales_paused,d.local_booking_deadline,p.effective_name AS name,p.name_origin,p.days AS route_days,o.id AS offer_id,c.name AS source_name,warehouse_supplier_name(c.supplier_org_id) AS supplier_name,
+          d.version,d.observed_at,d.sales_paused,d.local_booking_deadline,p.effective_name AS name,p.name_origin,p.effective_days AS route_days,o.id AS offer_id,c.name AS source_name,warehouse_supplier_name(c.supplier_org_id) AS supplier_name,
           COALESCE(c.capabilities->>'business_timezone','Asia/Shanghai') AS business_timezone,
           CASE WHEN i.id IS NOT NULL THEN i.total-i.sold-i.held-i.blocked
             WHEN d.availability_expires_at>now() THEN d.available_seats END AS available,
@@ -485,7 +485,7 @@ class WarehouseAdvisorBackend(StorefrontBackend):
             row = (
                 conn.execute(
                     text(
-                        "SELECT p.id,p.supplier_org_id,p.effective_name AS name,p.effective_description AS description,p.name_origin,p.description_origin,p.days,p.gateway,p.version,c.name AS source_name,warehouse_supplier_name(c.supplier_org_id) AS supplier_name FROM product_listing p JOIN supplier_connection c ON c.id=p.connection_id WHERE p.id=:id AND p.status='published'"
+                        "SELECT p.id,p.supplier_org_id,p.effective_name AS name,p.effective_description AS description,p.name_origin,p.description_origin,p.effective_days AS days,p.effective_gateway AS gateway,p.version,c.name AS source_name,warehouse_supplier_name(c.supplier_org_id) AS supplier_name FROM product_listing p JOIN supplier_connection c ON c.id=p.connection_id WHERE p.id=:id AND p.status='published'"
                     ),
                     {"id": route_id},
                 )

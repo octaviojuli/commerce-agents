@@ -74,7 +74,7 @@ def query_sql(query, attrs, after, *, count=False):
         dates.append("d.depart_date<=:end")
     predicates = ["p.status='published'"]
     if any(key in attrs for key in ("days", "days_min", "days_max")):
-        predicates += ["p.days BETWEEN :low AND :high"]
+        predicates += ["p.effective_days BETWEEN :low AND :high"]
     params = {
         **travel_search.parameters(query),
         "city": attrs.get("depart_city", ""),
@@ -110,7 +110,7 @@ def query_sql(query, attrs, after, *, count=False):
     if params["query"]:
         predicates.append(travel_search.MATCH)
     city = (
-        "CASE WHEN p.gateway IS NULL OR p.gateway='' THEN 'unknown' WHEN p.gateway=:city THEN 'ok' ELSE 'conflict' END"
+        "CASE WHEN p.effective_gateway IS NULL OR p.effective_gateway='' THEN 'unknown' WHEN p.effective_gateway=:city THEN 'ok' ELSE 'conflict' END"
         if params["city"]
         else "'ok'::text"
     )
@@ -144,7 +144,7 @@ def query_sql(query, attrs, after, *, count=False):
     # LIMIT is applied only after each source uses the same global ranking/cursor.
     # A source's (N+1)th ranked item cannot be in the global first N.
     sql = f"""WITH facts AS NOT MATERIALIZED (
-      SELECT p.id,p.connection_id,p.supplier_org_id,p.effective_name AS name,p.days,p.gateway,
+      SELECT p.id,p.connection_id,p.supplier_org_id,p.effective_name AS name,p.effective_days AS days,p.effective_gateway AS gateway,
         p.effective_description AS description,p.name_origin,p.description_origin,p.version,
         next_departure.next_date,-{example_score} AS example_rank,{city} AS city_match,{shopping} AS shopping_match
       FROM product_listing p {join} {document}

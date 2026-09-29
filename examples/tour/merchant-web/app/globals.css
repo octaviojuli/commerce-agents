@@ -570,3 +570,31 @@ tbody tr:last-child td {
 .itinerary-content-blocks { max-width:76ch; }
 .itinerary-content-block h4 { margin:0 0 10px; }
 @media(max-width:560px) { .itinerary-travel-card>div { grid-template-columns:1fr; gap:4px; } }
+
+.review-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;display:flex;flex-direction:column;gap:12px}
+.review-card.active{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.review-card.done{padding:10px 16px;background:var(--chrome)}
+.review-card h3{margin:0;font-size:16px}
+.review-where{display:inline-block;border-radius:4px;background:var(--well);padding:1px 8px;font-size:12px;font-weight:600;color:var(--ink-2)}
+.review-question{margin:0;font-size:15px;color:var(--ink)}
+.review-source{border-left:3px solid var(--line-strong);background:var(--chrome);border-radius:0 8px 8px 0;padding:8px 12px;max-height:240px;overflow:auto}
+.review-source mark{background:var(--warn-soft);color:inherit;border-radius:2px;padding:0 1px}
+.review-line{margin:2px 0;overflow-wrap:anywhere}
+.review-page{margin-right:8px;font-size:11px;color:var(--ink-faint)}
+.review-tag{display:block;font-size:11px;font-weight:700;color:var(--ink-soft);margin-bottom:2px}
+.review-wide summary{cursor:pointer;color:var(--accent-ink);font-size:13px}
+.review-options{display:flex;flex-direction:column;gap:8px}
+.review-option{display:flex;flex-direction:column;gap:6px}
+.review-choice{text-align:left;padding:11px 14px;font-size:14px;min-height:44px}
+.review-choice.picked{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.review-progress{height:6px;border-radius:3px;background:var(--well);overflow:hidden}
+.review-progress span{display:block;height:100%;background:var(--ok);transition:width .2s}
+.review-submit{position:sticky;bottom:12px;box-shadow:var(--shadow-lg)}
+@media(max-width:520px){.review-card{padding:14px}.review-choice{width:100%}}
+.review-submit{padding:10px 16px;gap:8px}
+.review-submit summary{cursor:pointer;font-size:13px;color:var(--accent-ink)}
+.review-submit details[open] .input{margin-top:6px}
+.review-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:0}
+.review-facts div{background:var(--chrome);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+.review-facts dt{font-size:11px;font-weight:700;color:var(--ink-soft)}
+.review-facts dd{margin:2px 0 0;font-size:15px;font-weight:600}

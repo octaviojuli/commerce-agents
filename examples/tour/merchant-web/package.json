@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 3104",
     "build": "next build",
-    "start": "next start -p 3104"
+    "start": "next start -p 3104",
+    "test:review": "node --test tests/route-review.test.cjs"
   },
   "dependencies": {
     "next": "^16.3.0",

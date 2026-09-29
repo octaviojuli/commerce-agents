@@ -44,7 +44,7 @@ def _directions(conn):
     today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
     rows = (
         conn.execute(
-            text("""SELECT p.id,p.effective_name AS name,p.days,d.depart_date,
+            text("""SELECT p.id,p.effective_name AS name,p.effective_days AS days,d.depart_date,
       price.schedule#>>'{market,adult}' AS adult_price,price.schedule->>'currency' AS currency
       FROM product_listing p JOIN departure d ON d.product_id=p.id
       LEFT JOIN LATERAL (

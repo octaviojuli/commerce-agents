@@ -43,8 +43,8 @@ def select_publication(conn, current, departure_id):
         return None if has_scope else current
     departure = (
         conn.execute(
-            text("""SELECT d.depart_date,d.return_date,p.gateway FROM departure d
-      JOIN supplier_product p ON p.id=d.product_id WHERE d.id=:id AND p.id=:product"""),
+            text("""SELECT d.depart_date,d.return_date,p.effective_gateway AS gateway,p.days_origin,p.days AS upstream_days,p.effective_days
+      FROM departure d JOIN product_listing p ON p.id=d.product_id WHERE d.id=:id AND p.id=:product"""),
             {"id": departure_id, "product": current["product_id"]},
         )
         .mappings()
@@ -67,18 +67,24 @@ def select_publication(conn, current, departure_id):
             if departure["return_date"]
             else None
         )
-        if duration is not None and duration != day_count(item["body"]):
+        # The decision covers the overridden source span only for content with the decided days.
+        decided_span = (
+            departure["days_origin"] == "warehouse_decision"
+            and duration == departure["upstream_days"]
+            and day_count(item["body"]) == departure["effective_days"]
+        )
+        if duration is not None and duration != day_count(item["body"]) and not decided_span:
             continue
         return item
     return None
 
 
-def departure_durations(conn, product_id, doc):
-    """Return (id, inclusive days, start, end) for the same publication-check scope."""
+def departure_durations(conn, product_id, doc, *, gateway=None):
+    """Return durations in the publication scope, including a pending gateway decision."""
     scope = doc.applicability
     rows = conn.execute(
-        text("""SELECT d.id,(d.return_date-d.depart_date+1) AS days,d.depart_date,d.return_date,p.gateway
-      FROM departure d JOIN supplier_product p ON p.id=d.product_id WHERE p.id=:id AND d.status='published'
+        text("""SELECT d.id,(d.return_date-d.depart_date+1) AS days,d.depart_date,d.return_date,p.effective_gateway AS gateway
+      FROM departure d JOIN product_listing p ON p.id=d.product_id WHERE p.id=:id AND d.status='published'
       AND (CAST(:start AS date) IS NULL OR d.depart_date>=:start)
       AND (CAST(:end AS date) IS NULL OR d.depart_date<=:end)
       ORDER BY d.depart_date,d.return_date,d.id"""),
@@ -87,5 +93,6 @@ def departure_durations(conn, product_id, doc):
     return [
         (row["id"], row["days"], row["depart_date"], row["return_date"])
         for row in rows
-        if not scope.departure_cities or row["gateway"] in scope.departure_cities
+        if not scope.departure_cities
+        or (gateway if gateway is not None else row["gateway"]) in scope.departure_cities
     ]

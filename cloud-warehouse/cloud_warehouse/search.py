@@ -7,7 +7,7 @@ from .integrations import canonical
 
 # All consumers use aliases p (product_listing) and s (product_search).
 DOCUMENT = (
-    "lower(p.effective_name||' '||p.name||' '||p.code||' '||COALESCE(p.gateway,'')||' '||p.tags_search||' '||"
+    "lower(p.effective_name||' '||p.name||' '||p.code||' '||COALESCE(p.gateway,'')||' '||COALESCE(p.effective_gateway,'')||' '||p.tags_search||' '||"
     + destination_catalog.SOURCE_TEXT
     + "||' '||"
     + destination_catalog.REVIEWED_TEXT

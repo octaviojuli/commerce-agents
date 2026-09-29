@@ -262,9 +262,14 @@ class DayChecker:
         self.day_text = "\n".join(text_by_id[i] for i in allowed)
         self.issues: list[dict] = []
         self.cited: set[int] = set()
+        self.subject = ""
 
     def issue(self, code, path, detail=""):
-        self.issues.append({"code": code, "path": path, "detail": detail[:160]})
+        entry = {"code": code, "path": path, "detail": detail[:160]}
+        if self.subject:
+            # `path` indexes the model's list before filtering; the name is what finds the node.
+            entry["subject"] = self.subject[:80]
+        self.issues.append(entry)
 
     def cites(self, cite) -> list[int]:
         kept = [c for c in cite or [] if c in self.allowed]
@@ -401,6 +406,20 @@ class DayChecker:
             node.review.append("名称附近提到自费或另付，请核对是否为自费项目")
 
     def node(
+        self,
+        node: ChildNode | Node,
+        path: str,
+        named: bool,
+        context: str = "",
+        parent_type: str = "",
+    ) -> bool:
+        outer, self.subject = self.subject, clean_name(node.name) or node.name
+        try:
+            return self._node(node, path, named, context, parent_type)
+        finally:
+            self.subject = outer
+
+    def _node(
         self,
         node: ChildNode | Node,
         path: str,

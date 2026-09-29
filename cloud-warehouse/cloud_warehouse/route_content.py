@@ -75,9 +75,9 @@ def candidate(body, *, normalize_titles=False):
     return doc
 
 
-def issues(doc, departure_days=(), resolutions=()):
+def issues(doc, departure_days=(), resolutions=(), listing=None):
     if kit.is_kit(doc):
-        return kit.issues(doc, departure_days, resolutions)
+        return kit.issues(doc, departure_days, resolutions, listing)
     result = []
 
     def issue(path, code, message):

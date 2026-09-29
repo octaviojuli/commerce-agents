@@ -66,7 +66,7 @@ class WarehouseMerchantBackend(MerchantBackend):
         products = (
             conn.execute(
                 text(
-                    "SELECT id,effective_name AS name,status,effective_description AS description,name_origin,description_origin,name_override,description_override,display_version,version,days,gateway,(SELECT connector_type FROM supplier_connection c WHERE c.id=p.connection_id) AS connector_type FROM product_listing p WHERE supplier_org_id=warehouse_org_id() AND EXISTS(SELECT 1 FROM supplier_connection sc WHERE sc.id=p.connection_id AND (NOT sc.capabilities ? 'catalog_selection' OR sc.capabilities->'catalog_selection'->'route_ids' ? p.external_id)) AND (CAST(:ids AS uuid[]) IS NULL OR id=ANY(CAST(:ids AS uuid[]))) ORDER BY id"
+                    "SELECT id,effective_name AS name,status,effective_description AS description,name_origin,description_origin,name_override,description_override,display_version,version,effective_days AS days,effective_gateway AS gateway,(SELECT connector_type FROM supplier_connection c WHERE c.id=p.connection_id) AS connector_type FROM product_listing p WHERE supplier_org_id=warehouse_org_id() AND EXISTS(SELECT 1 FROM supplier_connection sc WHERE sc.id=p.connection_id AND (NOT sc.capabilities ? 'catalog_selection' OR sc.capabilities->'catalog_selection'->'route_ids' ? p.external_id)) AND (CAST(:ids AS uuid[]) IS NULL OR id=ANY(CAST(:ids AS uuid[]))) ORDER BY id"
                 ),
                 {"ids": product_ids},
             )

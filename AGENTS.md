@@ -6,6 +6,8 @@ paths each, five vertical examples, and a Codex plugin.
 
 ## Layout
 
+- `0048_product_facts` extends the deployed `0047_supplier_name_scope` chain. `product_facts.py` records source-fenced days/gateway decisions inside content publication; customer reads use effective fields, originals remain immutable. `route-kit-review.tsx` presents explicit supplier review answers and the approval center shows decision values and evidence.
+
 - `cloud_warehouse.goods_stock` and `goods_stock_sync` implement an explicitly provisioned multi-supplier test feed: one bounded POST/query scan, isolated supplier catalogs, source-owned remaining seats and CNY reference prices. The registry binds each supplier ID; reference prices read fresh snapshots under the server-bound actor and source, never bypassing RLS or claiming complete fees. The operator script provisions non-login sync identities separately from runtime refresh. Relative attachments remain unverified source paths, without automatic publication.
 
 - `cloud-warehouse/`: PostgreSQL-backed organization-scoped travel business services, supplier synchronization, migrations, and integration tests; `docs/cloud-warehouse/` holds its design and completion audit.

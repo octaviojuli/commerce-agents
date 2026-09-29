@@ -52,6 +52,7 @@ from . import (
     price_books,
     pricing,
     product_display,
+    product_facts,
     quote_shares,
     quotes,
     route_editor,
@@ -455,6 +456,10 @@ def create_app(
     @app.get("/v1/route-content-revisions/{revision_id}")
     def route_content_revision(revision_id: UUID, actor: Annotated[Principal, Depends(principal)]):
         return route_editor.revision_detail(runtime, actor, revision_id)
+
+    @app.get("/v1/merchant/product-fact-conflicts")
+    def product_fact_conflicts(actor: Annotated[Principal, Depends(principal)]):
+        return {"items": product_facts.conflicts(runtime, actor)}
 
     @app.get("/v1/merchant/routes/{product_id}/customer-preview")
     def route_customer_preview(product_id: UUID, actor: Annotated[Principal, Depends(principal)]):

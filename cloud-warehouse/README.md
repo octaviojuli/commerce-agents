@@ -382,6 +382,16 @@ PYTHONPATH=examples warehouse document-worker --organization <supplier_uuid> --u
 
 顾问原 `get_product_details` 只附带当前已发布行程与文档版本，超过展示长度明确提示截短。商户工作台的“线路文档”接通文件历史分页、上传、解析状态与重试、完整行程编辑、字段修订对照和原文件下载。审批中心核对文件来源与产品版本；发布详情显示人工修订后的版本，解析原稿单独保留。旧附件迁移尚未接通。
 
+### 天数与出发口岸的云仓核定
+
+上游登记的 `days`、`gateway` 与附件行程、团期日期不一致时，云仓不回写上游，而是在 `supplier_product` 旁记录一条核定（`product_facts.py`，迁移 `0048_product_facts`）。
+
+- 核定随内容修订保存（`route_content_revision.fact_decisions`），发布时在同一事务写入 `days_override` / `gateway_override`，并记下当时的上游值 `*_source_at_override`。
+- `product_listing` 的 `effective_days`、`effective_gateway` 仅在上游仍是核定时的值时采用核定值；上游改为第三个值则回到上游并重新提问，改为与核定值相同则核定自然失效。`days_origin`、`gateway_origin` 标注 `source` 或 `warehouse_decision`。检索、顾问匹配、团期匹配和商户列表都读有效值；附件绑定与 `_source_hash` 仍读上游原值。
+- 有列表数据时，`DAYS_DIFFER_FROM_LISTING` 不能靠备注放行，必须取舍或改内容；核定后，仅当所有不符团期的跨度都等于被覆盖的上游天数时，`DEPARTURE_DURATION_MISMATCH` 才可确认；其他跨度仍拦截。团期只可匹配天数等于核定值的相应已发布行程。`GATEWAY_DIFFERS_FROM_LISTING` 可确认。
+- 待发布的口岸核定按发布后口岸检查行程适用范围，不能因旧口岸不匹配而漏检团期天数。迁移 `0048` 必须接在 `0047_supplier_name_scope` 后，升级时停 API 与所有写入 Worker，再迁移并刷新 runtime 授权；不得替换已有 `0045–0047`。
+- `GET /v1/merchant/product-fact-conflicts` 列出仍在生效或已失效的核定，供交给上游更正。
+
 ### B2B 来源附件
 
 `document_fetches.py` 在目录发布事务中登记 `routeAttachmentUrl` 对应的任务，绑定来源快照、线路与产品版本。网络下载在独立 Worker 中执行，不阻塞团期同步。每个产品版本一个任务，成功后安排 24 小时复查；同 URL 内容变化也能通过重新下载和 SHA-256 对比发现，不依赖供应商 ETag 正确变化。线路来源及文件内容均未变时校验并复用已保存对象，不重复解析；变更文件保持未发布，仍走人工复核审批。

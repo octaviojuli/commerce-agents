@@ -2,6 +2,7 @@
 
 import {RouteKitEditor} from "./route-kit-editor";
 import {isRouteKit,RouteDetail} from "web-shared/route-detail";
+import {useRouteCover} from "web-shared/route-cover";
 import {useEffect, useState} from "react";
 import {WarehouseClient, message, type Change} from "../lib/api";
 import {Field, LoadState, useData} from "./common";
@@ -34,9 +35,9 @@ function TagForm({api,value,writable,onProposed}:{api:WarehouseClient;value:Row;
   </>;
 }
 
-export function RouteEditor({api,id,writable,onProposed}:{api:WarehouseClient;id:string;writable:boolean;onProposed:()=>void}) {
+export function RouteEditor({api,id,writable,publishable=false,onProposed,onPublished}:{api:WarehouseClient;id:string;writable:boolean;publishable?:boolean;onProposed:()=>void;onPublished?:()=>void}) {
   const state=useData<Row>(api,`/merchant/routes/${id}/content`);
-  return <><LoadState {...state}/>{state.data && (isRouteKit(state.data.content)?<RouteKitEditor key={`${id}:${state.data.revision}`} api={api} id={id} initial={state.data} writable={writable} onProposed={onProposed}/>:<ContentForm key={`${id}:${state.data.revision}`} api={api} id={id} initial={state.data} writable={writable} onProposed={onProposed}/>)}</>;
+  return <><LoadState {...state}/>{state.data && (isRouteKit(state.data.content)?<RouteKitEditor key={`${id}:${state.data.revision}`} api={api} id={id} initial={state.data} writable={writable} publishable={publishable} onProposed={onProposed} onPublished={onPublished}/>:<ContentForm key={`${id}:${state.data.revision}`} api={api} id={id} initial={state.data} writable={writable} onProposed={onProposed}/>)}</>;
 }
 
 function ContentForm({api,id,initial,writable,onProposed}:{api:WarehouseClient;id:string;initial:Row;writable:boolean;onProposed:()=>void}) {
@@ -90,9 +91,19 @@ function CustomerRoute({content}:{content:Row}) {
 
 export function RouteContentApproval({api,change,onReady}:{api:WarehouseClient;change:Change;onReady:(ready:boolean)=>void}) {
   const state=useData<Row>(api,`/route-content-revisions/${change.payload.revision_id}`);
-  const ready=!!state.data && state.data.product_id===change.payload.target_id && (change.status!=="staged"||state.data.current) && !state.data.issues.length;
+  const data=state.data;
+  const structured=!!data&&isRouteKit(data.body);
+  const coverUrl=useRouteCover(api,structured?data?.body.source?.cover_image:null);
+  const ready=!!data && data.product_id===change.payload.target_id && (change.status!=="staged"||data.current) && !data.issues.length;
   useEffect(()=>{onReady(ready);return()=>onReady(false);},[ready,onReady]);
-  return <section className="stack"><LoadState {...state}/>{state.data && <>{!ready && change.status==="staged" && <p className="notice error">草稿或来源已变化，或仍有待处理项，不能应用此审批。</p>}<p>第 {state.data.revision} 次内容修订 · {state.data.source_note}</p>{state.data.asset && <DocumentEvidence api={api} asset={state.data.asset.id} name={state.data.asset.name} hash={state.data.asset.hash} version={state.data.asset.version} parser={state.data.source_body?.source.parser} locations={state.data.source_body?.source.page_locations}/>} {state.data.source_body && <DocumentDiff before={state.data.source_body} after={state.data.body}/>}<RouteItinerary content={state.data.body} published={false}/><RouteTerms content={state.data.body}/><p>发布复核说明：{change.payload.note}</p></>}</section>;
+  return <section className="stack"><LoadState {...state}/>{data && <>
+    {!ready && change.status==="staged" && <p className="notice error">草稿或来源已变化，或仍有待处理项，不能应用此审批。</p>}
+    <p>第 {data.revision} 次内容修订 · {data.source_note}</p>
+    {!!data.fact_decisions?.length&&<section className="panel stack" aria-label="天数与口岸核定"><h3>随发布生效的核定</h3><p className="muted">仅影响云仓读取，不改写上游登记。请核对前后值及原文依据。</p><div className="table-wrap"><table><thead><tr><th>字段</th><th>核定时上游值</th><th>发布后采用</th><th>当前上游值</th><th>依据</th></tr></thead><tbody>{data.fact_decisions.map((d:Row)=><tr key={d.field}><td>{d.field==="days"?"行程天数":"出发口岸"}</td><td>{String(d.upstream??"未提供")}</td><td>{String(d.value)}</td><td>{String(data.listing?.[d.field]?.upstream??"未提供")}</td><td>{d.basis?.length?d.basis.map((b:Row,i:number)=><p key={i}>{b.source}：{b.value}</p>):"未填写依据"}</td></tr>)}</tbody></table></div></section>}
+    {data.asset && <DocumentEvidence api={api} asset={data.asset.id} name={data.asset.name} hash={data.asset.hash} version={data.asset.version} parser={data.source_body?.source.parser} locations={data.source_body?.source.page_locations}/>}
+    {structured?<><RouteDetail content={data.body} review coverUrl={coverUrl}/>{data.source_body&&isRouteKit(data.source_body)&&<details className="panel"><summary>查看原解析稿</summary><RouteDetail content={data.source_body} review/></details>}</>:<>{data.source_body&&<DocumentDiff before={data.source_body} after={data.body}/>}<RouteItinerary content={data.body} published={false}/><RouteTerms content={data.body}/></>}
+    <p>发布复核说明：{change.payload.note}</p>
+  </>}</section>;
 }
 
 function IssueResolution({item,onConfirm}:{item:Row;onConfirm:(note:string)=>void}) {const [reason,setReason]=useState("");return <div className="stack"><Field label="人工核对原文后的处理说明"><input className="input" value={reason} maxLength={1000} onChange={e=>setReason(e.target.value)} placeholder="说明核对了什么，以及采用或保留例外的依据"/></Field><button className="btn" disabled={!reason.trim()} onClick={()=>onConfirm(reason.trim())}>记录已核对此项</button></div>;}

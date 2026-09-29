@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 
-from . import changes, documents, route_content
+from . import changes, documents, product_facts, route_content
 from . import route_kit_content as kit
 from .changes import Conflict, audit
 from .integrations import canonical, fingerprint
@@ -24,6 +24,7 @@ class SaveDraft(BaseModel):
     source_note: str = Field(min_length=1, max_length=2000)
     content: kit.Content
     review_resolutions: list[dict] = Field(default_factory=list, max_length=500)
+    fact_decisions: list[product_facts.FactDecision] = Field(default_factory=list, max_length=2)
     checked_summaries: list[str] = Field(default_factory=list, max_length=100)
 
 
@@ -51,6 +52,21 @@ def _product(conn, product_id, *, lock=False):
     if row is None:
         raise Forbidden("线路不存在或无内容维护权限")
     return row
+
+
+def _issues(conn, product, doc, resolutions, decisions=()):
+    listing = product_facts.listing(product, decisions) if kit.is_kit(doc) else None
+    return route_content.issues(
+        doc,
+        departure_durations(
+            conn,
+            product["id"],
+            doc,
+            gateway=listing["gateway"]["effective"] if listing else None,
+        ),
+        resolutions,
+        listing,
+    )
 
 
 def _parse(conn, product):
@@ -206,6 +222,10 @@ def get(engine, actor, product_id, *, include_source=True):
         if generated and generated["status"] == "complete":
             prepared = kit.parse_content(generated["body"])
         publication = documents.current_in_transaction(conn, product_id)
+        published_draft = bool(
+            publication and draft and publication.get("revision_id") == draft["id"]
+        )
+        pending_facts = draft["fact_decisions"] if draft and not published_draft else []
         # Keep approved human copy when upgrading an existing route to the editor.
         effective = (
             kit.parse_content(draft["body"])
@@ -257,11 +277,24 @@ def get(engine, actor, product_id, *, include_source=True):
             else None,
             "asset_id": parsed["asset_id"] if parsed else None,
             "asset_product_version": parsed["product_version"] if parsed else None,
-            "issues": route_content.issues(
+            "issues": _issues(
+                conn,
+                product,
                 effective,
-                departure_durations(conn, product_id, effective),
                 draft["review_resolutions"] if draft else (),
+                pending_facts,
             ),
+            "listing": product_facts.listing(product, pending_facts),
+            "departure_days": [
+                dict(row)
+                for row in conn.execute(
+                    text("""SELECT (d.return_date-d.depart_date+1) AS days,count(*) AS count
+              FROM departure d WHERE d.product_id=:id AND d.status='published' AND d.return_date IS NOT NULL
+              GROUP BY 1 ORDER BY 2 DESC,1 LIMIT 5"""),
+                    {"id": product_id},
+                ).mappings()
+            ],
+            "fact_decisions": pending_facts,
             "saved_at": draft["created_at"] if draft else None,
             "review_resolutions": draft["review_resolutions"] if draft else [],
             "editing": {
@@ -291,12 +324,13 @@ def save(engine, actor, product_id, command):
         if command.expected_source_hash != digest:
             raise Conflict("资料来源已变化，请重新读取并核对差异")
         doc = _body(product, parsed, command)
+        product_facts.check(product, command.fact_decisions)
         identifier, revision = uuid4(), product["route_draft_version"] + 1
         body = doc.model_dump(mode="json", by_alias=True)
         conn.execute(
             text("""INSERT INTO route_content_revision(id,supplier_org_id,connection_id,product_id,revision,parent_id,
-          base_publication_id,source_kind,source_parse_id,source_content_hash,source_note,body,body_hash,created_by,review_resolutions)
-          VALUES(:id,:org,:connection,:product,:revision,:parent,:publication,:kind,:parse,:source_hash,:note,CAST(:body AS jsonb),:hash,:actor,CAST(:resolutions AS jsonb))"""),
+          base_publication_id,source_kind,source_parse_id,source_content_hash,source_note,body,body_hash,created_by,review_resolutions,fact_decisions)
+          VALUES(:id,:org,:connection,:product,:revision,:parent,:publication,:kind,:parse,:source_hash,:note,CAST(:body AS jsonb),:hash,:actor,CAST(:resolutions AS jsonb),CAST(:facts AS jsonb))"""),
             {
                 "id": identifier,
                 "org": actor.organization_id,
@@ -313,6 +347,7 @@ def save(engine, actor, product_id, command):
                 "hash": fingerprint(body),
                 "actor": actor.user_id,
                 "resolutions": canonical(command.review_resolutions),
+                "facts": canonical([d.model_dump(mode="json") for d in command.fact_decisions]),
             },
         )
         conn.execute(
@@ -332,8 +367,8 @@ def save(engine, actor, product_id, command):
             "revision_id": identifier,
             "revision": revision,
             "content": body,
-            "issues": route_content.issues(
-                doc, departure_durations(conn, product_id, doc), command.review_resolutions
+            "issues": _issues(
+                conn, product, doc, command.review_resolutions, command.fact_decisions
             ),
         }
 
@@ -368,13 +403,16 @@ def _review(conn, command, *, lock=False, actor=None):
     ):
         raise Conflict("文档天数与线路不一致")
     durations = departure_durations(conn, product["id"], body)
+    product_facts.check(product, draft["fact_decisions"])
     if command.review_mode == "test_auto":
         from .route_test_publication import validate
 
         if actor is None:
             raise Forbidden("测试发布缺少操作员")
         validate(actor, product, parsed, body, durations)
-    elif found := route_content.issues(body, durations, draft["review_resolutions"]):
+    elif found := _issues(
+        conn, product, body, draft["review_resolutions"], draft["fact_decisions"]
+    ):
         raise Conflict(found[0]["message"])
     if not command.note.strip():
         raise Conflict("请填写发布复核说明")
@@ -398,6 +436,7 @@ def apply_command(conn, actor, change_id, payload):
     require_role(conn, "supplier_admin")
     command = PublishDraft.model_validate(payload)
     product, draft, parsed, doc = _review(conn, command, lock=True, actor=actor)
+    product_facts.apply(conn, actor, product, draft["fact_decisions"], draft["id"])
     metrics = {}
     if command.review_mode == "test_auto":
         from .route_test_publication import assess
@@ -540,8 +579,14 @@ def revision_detail(engine, actor, identifier):
             }
             if parsed
             else None,
-            "issues": route_content.issues(
-                kit.parse_content(revision["body"]), resolutions=revision["review_resolutions"]
+            "fact_decisions": revision["fact_decisions"],
+            "listing": product_facts.listing(product, revision["fact_decisions"]),
+            "issues": _issues(
+                conn,
+                product,
+                kit.parse_content(revision["body"]),
+                revision["review_resolutions"],
+                revision["fact_decisions"],
             ),
         }
 
@@ -558,8 +603,9 @@ def validate(engine, actor, product_id, command):
         ):
             raise Conflict("草稿或来源已变化，请重新核对")
         doc = _body(product, parsed, command)
+        product_facts.check(product, command.fact_decisions)
         return {
-            "issues": route_content.issues(
-                doc, departure_durations(conn, product_id, doc), command.review_resolutions
+            "issues": _issues(
+                conn, product, doc, command.review_resolutions, command.fact_decisions
             )
         }

@@ -261,7 +261,7 @@ def list_products(
             dict(row)
             for row in connection.execute(
                 text(
-                    "SELECT id,supplier_org_id,code,effective_name AS name,name_origin,description_origin,days,gateway,status,version,observed_at FROM product_listing WHERE (CAST(:after AS uuid) IS NULL OR id>:after) ORDER BY id LIMIT :limit"
+                    "SELECT id,supplier_org_id,code,effective_name AS name,name_origin,description_origin,effective_days AS days,effective_gateway AS gateway,status,version,observed_at FROM product_listing WHERE (CAST(:after AS uuid) IS NULL OR id>:after) ORDER BY id LIMIT :limit"
                 ),
                 {"after": after, "limit": max(1, min(limit, 100))},
             ).mappings()

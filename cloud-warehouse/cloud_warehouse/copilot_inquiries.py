@@ -27,7 +27,7 @@ def source(conn, product):
     row = (
         conn.execute(
             text("""SELECT p.id,p.supplier_org_id,p.connection_id,p.effective_name AS name,
-      p.version,p.display_version,p.days,p.gateway,c.version AS connection_version FROM product_listing p
+      p.version,p.display_version,p.effective_days AS days,p.effective_gateway AS gateway,c.version AS connection_version FROM product_listing p
       JOIN supplier_connection c ON c.id=p.connection_id WHERE p.id=:id AND p.status='published' AND c.active"""),
             {"id": product},
         )

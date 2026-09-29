@@ -5,10 +5,12 @@ from uuid import UUID
 
 import pytest
 from route_kit.models import Day, Item, Node, Quality, RouteContent, Source
+from sqlalchemy import text
 
-from cloud_warehouse import documents, route_editor
+from cloud_warehouse import documents, product_facts, route_editor
 from cloud_warehouse import route_kit_content as kit
 from cloud_warehouse.changes import Conflict
+from cloud_warehouse.persistence import transaction
 
 from . import test_documents
 from .test_route_editor import commit
@@ -389,3 +391,134 @@ def test_itinerary_sections_are_complete_paged_and_public(monkeypatch):
     assert len(pages) == 20
     assert all("cite" not in n for n in pages)
     assert [n["name"] for n in pages] == [f"ACME {i}" for i in range(20)]
+
+
+def test_answers_given_in_review_bind_to_the_content_they_edited():
+    doc = content()
+    doc.quality.issues = [
+        {"code": "ATTRIBUTE_UNSUPPORTED", "path": "D1.items[0].ticket", "detail": "included"}
+    ]
+    assert any(x["code"] == "ATTRIBUTE_UNSUPPORTED" for x in kit.issues(doc))
+    doc.days[0].items[0].ticket = "included"  # the answer edits the content, then is recorded
+    answers = acknowledgements(doc)
+    assert {x["code"] for x in answers} == {"ATTRIBUTE_UNSUPPORTED", "CONTENT_FACT_REVIEW"}
+    assert kit.issues(doc, resolutions=answers) == []
+    doc.days[0].items[0].ticket = "excluded"  # a later change to the same field needs a new answer
+    assert kit.issues(doc, resolutions=answers)
+
+
+def test_a_days_decision_covers_only_the_overridden_departure_span():
+    doc = content()
+    decided = {
+        "days": {
+            "upstream": doc.days_count - 1,
+            "effective": doc.days_count,
+            "origin": "warehouse_decision",
+            "state": "pending",
+        },
+        "gateway": {"upstream": None, "effective": None, "origin": "source", "state": "none"},
+    }
+    spans = [("a", doc.days_count - 1), ("b", doc.days_count + 3)]
+    found = {
+        (x["code"], x["acknowledgeable"])
+        for x in kit.issues(doc, spans, listing=decided)
+        if x["code"] == "DEPARTURE_DURATION_MISMATCH"
+    }
+    assert found == {("DEPARTURE_DURATION_MISMATCH", False)}
+    covered = kit.issues(doc, spans[:1], listing=decided)
+    assert any(x["code"] == "DEPARTURE_DURATION_MISMATCH" and x["acknowledgeable"] for x in covered)
+
+
+def test_days_conflict_needs_a_decision_that_follows_the_source(database, tenant, source):
+    admin, runtime = database
+    store, product, _, _ = source
+    documents.run_once(runtime, tenant.worker, store, lambda work, body: content(work))
+    current = route_editor.get(runtime, tenant.supplier, product["id"])
+    upstream = current["listing"]["days"]["upstream"]
+    doc = kit.parse_content(current["content"])
+    extra = doc.days[-1].model_copy(deep=True)
+    extra.day, extra.day_id = doc.days_count + 1, ""
+    for node in extra.items:
+        node.node_id = ""
+        for child in node.children:
+            child.node_id = ""
+    doc.days.append(extra)
+    doc.days_count += 1
+    doc = kit.prepare(doc)
+    cmd = route_editor.SaveDraft(
+        expected_revision=current["revision"],
+        expected_source_hash=current["source_hash"],
+        content=doc,
+        source_note="ACME 原文复核",
+    )
+    conflict = next(
+        i
+        for i in route_editor.validate(runtime, tenant.supplier, product["id"], cmd)["issues"]
+        if i["code"] == "DAYS_DIFFER_FROM_LISTING"
+    )
+    assert not conflict["acknowledgeable"], "a note cannot settle a days conflict"
+
+    stale = product_facts.FactDecision(field="days", upstream=upstream + 5, value=doc.days_count)
+    with pytest.raises(Conflict, match="上游"):
+        route_editor.validate(
+            runtime,
+            tenant.supplier,
+            product["id"],
+            cmd.model_copy(update={"fact_decisions": [stale]}),
+        )
+    cmd.fact_decisions = [
+        product_facts.FactDecision(
+            field="days",
+            upstream=upstream,
+            value=doc.days_count,
+            basis=[{"source": "附件行程", "value": f"{doc.days_count} 天"}],
+        )
+    ]
+    open_ = route_editor.validate(runtime, tenant.supplier, product["id"], cmd)["issues"]
+    assert not any(i["code"] == "DAYS_DIFFER_FROM_LISTING" for i in open_)
+    cmd.review_resolutions = [
+        {"code": i["code"], "path": i["path"], "basis_hash": i["basis_hash"], "note": "ACME 核对"}
+        for i in open_
+        if i["acknowledgeable"]
+    ]
+    saved = route_editor.save(runtime, tenant.supplier, product["id"], cmd)
+    assert not saved["issues"]
+    pub = route_editor.PublishDraft(
+        target_id=product["id"], revision_id=saved["revision_id"], note="ACME 发布复核"
+    )
+    commit(runtime, tenant, route_editor.propose(runtime, tenant.supplier, pub))
+
+    def listed():
+        with transaction(runtime, tenant.supplier) as conn:
+            return (
+                conn.execute(
+                    text(
+                        "SELECT days,effective_days,days_origin FROM product_listing WHERE id=:id"
+                    ),
+                    {"id": product["id"]},
+                )
+                .mappings()
+                .one()
+            )
+
+    row = listed()
+    assert (row["days"], row["effective_days"], row["days_origin"]) == (
+        upstream,
+        doc.days_count,
+        "warehouse_decision",
+    )
+    assert [c["field"] for c in product_facts.conflicts(runtime, tenant.supplier)] == ["days"]
+    with admin.begin() as conn:  # the source moves to a third value: the source wins again
+        conn.execute(
+            text("UPDATE supplier_product SET days=:d WHERE id=:id"),
+            {"d": upstream + 7, "id": product["id"]},
+        )
+    row = listed()
+    assert (row["effective_days"], row["days_origin"]) == (upstream + 7, "source")
+    with admin.begin() as conn:  # the source is corrected to the decided value
+        conn.execute(
+            text("UPDATE supplier_product SET days=:d WHERE id=:id"),
+            {"d": doc.days_count, "id": product["id"]},
+        )
+    assert listed()["days_origin"] == "source"
+    assert product_facts.conflicts(runtime, tenant.supplier) == []
