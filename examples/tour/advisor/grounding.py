@@ -12,8 +12,10 @@ PRIVATE = re.compile(
     r"同[行业]价|结算价|毛利|利润|(?:余位|剩余名额|库存)[：:\s]*[\d一二三四五六七八九十]+|\{\s*\""
 )
 # Saying a customer's personal numbers were taken down: they are masked and never kept.
+# A request to send documents separately ("之后单独发我，方便登记") is what a reply should say.
 KEPT_PERSONAL = re.compile(
-    r"(?:手机|电话|护照|证件|身份证)[号码]?.{0,12}(?:登记|留好|记下|记好|保存|存好|收到)"
+    r"(?:手机|电话|护照|证件|身份证)[号码信息]*.{0,8}"
+    r"(?:(?:已|都|也)(?:帮您|给您)?(?:登记|留|记|保存|存)|登记好|留好|记下了|记好了|保存好|存好)"
 )
 # Guarantees, and holds or bookings: the advisor app neither holds seats nor books in phase one.
 PROMISE = re.compile(

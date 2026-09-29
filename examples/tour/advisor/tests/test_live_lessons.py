@@ -141,3 +141,9 @@ def test_a_pasted_passport_number_is_neither_kept_nor_sent(env):
     with engine.connect() as conn:
         stored = conn.execute(db.turns.select().where(db.turns.c.deal_id == UUID(deal))).all()
     assert not any("E12345678" in str(r) for r in stored)
+
+
+def test_asking_for_documents_separately_is_kept_and_claiming_them_is_not():
+    ask = "另外麻烦您之后把出行人的证件信息单独发我一下，方便登记。"
+    assert not grounding.check(ask, [])["removed"]
+    assert grounding.check("护照号已帮您登记。", [])["reasons"] == ["private"]
