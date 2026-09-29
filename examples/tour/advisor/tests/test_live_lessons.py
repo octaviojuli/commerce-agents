@@ -147,3 +147,30 @@ def test_asking_for_documents_separately_is_kept_and_claiming_them_is_not():
     ask = "另外麻烦您之后把出行人的证件信息单独发我一下，方便登记。"
     assert not grounding.check(ask, [])["removed"]
     assert grounding.check("护照号已帮您登记。", [])["reasons"] == ["private"]
+
+
+def test_an_unknown_label_does_not_lose_the_customers_changes():
+    from tour.advisor.model import Understanding
+
+    reading = Understanding.model_validate(
+        {
+            "action": "change_need",
+            "kinds": ["change", "complaint"],
+            "changes": [{"field": "budget", "value": {"per_person": 15000}, "evidence": "1.5万"}],
+        }
+    )
+    assert reading.action == "auto" and reading.kinds == ["change"]
+    assert reading.changes[0].field == "budget"
+
+
+def test_a_senior_is_not_counted_again_as_an_adult():
+    party = needs.parse(
+        "party",
+        {
+            "total_count": 5,
+            "adults": 3,
+            "seniors": [{"age": 70}],
+            "children": [{"age": 8, "bed": True}, {"age": 5, "bed": False}],
+        },
+    )
+    assert (party.adults, len(party.seniors), len(party.children), party.total) == (2, 1, 2, 5)

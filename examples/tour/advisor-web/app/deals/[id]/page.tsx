@@ -140,6 +140,13 @@ export default function DealPage() {
       case "plan":
         router.push(`/deals/${id}/plan?ids=${ids.join(",")}`);
         break;
+      case "adopt_query":
+        if (deal.query) {
+          await api.post(`/deals/${id}/query/resolve`, { query_id: deal.query.id, adopt: true });
+          toast("已记入客人需求");
+          await load();
+        }
+        break;
       case "release_route":
         // Taking the route back voids its sheets and prices; the deal returns to choosing.
         await api.del(`/deals/${id}/route`);
@@ -361,13 +368,13 @@ function TurnView({
                 return (
                   <div className="card row" key={i}>
                     <span className={"tag " + (c.status === "confirmed" ? "t-ok" : "t-sun")}>
-                      {c.status === "confirmed" ? "客人已确认" : c.status === "stale" ? "确认单已失效" : "还有异议"}
+                      {c.status === "confirmed" ? "客人已确认" : c.status === "stale" ? "确认单已失效" : c.status === "incomplete" ? "确认单还缺信息" : "还有异议"}
                     </span>
                     <span className="grow">
-                      {c.status === "stale" ? "客人回的是旧确认单，需要按当前线路、团期、套餐重发" : c.disputes.length ? c.disputes.join("、") : "确认单全部确认"}
+                      {c.status === "stale" ? "客人回的是旧确认单，需要按当前线路、团期、套餐重发" : c.status === "incomplete" ? "客人同意了，但确认单还缺信息，补齐后重发" : c.disputes.length ? c.disputes.join("、") : "确认单全部确认"}
                     </span>
                     <Link className="b sm b-br" href={`/deals/${deal.id}/${c.status === "confirmed" ? "quote" : "confirm"}`}>
-                      {c.status === "confirmed" ? "出正式报价" : c.status === "stale" ? "重发确认单" : "改确认单"}
+                      {c.status === "confirmed" ? "出正式报价" : c.status === "stale" ? "重发确认单" : c.status === "incomplete" ? "补齐确认单" : "改确认单"}
                     </Link>
                   </div>
                 );

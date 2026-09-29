@@ -65,11 +65,13 @@ class Selection(Model):
     date: str = Field(default="", max_length=40)
 
 
+ACTIONS = ("auto", "search", "departures", "view", "select", "quote")
+KINDS = ("new_need", "change", "ask", "concern", "decide", "confirm", "research", "chitchat")
+
+
 class Understanding(Model):
-    action: Literal["auto", "search", "departures", "view", "select", "quote"] = "auto"
-    kinds: list[
-        Literal["new_need", "change", "ask", "concern", "decide", "confirm", "research", "chitchat"]
-    ] = Field(default_factory=list, max_length=6)
+    action: Literal[ACTIONS] = "auto"  # type: ignore[valid-type]
+    kinds: list[Literal[KINDS]] = Field(default_factory=list, max_length=6)  # type: ignore[valid-type]
     changes: list[Change] = Field(default_factory=list, max_length=12)
     questions: list[Question] = Field(default_factory=list, max_length=8)
     concerns: list[Signal] = Field(default_factory=list, max_length=6)
@@ -103,7 +105,17 @@ class Understanding(Model):
                 questions.append(Question.model_validate(item))
             except ValidationError:
                 continue
-        return {**value, "changes": changes, "questions": questions, "rejected": rejected}
+        # A label outside the lists reads as "no label"; it must not lose the changes beside it.
+        action = value.get("action")
+        kinds = [k for k in value.get("kinds") or [] if k in KINDS][:6]
+        return {
+            **value,
+            "action": action if action in ACTIONS else "auto",
+            "kinds": kinds,
+            "changes": changes,
+            "questions": questions,
+            "rejected": rejected,
+        }
 
 
 class Answer(Model):
@@ -159,7 +171,8 @@ SYSTEM = """你是旅游顾问的幕后搭档。input_kind 明确本轮来源：
 - 称呼用 salutation；没有就直接说“您好”。语气亲切简短，不超过 300 字。
 - conflicts 里的线路只能说成“备选，需要确认”。
 - searched=false 表示这一轮没有找线：不说找到或没找到线路。
-- confirmation 是 open 或 stale 时，不说“收到您的确认”，也不说按确认推进；stale 时请客人按新的确认单再确认。
+- dates 是程序刚查到的团期，照原样的日期告诉客人；客人问的那天没有团时，直说没有并给出最近的日期。
+- confirmation 是 open、stale 或 incomplete 时，不说“收到您的确认”，也不说按确认推进；stale 时请客人按新的确认单再确认；incomplete 时说明还差哪些信息，补齐后再确认。
 - hidden 不为空：客人发来的这些号码已隐藏、没有保存。不说已记下或登记，请客人之后单独提交证件。
 - to_advisor：一句话告诉顾问这一轮发生了什么、下一步是什么，用顾问的日常说法，不写 ask_next、facts、known 这类字段名。may_ask：客人接下来可能问的 3 个问题。
 所有输出只通过指定工具返回。"""
@@ -177,6 +190,17 @@ TOOLS = [
 
 class ModelUnavailable(Exception):
     pass
+
+
+def where(error) -> list:
+    """Which fields a validation failed on, by path and kind; never the values, which are the
+    customer's words."""
+    if not isinstance(error, ValidationError):
+        return []
+    return [
+        ".".join(str(p) for p in e.get("loc", ())) + ":" + e.get("type", "")
+        for e in error.errors()[:6]
+    ]
 
 
 class TypedModel:
@@ -218,16 +242,18 @@ class TypedModel:
                 raise
             except Exception as error:  # noqa: BLE001 - every failure is logged and retried once
                 last = error
-                self._log(name, type(error).__name__, started, attempt)
+                self._log(name, type(error).__name__, started, attempt, where(error))
         raise ModelUnavailable(f"{name}: {type(last).__name__}")
 
-    def _log(self, name, outcome, started, attempt):
+    def _log(self, name, outcome, started, attempt, fields=()):
         record = {
             "call": name,
             "outcome": outcome,
             "ms": round((time.monotonic() - started) * 1000),
             "attempt": attempt + 1,
         }
+        if fields:
+            record["fields"] = list(fields)
         self.calls.append(record)
         LOG.info(json.dumps({"event": "advisor_model_call", **record}))
 

@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 from route_kit.render import page as route_page_html
 from sqlalchemy import text
 
-from . import closing, db, memory, papers, privacy, routes, selling, store, suppliers
+from . import closing, db, memory, papers, privacy, queries, routes, selling, store, suppliers
 from . import need as needs
 from .facts import Route
 from .judge import Judge
@@ -487,7 +487,6 @@ def create_app(settings: Settings, *, model=None, transport=None, judge=None):
 
     @app.post("/api/deals/{deal_id}/query/relax")
     async def relax_query(deal_id: UUID, body: QueryRelax, session: Session):
-        from . import queries
 
         owner = owner_of(session)
         with engine.begin() as conn:
@@ -506,7 +505,6 @@ def create_app(settings: Settings, *, model=None, transport=None, judge=None):
 
     @app.post("/api/deals/{deal_id}/query/resolve")
     async def resolve_query(deal_id: UUID, body: QueryResolve, session: Session):
-        from . import queries
 
         owner = owner_of(session)
         changed = queries.resolve(engine, owner, deal_id, body.query_id, adopt=body.adopt)
@@ -996,7 +994,6 @@ def deal_card(conn, owner, d):
 
 
 def detail(conn, owner, deal_id):
-    from . import queries
 
     deal = store.deal(conn, owner, deal_id)
     need = Need.model_validate(deal["need"])
@@ -1058,7 +1055,13 @@ def detail(conn, owner, deal_id):
         "confirmation": closing.confirmation_view(confirmations[0], deal)
         if confirmations
         else None,
-        "chips": chips(deal, need, gates, bool(pending), result_stub),
+        "chips": chips(
+            deal,
+            queries.effective(deal),
+            needs.gates(queries.effective(deal)),
+            bool(pending),
+            result_stub,
+        ),
         "facts": len(requirement_facts(need)),
     }
 

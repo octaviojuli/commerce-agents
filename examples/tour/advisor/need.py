@@ -104,6 +104,19 @@ class Party(Model):
     children: list[Child] | None = Field(default=None, max_length=30)
     seniors: list[Senior] = Field(default_factory=list, max_length=30)
 
+    @model_validator(mode="after")
+    def seniors_are_not_also_adults(self):
+        # "一家四口加我妈，共5人" read as 3 adults and a senior counts her twice: a stated total
+        # wins, and the surplus comes off the adults.
+        named = len(self.children or []) + len(self.seniors)
+        if (
+            self.total_count is not None
+            and self.adults is not None
+            and self.adults + named > self.total_count
+        ):
+            self.adults = max(0, self.total_count - named)
+        return self
+
     @property
     def total(self):
         if self.total_count is not None:

@@ -193,7 +193,7 @@ def test_nine_turns_keep_source_requirement_and_selection_separate_without_jev(d
         "seniors": [],
     }
     assert value(saved, "window")["start"] == value(saved, "window")["end"] == "2026-10-30"
-    assert "2026-10-25" in result["draft"]["text"] and "有没有孩子" not in result["draft"]["text"]
+    assert "10月25日" in result["draft"]["text"] and "有没有孩子" not in result["draft"]["text"]
     assert saved["route"] is None
     result = say(client, deal, "出发时间前后放宽10天")
     assert "draft" not in result
@@ -368,7 +368,7 @@ def test_nearby_route_reply_removes_supplier_name_even_without_exact_candidates(
     state["supplier_name"] = "ACME 日行"
     result = first(client, deal)
     assert "ACME 日行" not in result["draft"]["text"]
-    assert "2026-10-25" in result["draft"]["text"]
+    assert "10月25日" in result["draft"]["text"]
     assert any(c["type"] == "routes" and not c["cards"] for c in result["cards"])
 
 

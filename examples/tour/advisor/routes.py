@@ -506,6 +506,7 @@ async def overview(wh, target, need, *, around_days=10):
                 "items": items[:8],
                 "partial": partial or len(items) > 8,
                 "requested": needs.show("window", window) if window else "在售日期",
+                "asked": asked_label(window),
                 "around_days": around_days,
             }
         except WarehouseError as error:
@@ -568,6 +569,44 @@ async def nearby_candidates(wh, need, *, suppliers=()):
     body = await search(wh, widened, limit=3, suppliers=suppliers)
     candidates = [c for c in body["cards"] if not c["alternative"]]
     return await asyncio.gather(*(overview(wh, c, need) for c in candidates))
+
+
+WEEKDAYS = "一二三四五六日"
+
+
+def day_label(iso: str) -> str:
+    d = date.fromisoformat(iso)
+    return f"{d.month}月{d.day}日（周{WEEKDAYS[d.weekday()]}）"
+
+
+def asked_label(window) -> str:
+    """The asked dates as a reply says them: 10月30日, or 10月20日至11月9日."""
+    if not window:
+        return "近期"
+
+    def cn(d):
+        return f"{d.month}月{d.day}日"
+
+    if window.start == window.end:
+        return cn(window.start)
+    return f"{cn(window.start)}至{cn(window.end)}"
+
+
+def date_line(item) -> str | None:
+    """A route's departures in the words a reply uses; None when the read failed."""
+    dates = item["dates"]
+    if dates["status"] == "error":
+        return None
+    asked = dates.get("asked") or "所问时间"
+    days = "、".join(dict.fromkeys(day_label(d["date"]) for d in dates["items"][:4]))
+    title = display(item["title"])
+    if dates["status"] == "available":
+        return f"{title}：{asked}有团，出发日期{days}"
+    if dates["status"] == "nearby":
+        return f"{title}：{asked}没有团，前后最近的出发日期是{days}"
+    if dates["status"] == "none":
+        return f"{title}：{asked}前后{dates.get('around_days', 10)}天都没有团"
+    return None
 
 
 def overview_text(item):

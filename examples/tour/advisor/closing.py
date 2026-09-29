@@ -9,7 +9,7 @@ import re
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
-from . import db, pricing, routes, selling, store
+from . import db, pricing, queries, routes, selling, store
 from . import need as needs
 from .facts import Route
 from .need import Need
@@ -239,7 +239,9 @@ async def dates(engine, owner, wh, deal_id, compare_ids=()):
             where=[db.quotes.c.status == "active"],
             order=db.quotes.c.created_at.desc(),
         )
-    need = Need.model_validate(deal["need"])
+    # Dates are listed for the conditions being explored, like search and route reads; prices
+    # still hold to the saved need.
+    need = queries.effective(deal)
     route = deal.get("route")
     if not route:
         raise store.Conflict("先选定一条线路")

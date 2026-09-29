@@ -490,7 +490,8 @@ class Turns:
                         "status"
                     ]
             except store.Conflict as error:
-                status = "stale"
+                # A sheet missing items is incomplete, not expired; the reply says which.
+                status = "incomplete" if str(error).startswith("还差") else "stale"
                 result["notes"].append(str(error))
             result["cards"].append(
                 {"type": "confirm_reply", "status": status, "disputes": understanding.disputes}
@@ -509,7 +510,44 @@ class Turns:
             )
             draft_extra["ask_next"] = question
             result["asked"] = key
-        if "live_reads" in draft_extra or draft_extra.get("no_matches"):
+        if kind == "customer" and understanding is None:
+            # Nothing was understood: the reply may not claim anything was done.
+            result["draft"] = {
+                "text": "收到，我整理一下马上回复您。",
+                "removed": [],
+                "claims": [],
+                "simplified": True,
+            }
+        elif kind == "customer" and draft_extra.get("live_reads"):
+            # Departures read this turn are facts for the reply, worded for the customer; the
+            # rest of the customer's message is still answered in the same reply.
+            lines = [line for line in map(routes.date_line, draft_extra["live_reads"]) if line]
+            # A source title can carry the supplier's name; the customer never reads it.
+            read_context = {
+                **context,
+                "visible": [*context["visible"], *draft_extra["live_reads"]],
+            }
+            for name in supplier_names(read_context, deal):
+                lines = [line.replace(name, "").strip() for line in lines]
+            facts += [
+                {"fact_id": f"dates:{i}", "text": t, "section": "团期"} for i, t in enumerate(lines)
+            ]
+            draft_extra["dates"] = lines
+            draft_extra.pop("ask_next", None)
+            result["asked"] = ""
+            result["draft"] = await self.draft(
+                owner,
+                deal,
+                need,
+                context,
+                text,
+                understanding,
+                facts,
+                conflicts,
+                draft_extra,
+                bool(proposals),
+            )
+        elif "live_reads" in draft_extra or draft_extra.get("no_matches"):
             result["asked"] = ""
             reply = "\n".join(routes.overview_text(v) for v in draft_extra.get("live_reads", []))
             if not reply:
@@ -669,7 +707,9 @@ class Turns:
             result["query"] = queries.view(deal)
             formal = Need.model_validate(deal["need"])
             result["gates"] = needs.gates(formal)
-            result["chips"] = chips(deal, formal, result["gates"], False, result)
+            # Next steps follow what the advisor is exploring, not only the saved need.
+            explored = queries.effective(deal)
+            result["chips"] = chips(deal, explored, needs.gates(explored), False, result)
             result["chips"] = [c for c in result["chips"] if c["action"] != "copy_draft"]
             store.set_turn_result(conn, owner, deal["id"], seq, result)
             store.update_deal(
@@ -1068,8 +1108,11 @@ class Turns:
             "hidden": extra.get("hidden", []),
             "conflicts": conflicts,
             "facts": [
-                f["text"] for f in facts if f.get("section") in ("已选", "报价", "目录", "方向")
+                f["text"]
+                for f in facts
+                if f.get("section") in ("已选", "报价", "目录", "方向", "团期")
             ][:20],
+            "dates": extra.get("dates", []),
         }
         try:
             d = await self.model.call("draft", payload)
@@ -1155,6 +1198,7 @@ def judge_state(deal, extra) -> dict:
             "confirmed": "客人已确认",
             "open": "客人尚未确认",
             "stale": "已失效，需要重发",
+            "incomplete": "还缺信息，补齐后才能确认",
         }.get(extra.get("confirmation", ""), "本轮未涉及"),
         "客人发来的号码": "已隐藏，没有保存" if extra.get("hidden") else "无",
     }
@@ -1180,6 +1224,7 @@ def fallback(extra, *, forbidden=()):
         )
     if extra.get("routes"):
         parts.append("先给您挑了几条：" + "；".join(extra["routes"]) + "。")
+    parts += [line + "。" for line in extra.get("dates", [])]
     if extra.get("ask_next"):
         parts.append(extra["ask_next"])
     # A source title or repeated question can carry a supplier name even without a model.
@@ -1368,7 +1413,7 @@ def chips(deal, need, gates, pending, result):
     v = deal["need_version"]
     if pending:
         return [{"label": "去确认变更单", "action": "review_change", "primary": True}]
-    if not gates["search"]["ready"]:
+    if not gates["search"]["ready"] and not deal.get("route"):
         return [
             {"label": "发两道选择题", "action": "copy_draft", "primary": True},
             {"label": "给 3 个方向", "action": "directions"},
@@ -1396,7 +1441,12 @@ def chips(deal, need, gates, pending, result):
             }
         )
     elif not deal.get("route"):
-        out.append({"label": f"按 v{v} 找线", "action": "search", "primary": True})
+        # While the advisor explores, the search runs on the explored conditions, not a version.
+        label = "按当前条件找线" if queries.context(deal).get("fields") else f"按 v{v} 找线"
+        out.append({"label": label, "action": "search", "primary": True})
+    if queries.context(deal).get("fields") and not pending:
+        # What the advisor typed about the customer stays a trial until it is recorded.
+        out.append({"label": "记入客人需求", "action": "adopt_query"})
     if deal.get("route") and not deal.get("departure"):
         out.append({"label": "看团期", "action": "dates", "primary": not out})
         if deal["status"] != "won":
