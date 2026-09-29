@@ -85,7 +85,8 @@ class Warehouse:
 
     async def picture(self, asset_id, limit=5_000_000):
         """A route's cover picture (bytes and type), or None; never more than ``limit`` bytes."""
-        response = await self.client.get(f"/v1/documents/{asset_id}/file", headers=self._headers())
+        # Derived route pictures are served as route media, scoped like the published route.
+        response = await self.client.get(f"/v1/route-media/{asset_id}", headers=self._headers())
         kind = response.headers.get("content-type", "")
         if response.status_code >= 400 or not kind.startswith("image/"):
             return None

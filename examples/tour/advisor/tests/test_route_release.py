@@ -55,7 +55,7 @@ def test_the_whole_route_is_the_route_kit_page_in_its_customer_view(tmp_path, mo
     def routed(request):
         if request.url.path.endswith("/document"):
             return httpx.Response(200, json={"body": body})
-        if request.url.path == "/v1/documents/c1/file":
+        if request.url.path == "/v1/route-media/c1":
             return httpx.Response(
                 200, content=b"\xff\xd8jpeg", headers={"content-type": "image/jpeg"}
             )
