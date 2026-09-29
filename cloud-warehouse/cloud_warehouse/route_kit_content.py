@@ -8,6 +8,7 @@ from route_kit.models import RouteContent
 
 from .changes import Conflict
 from .integrations import fingerprint
+from .route_consistency import departure_mismatch_message, duration_label
 from .route_doc import RouteDoc
 
 
@@ -67,6 +68,16 @@ def basis(doc):
     return fingerprint(dump(doc))
 
 
+def listing_mismatch_message(doc):
+    found, expected = doc.quality.days_found, doc.quality.days_expected
+    return (
+        f"当前整理稿 {duration_label(doc.days_count, doc.nights)}；"
+        + (f"附件解析识别 {found} 天；" if found else "附件解析天数未记录；")
+        + (f"解析时线路登记 {expected} 天。" if expected else "解析时线路登记天数缺失。")
+        + "请核对原文件与适用版本，不要仅为消除提示改动天数。"
+    )
+
+
 def issues(doc, departure_days=(), resolutions=()):
     doc = parse_content(doc)
     digest = basis(doc)
@@ -121,15 +132,19 @@ def issues(doc, departure_days=(), resolutions=()):
     scope = doc.applicability
     if bool(scope.start) != bool(scope.end) or (scope.start and scope.end < scope.start):
         add("applicability", "APPLICABILITY_INVALID", "适用日期须完整且结束不早于开始")
-    for _, days in departure_days:
-        if days is not None and days != doc.days_count:
-            add("days_count", "DEPARTURE_DURATION_MISMATCH", "适用团期天数与行程不一致")
+    mismatches = [d for d in departure_days if d[1] is not None and d[1] != doc.days_count]
+    if mismatches:
+        add(
+            "days_count",
+            "DEPARTURE_DURATION_MISMATCH",
+            departure_mismatch_message(doc.days_count, doc.nights, mismatches),
+        )
     expected = doc.quality.days_expected
     if expected and expected != doc.days_count:
         add(
             "days_count",
             "DAYS_DIFFER_FROM_LISTING",
-            "附件与线路登记天数不一致，请核对适用版本",
+            listing_mismatch_message(doc),
             True,
         )
     if doc.shopping_status == "none" and (

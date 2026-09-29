@@ -74,16 +74,18 @@ def select_publication(conn, current, departure_id):
 
 
 def departure_durations(conn, product_id, doc):
+    """Return (id, inclusive days, start, end) for the same publication-check scope."""
     scope = doc.applicability
     rows = conn.execute(
-        text("""SELECT d.id,(d.return_date-d.depart_date+1) AS days,d.depart_date,p.gateway
+        text("""SELECT d.id,(d.return_date-d.depart_date+1) AS days,d.depart_date,d.return_date,p.gateway
       FROM departure d JOIN supplier_product p ON p.id=d.product_id WHERE p.id=:id AND d.status='published'
       AND (CAST(:start AS date) IS NULL OR d.depart_date>=:start)
-      AND (CAST(:end AS date) IS NULL OR d.depart_date<=:end)"""),
+      AND (CAST(:end AS date) IS NULL OR d.depart_date<=:end)
+      ORDER BY d.depart_date,d.return_date,d.id"""),
         {"id": product_id, "start": scope.start, "end": scope.end},
     ).mappings()
     return [
-        (row["id"], row["days"])
+        (row["id"], row["days"], row["depart_date"], row["return_date"])
         for row in rows
         if not scope.departure_cities or row["gateway"] in scope.departure_cities
     ]

@@ -65,7 +65,7 @@ def assess(content, departure_days=()):
     if q.days_extracted != len(doc.days) or any(d.status != "extracted" for d in doc.days):
         block("DAY_NOT_EXTRACTED", "存在未成功整理的行程日")
     if not q.days_expected or q.days_expected != doc.days_count:
-        block("DAYS_DIFFER_FROM_LISTING", "附件天数与线路登记天数不一致或缺少登记天数")
+        block("DAYS_DIFFER_FROM_LISTING", kit.listing_mismatch_message(doc))
     if any(u.get("risky") for u in q.unmapped):
         block("RISKY_UNMAPPED", "仍有费用、限制等高风险原文未归入")
     if doc.shopping_status == "none" and not doc.shopping_cite:

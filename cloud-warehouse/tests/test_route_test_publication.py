@@ -70,6 +70,17 @@ def test_full_coverage_does_not_override_missing_or_failed_content(failure):
     assert not testpub.assess(doc)["eligible"]
 
 
+def test_missing_listing_duration_is_named_without_fabricating_a_count():
+    doc = complete()
+    doc.quality.days_expected = None
+    doc.quality.days_found = doc.days_count
+    result = testpub.assess(doc)
+    issue = next(x for x in result["blockers"] if x["code"] == "DAYS_DIFFER_FROM_LISTING")
+    assert "解析时线路登记天数缺失" in issue["message"]
+    assert "当前整理稿 2 天" in issue["message"]
+    assert "登记 0 天" not in issue["message"] and not result["eligible"]
+
+
 def test_policy_is_default_off_actor_and_connection_scoped(monkeypatch):
     actor = Principal(uuid4(), uuid4())
     connection = uuid4()
