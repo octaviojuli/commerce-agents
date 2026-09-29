@@ -220,7 +220,7 @@ def test_room_counts_are_read_from_the_words_beside_them():
     assert rooms("三个人住两个标间") == {"twins": 2}
     assert rooms("大床还是双床都行") == {}
     assert rooms("再加一间单人间") == {}
-    fills, _, _ = changes(
+    fills, proposals, _ = changes(
         Need(),
         reading(
             {
@@ -232,7 +232,10 @@ def test_room_counts_are_read_from_the_words_beside_them():
         family,
         TODAY,
     )
-    assert fills["rooms"]["new"] == {"doubles": 1, "twins": 1, "singles": 1, "note": ""}
+    # The model read two doubles; the plain count differs, so the advisor checks it.
+    assert "rooms" not in fills
+    assert proposals[0]["new"] == {"doubles": 1, "twins": 1, "singles": 1, "note": ""}
+    assert proposals[0]["hint"].endswith("模型读作 大床2间、双床1间、单间1间")
 
 
 def test_a_reply_states_no_head_count_the_customer_has_not_given():
@@ -266,3 +269,23 @@ def test_a_departure_carries_the_day_count_it_is_compared_with():
         }
     )
     assert check == {"calendar_days": 10, "route_days": 8, "days_differ": True}
+
+
+def test_part_of_the_party_is_not_its_count():
+    family = needs.parse(
+        "party", {"adults": 2, "children": [{"age": 8}, {"age": 5}], "seniors": []}
+    )
+    counts = grounding.known_counts(family)
+    said = ["2大2小，孩子8岁和5岁"]
+    assert grounding.party_counts("其中一个孩子8岁") == set()
+    kept = grounding.check("其中一个孩子8岁。", [], said=said, counts=counts)
+    assert "party" not in kept["reasons"]
+    cut = grounding.check("一个孩子同行。", [], said=said, counts=counts)
+    assert cut["reasons"] == ["party"]
+
+
+def test_a_room_kind_named_twice_is_left_to_the_model():
+    from tour.advisor.interpret import rooms
+
+    assert rooms("一间大床房给爸妈，一间大床房给我们") == {}
+    assert rooms("两间大床房改一间双床房") == {}

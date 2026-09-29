@@ -109,25 +109,30 @@ ROOM_KINDS = {
     "单住": "singles",
 }
 ROOM_TOKEN = re.compile(r"(" + "|".join(ROOM_KINDS) + r")|(\d+)\s*[间个]")
-# Counts that are not the rooms wanted now: steps ("再加一间"), refusals ("不要两间大床房"),
-# earlier counts ("原来两间"), choices, questions and suppositions. The model reads these.
+# Words that make a count something other than the rooms wanted now: a step ("再加一间"), a
+# refusal ("不要两间"), an earlier count ("原来两间", "两间改一间"), a choice, a question or a
+# supposition. The model reads these; the rule stays out.
 ROOM_UNCLEAR = re.compile(
-    r"再加|增加|多加|多订|多要|减少|少订|少要|去掉|不要|不用|不住|不是|别|没|原来|之前|本来"
-    r"|改成|改为|换成|变成|还是|或者|或是|如果|假如|要是|的话|多少|几|吗|呢|[？?]"
+    r"再加|增加|多加|追加|减|多订|多要|少订|少要|去掉|不要|不用|不住|不是|别|没|原|之前|本来|以前|先|后来"
+    r"|改|换|调|变|退|还是|或|如果|假如|要是|的话|多少|几|吗|呢|[？?]"
 )
 
 
 def rooms(message: str) -> dict:
-    """Room counts a plain statement gives, by rule: {"doubles": 1, ...} for each kind it counts.
+    """Room counts a plain statement gives, by rule: {"doubles": 1, ...}; or {} for any other.
 
-    A message that refuses, corrects, compares or asks gives none. A count belongs to the room word beside it ("1间大床房", "大床房1间"). A count between
-    two room words ("2间大床1间双床") goes to the one that has no count yet; one that stays
-    unclear is left to the model's reading.
+    A plain statement names each room kind once, each with one count beside it ("1间大床房",
+    "大床房1间"); a count between two room words ("2间大床1间双床") goes to the one that has no
+    count yet. Anything else — a word from ``ROOM_UNCLEAR``, a kind named twice, a count
+    that belongs to no room or to either of two — gives {}, and the model's reading stands.
     """
     text = chinese_numbers(message)
     if ROOM_UNCLEAR.search(text):
         return {}
     tokens = list(ROOM_TOKEN.finditer(text))
+    kinds = [i for i, t in enumerate(tokens) if t[1]]
+    if len({ROOM_KINDS[tokens[i][1]] for i in kinds}) != len(kinds):
+        return {}
     owners, unclear = {}, []
     for i, token in enumerate(tokens):
         if token[2] is None:
@@ -151,13 +156,17 @@ def rooms(message: str) -> dict:
             unclear.append((i, near))
     for i, near in unclear:
         free = [k for k in near if k not in owners.values()]
-        if len(free) == 1:
-            owners[i] = free[0]
-    counts = {}
-    for i, k in owners.items():
-        kind = ROOM_KINDS[tokens[k][1]]
-        counts[kind] = counts.get(kind, 0) + int(tokens[i][2])
-    return counts
+        if len(free) != 1:
+            return {}
+        owners[i] = free[0]
+    if sorted(owners.values()) != kinds:
+        return {}
+    return {ROOM_KINDS[tokens[k][1]]: int(tokens[i][2]) for i, k in owners.items()}
+
+
+def room_text(counts: dict) -> str:
+    names = {"doubles": "大床", "twins": "双床", "singles": "单间"}
+    return "、".join(f"{name}{counts[k]}间" for k, name in names.items() if k in counts)
 
 
 COUPLE = re.compile(
@@ -281,8 +290,9 @@ def changes(need: Need, understanding, message: str, today: date, *, turn=None):
         by_field["party"] = Change(
             field="party", value={"total_count": int(total_match[1])}, evidence=message[:200]
         )
-    # The rule corrects the model's room counts; it never makes a room request of its own.
+    # The rule checks the model's room counts; it never makes a room request of its own.
     said_rooms = rooms(message) if "rooms" in by_field else {}
+    review = set()
     if parsed_places is not None:
         candidates.append(("destinations", parsed_places, "said", place_evidence, ""))
     holiday_value, holiday_evidence, holiday_hint = window(message, None, today)
@@ -321,10 +331,21 @@ def changes(need: Need, understanding, message: str, today: date, *, turn=None):
                 # Later partial answers must retain the already recorded travellers.
                 value = couple(value, bool(ELDERLY.search(message)))
             value = merge_party(need.get("party"), value)
-        if field == "rooms" and said_rooms:
-            # The counts the message states are read by rule; the model has misread "1间大床" as 2.
-            value = {**(value if isinstance(value, dict) else {}), **said_rooms}
-            evidence = evidence or grounded(message, message[:200])
+        if field == "rooms" and said_rooms and isinstance(value, dict):
+            # The model has misread "1间大床" as 2. Where the plain count differs, the advisor
+            # sees both and decides; neither reading is saved on its own.
+            read = {k: int(value.get(k) or 0) for k in said_rooms}
+            if read != said_rooms:
+                value = {**value, **said_rooms}
+                source, hint = (
+                    "inferred",
+                    "房间数请核对：原话逐项数为 "
+                    + room_text(said_rooms)
+                    + "，模型读作 "
+                    + room_text(read),
+                )
+                evidence = evidence or grounded(message, message[:200])
+                review.add(field)
         if (
             field == "preferences"
             and isinstance(value, list)
@@ -365,7 +386,9 @@ def changes(need: Need, understanding, message: str, today: date, *, turn=None):
         grows = (
             isinstance(current, list) and isinstance(parsed, list) and set(current) <= set(parsed)
         )
-        if blank(current) or grows or (field == "party" and _only_adds(current, parsed)):
+        if field in review:
+            proposals.append(item)
+        elif blank(current) or grows or (field == "party" and _only_adds(current, parsed)):
             fills[field] = item
         else:
             proposals.append(item)

@@ -626,3 +626,71 @@ def test_http_does_not_return_invented_party_composition(dialogue, monkeypatch, 
     monkeypatch.setattr(model, "call", wrong_draft)
     result = say(client, deal, "收到，谢谢。", "customer")
     assert draft not in result["draft"]["text"], result["draft"]
+
+
+# A room swap keeps the model's reading; a count of one is not "one of them" by itself.
+ROOM_SWAPS = ["两间大床房改一间双床房", "两间大床房换一间双床房", "大床房两间，调整为一间双床房"]
+SWAPPED = {"doubles": 0, "twins": 1, "singles": 0, "note": ""}
+
+
+@pytest.mark.parametrize("message", ROOM_SWAPS, ids=["change", "swap", "adjust"])
+def test_room_correction_does_not_restore_the_old_count(message):
+    reading = Understanding.model_validate(
+        {"changes": [{"field": "rooms", "value": SWAPPED, "evidence": message}]}
+    )
+    fills, proposals, rejected = interpret.changes(
+        needs.Need(), reading, message, date(2026, 9, 29)
+    )
+    assert fills["rooms"]["new"] == SWAPPED, (fills, proposals, rejected)
+
+
+def test_http_room_correction_preserves_correct_model_reading(dialogue, monkeypatch):
+    client, deal, state, model = dialogue
+    message = ROOM_SWAPS[0]
+
+    async def correct_model(name, data):
+        if name == "understand":
+            return Understanding.model_validate(
+                {"changes": [{"field": "rooms", "value": SWAPPED, "evidence": message}]}
+            )
+        if name == "draft":
+            return Draft(to_customer="好的，已收到您的需求。", to_advisor="已整理")
+        raise AssertionError(name)
+
+    monkeypatch.setattr(model, "call", correct_model)
+    say(client, deal, message, "customer")
+    assert value(detail(client, deal), "rooms") == SWAPPED
+
+
+FAMILY = {"adults": 2, "children": [{"age": 8}, {"age": 5}], "seniors": []}
+FEWER = ["按一位成人、一个孩子来安排。", "只有一个孩子同行。"]
+
+
+@pytest.mark.parametrize("draft", FEWER, ids=["one-and-one", "only-one-child"])
+def test_one_person_exception_must_not_change_total_composition(draft):
+    checked = grounding.check(
+        draft,
+        [],
+        said=["两个大人和两个小孩"],
+        counts=grounding.known_counts(needs.Party.model_validate(FAMILY)),
+    )
+    assert not checked["text"] and "party" in checked["reasons"], checked
+
+
+@pytest.mark.parametrize("draft", FEWER, ids=["one-and-one", "only-one-child"])
+def test_http_does_not_reduce_known_party_counts(dialogue, monkeypatch, draft):
+    client, deal, state, model = dialogue
+    client.put(f"/api/deals/{deal}/need/party", json={"value": FAMILY}).raise_for_status()
+    saved = value(detail(client, deal), "party")
+    assert saved["adults"] == 2 and len(saved["children"]) == 2
+
+    async def wrong_draft(name, data):
+        if name == "understand":
+            return Understanding()
+        if name == "draft":
+            return Draft(to_customer=draft, to_advisor="已整理")
+        raise AssertionError(name)
+
+    monkeypatch.setattr(model, "call", wrong_draft)
+    result = say(client, deal, "收到，谢谢。", "customer")
+    assert draft not in result["draft"]["text"], result["draft"]
