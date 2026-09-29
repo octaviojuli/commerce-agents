@@ -516,7 +516,11 @@ class Turns:
                 )
             if draft_extra.get("process_note"):
                 reply += "\n" + draft_extra["process_note"]
-            for name in supplier_names(context, deal):
+            read_context = {
+                **context,
+                "visible": [*context["visible"], *draft_extra.get("live_reads", [])],
+            }
+            for name in supplier_names(read_context, deal):
                 reply = reply.replace(name, "")
             result["draft"] = {"text": reply, "removed": [], "claims": [], "simplified": False}
         else:

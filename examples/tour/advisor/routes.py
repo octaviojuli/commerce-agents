@@ -539,7 +539,16 @@ async def overview(wh, target, need, *, around_days=10):
         }
 
     dates, itinerary = await asyncio.gather(date_read(), doc_read())
-    return {"product_id": pid, "title": title, "dates": dates, "itinerary": itinerary}
+    supplier = target.get("supplier")
+    if isinstance(supplier, str):
+        supplier = {"id": target.get("supplier_id", ""), "name": supplier}
+    return {
+        "product_id": pid,
+        "title": title,
+        "supplier": supplier,
+        "dates": dates,
+        "itinerary": itinerary,
+    }
 
 
 async def nearby_candidates(wh, need, *, suppliers=()):

@@ -187,7 +187,7 @@ def settle_route(conn, owner, deal_id, product_id, title, supplier=None):
     short name is kept for the advisor's screens only.
     """
     deal = store.deal(conn, owner, deal_id, lock=True)
-    supplier = supplier or {}
+    supplier = {"name": supplier} if isinstance(supplier, str) else supplier or {}
     route = {
         "product_id": product_id,
         "title": routes.display(title),

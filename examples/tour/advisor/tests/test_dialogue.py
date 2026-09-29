@@ -102,8 +102,13 @@ def dialogue(tmp_path, monkeypatch):
                     "items": [
                         {
                             "product_id": SLOW,
-                            "title": TITLE,
-                            "attributes": {"days": "9", "depart_city": "上海"},
+                            "title": state.get("supplier_name", "") + TITLE,
+                            "attributes": {
+                                "days": "9",
+                                "depart_city": "上海",
+                                "supplier_id": "ACME-source",
+                                "supplier_name": state.get("supplier_name", ""),
+                            },
                         }
                     ]
                     if fits
@@ -357,6 +362,15 @@ def test_exact_date_does_not_accept_model_expansion():
     assert result["start"] == result["end"] == "2026-10-30"
 
 
+def test_nearby_route_reply_removes_supplier_name_even_without_exact_candidates(dialogue):
+    client, deal, state, _ = dialogue
+    state["supplier_name"] = "ACME 日行"
+    result = first(client, deal)
+    assert "ACME 日行" not in result["draft"]["text"]
+    assert "2026-10-25" in result["draft"]["text"]
+    assert any(c["type"] == "routes" and not c["cards"] for c in result["cards"])
+
+
 def test_viewing_route_does_not_take_its_duration_as_a_new_requirement(dialogue):
     client, deal, _, model = dialogue
     first(client, deal)
@@ -411,6 +425,17 @@ def test_legacy_quote_survives_optional_total_field_and_blocks_inconsistent_tota
     assert pricing.validity(row, deal, need)[0]
     need = needs.set_field(need, "party", {**legacy, "total_count": 3}, "advisor")
     assert not pricing.validity(row, deal, need)[0]
+
+
+def test_viewing_and_reselecting_current_route_preserve_valid_quote(env):
+    client, _, _ = env
+    deal = ready(client)
+    quoted(client, deal)
+    before = detail(client, deal)
+    viewed = say(client, deal, "我想看这条线路", "customer")
+    assert any(c["type"] == "route_reads" for c in viewed["cards"])
+    say(client, deal, "就选这条", "advisor")
+    assert detail(client, deal)["quote"] == before["quote"]
 
 
 def test_query_adoption_respects_sale_ledger_even_if_status_was_changed(env):
