@@ -76,9 +76,14 @@ class Warehouse:
         return {**headers, **(extra or {})}
 
     async def _get(self, path, **params):
-        response = await self.client.get(
-            path, headers=self._headers(), params={k: v for k, v in params.items() if v is not None}
-        )
+        try:
+            response = await self.client.get(
+                path,
+                headers=self._headers(),
+                params={k: v for k, v in params.items() if v is not None},
+            )
+        except httpx.TransportError as error:
+            raise WarehouseError(503, "云仓连接暂时失败，请重试") from error
         if response.status_code >= 400:
             raise WarehouseError(response.status_code, _message(response))
         return response.json()

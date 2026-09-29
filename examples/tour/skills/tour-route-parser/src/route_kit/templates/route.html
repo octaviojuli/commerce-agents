@@ -358,6 +358,7 @@ function renderCenter(){
   const optRows=[...R.optional_items.map(o=>[o.name,o.price_text,o.duration_text,o.note,""]),...allNodes().filter(([,n])=>["optional","package"].includes(n.type)&&!R.optional_items.some(o=>o.name===n.name)).map(([d,n])=>[n.name,n.price_text,n.duration_text,(n.children||[]).map(c=>c.name).join("、"),"D"+d.day])];
   const pol=Object.entries(POL).filter(([k])=>(R.policies[k]||[]).length);
   $("#col").innerHTML=hero()+
+   (R.publication_notice?`<section class="card" role="note"><strong>${esc(R.publication_notice)}</strong></section>`:"")+
    (R.highlights.length?`<section class="card" id="sec-hl"><h2 class="h">行程亮点</h2>${highlightCards()}</section>`:`<span id="sec-hl"></span>`)+
    `<section class="card" id="sec-brief"><h2 class="h">简要行程</h2><ul class="brief">${R.days.map((d,i)=>`<li><b>D${d.day}${d.day_end?"–"+d.day_end:""}</b><div><a href="#day-${i}" data-jump="${i}" style="color:inherit;text-decoration:none"><div>${esc(d.title)}</div><div class="p">${esc(chain(d))}</div></a></div></li>`).join("")}</ul></section>`+
    days+

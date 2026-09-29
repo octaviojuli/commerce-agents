@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { api, cover, money } from "@/lib/api";
-import type { Answer, Card, ChangeItem, Gates, Impact, RouteCard, Search } from "@/lib/types";
+import type { Answer, Card, ChangeItem, Gates, Impact, RouteCard, RouteRead, Search } from "@/lib/types";
 import { Supplier, Tag, useToast } from "./ui";
 
 const LABELS: Record<string, string> = {
@@ -32,6 +32,7 @@ const MISSING: Record<string, string> = {
   child_ages: "孩子几岁",
   child_beds: "孩子是否占床",
   senior_ages: "老人年龄",
+  party_total: "核对总人数与人员构成",
   rooms: "房型",
   passports: "护照是否齐全（下单前）",
 };
@@ -57,7 +58,7 @@ export function show(field: string, value: unknown): string {
     case "days":
       return v.min === v.max ? `${v.min} 天` : `${v.min}–${v.max} 天`;
     case "party": {
-      if (v.adults == null) return "人数未定";
+      if (v.adults == null) return v.total_count ? `共 ${v.total_count} 人 · 成人构成待确认${v.children?.length === 0 ? " · 无儿童" : ""}` : "人数未定";
       let t = `${v.adults} 大`;
       if (v.children === null || v.children === undefined) t += " · 孩子未问";
       else if (v.children.length) {
@@ -68,7 +69,7 @@ export function show(field: string, value: unknown): string {
         const ages = v.seniors.filter((s: any) => s.age != null).map((s: any) => `${s.age} 岁`);
         t += ` + ${v.seniors.length} 老` + (ages.length ? `（${ages.join("、")}）` : "");
       }
-      return t;
+      return (v.total_count ? `共 ${v.total_count} 人 · ` : "") + t;
     }
     case "rooms": {
       const parts = [];
@@ -306,7 +307,7 @@ export function RoutesCard({ deal, search, picked, onPick }: { deal: string; sea
   return (
     <>
       <Who>
-        按需求找到 {search.cards.length} 条
+        {search.query_context ? "按临时条件" : "按需求"}找到 {search.cards.length} 条
         {search.alternatives_only ? "（出发地都不同，只能作备选）" : ""}
       </Who>
       <div className="opts">
@@ -320,6 +321,24 @@ export function RoutesCard({ deal, search, picked, onPick }: { deal: string; sea
       </Link>
     </>
   );
+}
+
+export function RouteReadCard({ deal, item }: { deal: string; item: RouteRead }) {
+  const d = item.dates;
+  return <section className="card route-read">
+    <b>{item.title}</b>
+    {d.requested && <small>查询日期：{d.requested}</small>}
+    <p>{d.status === "error" ? d.message : d.status === "nearby" ? "所问日期范围内未查到团，邻近日期如下。出发需求未改变。" : d.status === "available" ? "所问日期范围内有团期：" : d.status === "partial" ? "查询未覆盖全部团期，请缩小日期范围。" : `所问日期及前后 ${d.around_days ?? 10} 天内未查到团期。`}</p>
+    {!!d.items.length && <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>{Array.from(new Set(d.items.map(x => x.date))).map(day => <span className="tag t-br" key={day}>{day}</span>)}</div>}
+    {d.partial && <small>这里只展示部分结果。</small>}
+    <p>{item.itinerary.message || "已发布行程"}</p>
+    {item.itinerary.summary.map(line => <small key={line}>{line}</small>)}
+    {item.itinerary.notice && <p className="tip">{item.itinerary.notice}</p>}
+    <div className="row" style={{ gap: 8 }}>
+      <Link className="b sm b-soft" href={`/routes/${item.product_id}?deal=${deal}`}>查看线路</Link>
+      {item.itinerary.status === "published" && <a className="b sm b-br" href={`/api/routes/${item.product_id}/page?deal=${deal}`} target="_blank" rel="noreferrer">看完整线路</a>}
+    </div>
+  </section>;
 }
 
 export function RouteOpt({ card, rank, deal, picked, onPick }: { card: RouteCard; rank: number; deal: string; picked: boolean; onPick: () => void }) {

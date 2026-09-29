@@ -100,6 +100,16 @@ class SearchIn(BaseModel):
     suppliers: list[str] = Field(default_factory=list, max_length=20)
 
 
+class QueryRelax(BaseModel):
+    field: str = Field(pattern="^(window|days|depart_city)$")
+    amount: int = Field(default=10, ge=1, le=60)
+
+
+class QueryResolve(BaseModel):
+    query_id: str
+    adopt: bool = False
+
+
 class Departure(BaseModel):
     departure_id: str
     offer_id: str | None = None
@@ -472,6 +482,38 @@ def create_app(settings: Settings, *, model=None, transport=None, judge=None):
         wh = warehouse(session)
         try:
             return await turns.search(owner, wh, deal_id, (body or SearchIn()).suppliers)
+        finally:
+            await wh.aclose()
+
+    @app.post("/api/deals/{deal_id}/query/relax")
+    async def relax_query(deal_id: UUID, body: QueryRelax, session: Session):
+        from . import queries
+
+        owner = owner_of(session)
+        with engine.begin() as conn:
+            deal = store.deal(conn, owner, deal_id, lock=True)
+            queries.save(
+                conn,
+                owner,
+                deal,
+                [queries.relaxed(queries.effective(deal), body.field, body.amount)],
+            )
+        wh = warehouse(session)
+        try:
+            return await turns.search(owner, wh, deal_id)
+        finally:
+            await wh.aclose()
+
+    @app.post("/api/deals/{deal_id}/query/resolve")
+    async def resolve_query(deal_id: UUID, body: QueryResolve, session: Session):
+        from . import queries
+
+        owner = owner_of(session)
+        changed = queries.resolve(engine, owner, deal_id, body.query_id, adopt=body.adopt)
+        wh = warehouse(session)
+        try:
+            found = await turns.search(owner, wh, deal_id)
+            return {**changed, "search": found}
         finally:
             await wh.aclose()
 
@@ -954,6 +996,8 @@ def deal_card(conn, owner, d):
 
 
 def detail(conn, owner, deal_id):
+    from . import queries
+
     deal = store.deal(conn, owner, deal_id)
     need = Need.model_validate(deal["need"])
     gates = needs.gates(need)
@@ -970,6 +1014,7 @@ def detail(conn, owner, deal_id):
     ]
     pending = [p for p in proposals if any(i["status"] == "pending" for i in p["items"])]
     latest = store.rows(conn, owner, db.searches, deal_id, order=db.searches.c.created_at.desc())
+    latest = [r for r in latest if queries.matches_search(deal, r)]
     plans = selling.plans(conn, owner, deal_id)
     quotes = store.rows(conn, owner, db.quotes, deal_id, order=db.quotes.c.created_at.desc())
     confirmations = store.rows(
@@ -990,6 +1035,7 @@ def detail(conn, owner, deal_id):
         "stage": stage(deal, need),
         "version": deal["need_version"],
         "need": need_view(need),
+        "query": queries.view(deal),
         "gates": gates,
         "clarity": needs.clarity(need),
         "route": deal.get("route"),

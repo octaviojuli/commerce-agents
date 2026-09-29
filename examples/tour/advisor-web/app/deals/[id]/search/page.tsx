@@ -3,19 +3,37 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Chips, ErrorBox, Loading, Supplier, Top, useToast } from "@/components/ui";
+import { Chips, ErrorBox, Loading, Supplier, Top } from "@/components/ui";
+import QueryBar from "@/components/QueryBar";
+import { RouteReadCard } from "@/components/Cards";
 import { api, cover, money } from "@/lib/api";
 import type { Deal, Search } from "@/lib/types";
 
 export default function SearchPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const toast = useToast();
   const [deal, setDeal] = useState<Deal | null>(null);
   const [search, setSearch] = useState<Search | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  async function refresh() {
+    const d = await api.get<Deal>(`/deals/${id}`);
+    setDeal(d);
+    setSearch(d.search);
+  }
+  async function relax(field: string) {
+    setBusy(true);
+    setError("");
+    try {
+      await api.post(`/deals/${id}/query/relax`, { field, amount: field === "days" ? 2 : 10 });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      await refresh();
+      setBusy(false);
+    }
+  }
   async function run(suppliers: string[] = search?.supplier_filter ?? []) {
     setBusy(true);
     try {
@@ -48,6 +66,7 @@ export default function SearchPage() {
           </button>
         }
       />
+      <QueryBar deal={id} query={deal?.query ?? null} onDone={refresh} />
       <div className="sc">
         <div className="pad" style={{ paddingTop: 12 }}>
           <ErrorBox error={error} />
@@ -136,13 +155,14 @@ export default function SearchPage() {
                   <span>{search.explain || "条件都满足的线路不多。"}</span>
                   <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                     {search.relax.map((r) => (
-                      <Link key={r.field} className="b sm b-soft" href={`/deals/${id}/memory`} onClick={() => toast("在需求单里放宽这一项，保存后重新找线")}>
+                      <button key={r.field} className="b sm b-soft" disabled={busy} onClick={() => relax(r.field)}>
                         {r.text}
-                      </Link>
+                      </button>
                     ))}
                   </div>
                 </div>
               )}
+              {search.nearby?.map(item => <RouteReadCard key={item.product_id} deal={id} item={item} />)}
               {search.cards.length > 0 && <Chips
                 items={[
                   ...(search.cards.length >= 2

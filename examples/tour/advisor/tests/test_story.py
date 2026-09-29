@@ -296,7 +296,7 @@ def test_the_storyline_from_first_words_to_the_sale(client):
     ).json()
     read = next(c for c in turn["cards"] if c["type"] == "read")
     assert {i["field"] for i in read["items"]} >= {"destinations", "party", "window", "budget"}
-    assert turn["asked"] == "child_beds" and "占床" in turn["draft"]["text"]
+    assert turn["asked"] == "" and "占床" not in turn["draft"]["text"]
 
     turn = client.post(f"/api/deals/{deal}/turns", json={"text": "先帮她看看有哪些线路"}).json()
     routes = next(c for c in turn["cards"] if c["type"] == "routes")

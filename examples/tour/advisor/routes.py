@@ -452,3 +452,139 @@ def _workdays(start: date, end: date) -> int:
             days += 1
         current += timedelta(days=1)
     return days
+
+
+async def overview(wh, target, need, *, around_days=10):
+    """Live dates and published content are independent reads; neither selects a route."""
+    pid, title = target["product_id"], target["title"]
+    window = need.get("window")
+
+    async def dated(start, end):
+        items, after = [], None
+        for _ in range(4):
+            page = await wh.departures(pid, start=start, end=end, limit=50, after=after)
+            for item in page.get("items", []):
+                attrs = item.get("attributes", {})
+                try:
+                    day = date.fromisoformat(attrs.get("depart_date", ""))
+                except ValueError:
+                    continue
+                if (start and day < start) or (end and day > end):
+                    continue
+                items.append(
+                    {
+                        "date": day.isoformat(),
+                        "departure_id": item["product_id"],
+                        "availability": attrs.get("availability", ""),
+                        "in_window": bool(window and window.start <= day <= window.end),
+                    }
+                )
+            after = page.get("next_cursor")
+            if not after:
+                break
+        unique = {d["departure_id"]: d for d in items}
+        return sorted(unique.values(), key=lambda d: (d["date"], d["departure_id"])), bool(after)
+
+    async def date_read():
+        try:
+            exact, partial = await dated(
+                window.start if window else None, window.end if window else None
+            )
+            nearby = []
+            if window and not exact:
+                nearby, more = await dated(
+                    window.start - timedelta(days=around_days),
+                    window.end + timedelta(days=around_days),
+                )
+                partial = partial or more
+            items = exact or nearby
+            status = (
+                "available" if exact else "nearby" if nearby else "partial" if partial else "none"
+            )
+            return {
+                "status": status,
+                "items": items[:8],
+                "partial": partial or len(items) > 8,
+                "requested": needs.show("window", window) if window else "在售日期",
+                "around_days": around_days,
+            }
+        except WarehouseError as error:
+            if error.status in (401, 403):
+                raise
+            return {
+                "status": "error",
+                "items": [],
+                "partial": False,
+                "message": "团期查询失败，请重试；不能据此判断是否有团",
+            }
+
+    async def doc_read():
+        try:
+            doc = await wh.document(pid)
+        except WarehouseError as error:
+            if error.status in (401, 403):
+                raise
+            return {
+                "status": "error",
+                "summary": [],
+                "notice": "",
+                "message": "行程查询失败，请重试",
+            }
+        route = Route(pid, title, (doc or {}).get("body"))
+        return {
+            "status": "published" if doc else "unpublished",
+            "notice": route.notice,
+            "summary": [f"D{d['day']} {d['title']}" for d in route.days[:4]],
+            "message": "" if doc else "这条线路尚未发布行程",
+        }
+
+    dates, itinerary = await asyncio.gather(date_read(), doc_read())
+    return {"product_id": pid, "title": title, "dates": dates, "itinerary": itinerary}
+
+
+async def nearby_candidates(wh, need, *, suppliers=()):
+    """Keep the direction, days and origin while inspecting adjacent departure dates."""
+    window = need.get("window")
+    if not window:
+        return []
+    widened = needs.set_field(
+        need,
+        "window",
+        {
+            "start": (window.start - timedelta(days=10)).isoformat(),
+            "end": (window.end + timedelta(days=10)).isoformat(),
+        },
+        "explore",
+    )
+    body = await search(wh, widened, limit=3, suppliers=suppliers)
+    candidates = [c for c in body["cards"] if not c["alternative"]]
+    return await asyncio.gather(*(overview(wh, c, need) for c in candidates))
+
+
+def overview_text(item):
+    dates, itinerary = item["dates"], item["itinerary"]
+    lines = [item["title"]]
+    if dates["status"] == "error":
+        lines.append(dates["message"])
+    elif dates["items"]:
+        label = (
+            "所问日期范围内有团"
+            if dates["status"] == "available"
+            else "所问日期范围内未查到团，邻近可选日期"
+        )
+        lines.append(label + "：" + "、".join(dict.fromkeys(d["date"] for d in dates["items"])))
+        if dates["partial"]:
+            lines.append("这里只展示部分查询结果")
+    else:
+        lines.append(
+            "团期查询结果不完整，请缩小日期范围"
+            if dates["partial"]
+            else "所问日期及前后10天内未查到团期"
+        )
+    if itinerary["message"]:
+        lines.append(itinerary["message"])
+    elif itinerary["summary"]:
+        lines.append("行程概要：" + "；".join(itinerary["summary"]))
+    if itinerary["notice"]:
+        lines.append(itinerary["notice"])
+    return "。".join(lines) + "。"

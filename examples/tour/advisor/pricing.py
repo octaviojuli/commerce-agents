@@ -66,7 +66,9 @@ def terms(need) -> dict:
     """The part of the need a price depends on; stored with every quote."""
     party, rooms = need.get("party"), need.get("rooms")
     return {
-        "party": party.model_dump(mode="json") if party else None,
+        # Quoted amounts depend on the composition, not a separately stated total.
+        # Excluding it also preserves snapshots created before total_count existed.
+        "party": party.model_dump(mode="json", exclude={"total_count"}) if party else None,
         "rooms": rooms.model_dump(mode="json") if rooms else None,
     }
 
@@ -195,6 +197,8 @@ def validity(row, deal, need) -> tuple[bool, str]:
         return False, "还没有核价"
     if row["status"] != "active":
         return False, row.get("void_reason") or "报价已作废"
+    if "party_total" in needs.gates(need)["quote"]["missing"]:
+        return False, "总人数与人员构成不一致，需要重新确认"
     route = (deal.get("route") or {}).get("product_id")
     if not route or row["snapshot"].get("product_id") != route:
         return False, "线路已换，需要重新核价"

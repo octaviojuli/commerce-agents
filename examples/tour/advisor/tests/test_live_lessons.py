@@ -86,11 +86,11 @@ def test_meals_are_counted_without_the_empty_slots_and_summarised():
 def test_what_is_being_checked_is_said_in_the_customers_terms():
     assert (
         pending_line([{"q": "帮我跟她说一下这个团期的价格"}])
-        == "您问的这个团期的价格，我去跟供应商确认后回您。"
+        == "您问的这个团期的价格，现有资料尚未写明，仍待核实。"
     )
     assert (
         pending_line([{"q": "小林问：有购物店吗？"}, {"q": "有购物店吗？"}])
-        == "您问的有购物店，我去跟供应商确认后回您。"
+        == "您问的有购物店，现有资料尚未写明，仍待核实。"
     )
     assert missing_text("market.child.occupied") == "门市价缺儿童占床价"
 

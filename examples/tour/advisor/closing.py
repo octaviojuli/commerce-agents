@@ -196,6 +196,7 @@ def settle_route(conn, owner, deal_id, product_id, title, supplier=None):
     }
     if (deal.get("route") or {}).get("product_id") == product_id:
         return deal, route
+    require_unsold(conn, owner, deal)
     void_settled(conn, owner, deal_id, "线路已换，需要重新核价")
     store.update_deal(conn, owner, deal_id, route=route, departure=None, next_step="看团期")
     return deal, route
@@ -206,11 +207,19 @@ def release_route(engine, owner, deal_id):
     route (its departure, confirmation sheets or prices) survives."""
     with engine.begin() as conn:
         deal = store.deal(conn, owner, deal_id, lock=True)
+        require_unsold(conn, owner, deal)
         if not deal.get("route"):
             return {"route": None, "previous": None}
         void_settled(conn, owner, deal_id, "线路已退回，需要重新选线")
         store.update_deal(conn, owner, deal_id, route=None, departure=None, next_step="选线")
         return {"route": None, "previous": deal["route"]}
+
+
+def require_unsold(conn, owner, deal):
+    if deal["status"] == "won" or store.rows(
+        conn, owner, db.ledger, deal["id"], where=[db.ledger.c.kind == "sale"]
+    ):
+        raise store.Conflict("已成交单不能退回或更换线路，请单独处理成交调整")
 
 
 def choose_route(engine, owner, deal_id, product_id, title, supplier=None):

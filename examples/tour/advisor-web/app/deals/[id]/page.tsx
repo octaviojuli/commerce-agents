@@ -11,12 +11,14 @@ import {
   GatesCard,
   ReadCard,
   RoutesCard,
+  RouteReadCard,
   Who,
 } from "@/components/Cards";
 import { Chips, Draft, ErrorBox, Loading, Sheet, Top, Track, Working, useToast } from "@/components/ui";
 import { ago, api, copy } from "@/lib/api";
 import type { Card, Chip, Deal, Turn, TurnResult } from "@/lib/types";
 import { STAGES } from "@/lib/types";
+import QueryBar from "@/components/QueryBar";
 
 const MENU = [
   ["memory", "需求与记忆"],
@@ -38,6 +40,7 @@ export default function DealPage() {
   const toast = useToast();
   const [deal, setDeal] = useState<Deal | null>(null);
   const [text, setText] = useState("");
+  const [mode, setMode] = useState<"advisor" | "customer">("advisor");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [menu, setMenu] = useState(false);
@@ -52,7 +55,7 @@ export default function DealPage() {
   }, [id]);
 
   const send = useCallback(
-    async (message: string, kind = "customer") => {
+    async (message: string, kind = "advisor") => {
       if (!message.trim()) return;
       setBusy(true);
       setError("");
@@ -76,7 +79,8 @@ export default function DealPage() {
         const pending = sessionStorage.getItem("advisor-pending-" + id);
         if (pending) {
           sessionStorage.removeItem("advisor-pending-" + id);
-          send(pending);
+          setMode("customer");
+          send(pending, "customer");
         }
       })
       .catch((e) => setError(e.message));
@@ -88,6 +92,22 @@ export default function DealPage() {
 
   async function act(chip: Chip) {
     if (!deal) return;
+    if (chip.action.startsWith("relax:")) {
+      const field = chip.action.slice(6);
+      setBusy(true);
+      setError("");
+      try {
+        await api.post(`/deals/${id}/query/relax`, { field, amount: field === "days" ? 2 : 10 });
+        await load();
+        router.push(`/deals/${id}/search`);
+      } catch (e) {
+        setError((e as Error).message);
+        await load();
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     const cards = deal.search?.cards ?? [];
     const ids = picked.length >= 2 ? picked : cards.slice(0, 2).map((c) => c.product_id);
     switch (chip.action) {
@@ -173,7 +193,7 @@ export default function DealPage() {
         <div className="feed">
           {!deal.turns.length && !busy && (
             <div className="empty">
-              把客人在微信里说的话粘贴到下面。
+              直接告诉助手要查什么，或切换到“客人说”录入原话。
               <br />
               助手会整理需求、查线路、写好回复。
             </div>
@@ -187,27 +207,33 @@ export default function DealPage() {
               picked={picked}
               onPick={(pid) => setPicked((p) => (p.includes(pid) ? p.filter((x) => x !== pid) : [...p, pid].slice(-3)))}
               onAct={act}
-              onAsk={(q) => setText(q)}
+              onAsk={(q) => { setMode("customer"); setText(q); }}
               reload={load}
             />
           ))}
           {directions && <DirectionsCard items={directions} deal={id} onPicked={() => { setDirections(null); load(); }} />}
-          {busy && <Working text="助手正在读这段话、查资料、写回复…" />}
+          {busy && <Working text={mode === "advisor" ? "助手正在执行指令、查询资料…" : "助手正在读客人原话、查资料、写回复…"} />}
           <ErrorBox error={error} />
         </div>
       </div>
+      <QueryBar deal={id} query={deal.query} onDone={load} />
       <form
         className="composer"
         onSubmit={(e) => {
           e.preventDefault();
-          send(text);
+          send(text, mode);
         }}
       >
+        <div className="input-modes" role="group" aria-label="消息来源">
+          <button type="button" aria-pressed={mode === "advisor"} disabled={busy} onClick={() => setMode("advisor")}>我对助手说</button>
+          <button type="button" aria-pressed={mode === "customer"} disabled={busy} onClick={() => setMode("customer")}>客人说</button>
+          <span>{mode === "advisor" ? "执行查询，不生成客人回复" : "整理客人需求，准备回复草稿"}</span>
+        </div>
         <textarea
-          aria-label="客人新消息"
+          aria-label={mode === "advisor" ? "给助手的指令" : "客人原话"}
           rows={1}
           value={text}
-          placeholder={deal.turns.length ? "粘贴客人新消息" : "粘贴客人的话"}
+          placeholder={mode === "advisor" ? "例如：前后放宽10天，帮我查团期" : "在这里粘贴或输入客人原话"}
           onChange={(e) => setText(e.target.value)}
         />
         {text.trim() ? (
@@ -220,6 +246,7 @@ export default function DealPage() {
             className="p"
             disabled={busy}
             onClick={async () => {
+              setMode("customer");
               try {
                 const clip = await navigator.clipboard.readText();
                 if (clip.trim()) setText(clip.trim());
@@ -228,7 +255,7 @@ export default function DealPage() {
               }
             }}
           >
-            粘贴
+            录入客人原话
           </button>
         )}
       </form>
@@ -283,7 +310,7 @@ function TurnView({
       <div className="cust">
         <span className="src">
           {intent && <span className={"intent " + intent[0]}>{intent[1]}</span>}
-          {turn.kind === "advisor" ? "我自己说" : "客人 · 微信粘贴"}
+          {turn.kind === "advisor" ? "我对助手说" : "客人原话"}
         </span>
         <div className="bb">{turn.text}</div>
       </div>
@@ -292,6 +319,10 @@ function TurnView({
           {r.degraded && <div className="err">{r.degraded}</div>}
           {r.cards.map((c, i) => {
             switch (c.type) {
+              case "route_reads":
+                return <div key={i}>{c.items.map(item => <RouteReadCard key={item.product_id} deal={deal.id} item={item} />)}</div>;
+              case "tasks":
+                return <div className="card" key={i}>{c.items.map(task => <p key={task.id}>{task.text}（尚未联系）</p>)}</div>;
               case "read":
                 return <ReadCard key={i} items={c.items} />;
               case "clarity":

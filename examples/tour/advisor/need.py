@@ -99,12 +99,15 @@ class Senior(Model):
 class Party(Model):
     """Travellers. ``children=None`` means not asked yet; ``[]`` means none travel."""
 
+    total_count: Annotated[int, Field(ge=1, le=80)] | None = None
     adults: Annotated[int, Field(ge=0, le=50)] | None = None
     children: list[Child] | None = Field(default=None, max_length=30)
     seniors: list[Senior] = Field(default_factory=list, max_length=30)
 
     @property
     def total(self):
+        if self.total_count is not None:
+            return self.total_count
         if self.adults is None:
             return None
         return self.adults + len(self.children or []) + len(self.seniors)
@@ -259,6 +262,14 @@ def gates(need: Need) -> dict:
             quote.append("child_beds")
     if party is not None and any(s.age is None for s in party.seniors):
         quote.append("senior_ages")
+    if (
+        party
+        and party.total_count is not None
+        and party.adults is not None
+        and party.children is not None
+        and party.total_count != party.adults + len(party.children) + len(party.seniors)
+    ):
+        quote.append("party_total")
     rooms = need.get("rooms")
     if not rooms or not rooms.total:
         quote.append("rooms")
@@ -283,6 +294,7 @@ MISSING_TEXT = {
     "child_ages": "孩子几岁",
     "child_beds": "孩子是否占床",
     "senior_ages": "老人年龄",
+    "party_total": "核对总人数与成人、儿童、老人构成",
     "rooms": "住几间房",
     "passports": "护照是否齐全（下单前）",
 }
@@ -360,7 +372,12 @@ def show(field, value) -> str:
 
 def party_text(party: Party) -> str:
     if party.adults is None:
-        return "人数未定"
+        text = f"共 {party.total_count} 人 · 成人构成待确认" if party.total_count else "人数未定"
+        if party.children == []:
+            text += " · 无儿童"
+        elif party.children:
+            text += f" · {len(party.children)} 位儿童"
+        return text
     text = f"{party.adults} 大"
     if party.children is None:
         text += " · 孩子未问"
@@ -370,7 +387,7 @@ def party_text(party: Party) -> str:
     if party.seniors:
         ages = [f"{s.age} 岁" for s in party.seniors if s.age is not None]
         text += f" + {len(party.seniors)} 老" + (f"（{'、'.join(ages)}）" if ages else "")
-    return text
+    return (f"共 {party.total_count} 人 · " if party.total_count is not None else "") + text
 
 
 def beds_text(party: Party | None) -> str:
@@ -416,6 +433,8 @@ def spoken(need: Need) -> str:
     if window:
         parts.append((window.label or f"{window.start.month}月{window.start.day}日前后") + "出发")
     party = need.get("party")
+    if party and party.adults is None and party.total_count:
+        parts.append(f"共{party.total_count}人，人员构成待确认")
     if party and party.adults is not None:
         text = f"{party.adults}大"
         if party.children:

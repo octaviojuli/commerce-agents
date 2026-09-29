@@ -1,7 +1,7 @@
 # Advisor service
 
-The back end of the advisor app (`../advisor-web`). An advisor pastes a customer's WeChat
-message; the service reads it into a versioned need, searches and explains routes, answers
+The back end of the advisor app (`../advisor-web`). Each turn explicitly identifies an
+advisor instruction or customer message; the service reads customer messages into a versioned need, searches and explains routes, answers
 questions from published itineraries, keeps what the deal remembers, and returns a WeChat
 draft whose every factual sentence has been checked against a fact.
 
@@ -31,11 +31,22 @@ departures, offers and quotes.
 
 ## What the program guarantees
 
+- Advisor instructions produce advisor results without a customer draft. Exploratory conditions
+  are persisted separately, reused by follow-up searches and departure reads, and applied to
+  formal requirements only by explicit adoption. Undo keeps the original need and reruns search.
+- A stated total such as three travellers does not establish adult or child counts. Search asks
+  only for missing search inputs; quotation prerequisites remain visible until needed, and an
+  unanswered field is not repeatedly asked in customer drafts.
+- Date inquiries read live warehouse departures without selecting a route. Adjacent departures
+  are labelled as alternatives; the exact requested date is unchanged. Itinerary publication
+  and departure query success are reported independently. An unreviewed publication notice
+  remains visible in both the overview and full customer route page.
 - A price belongs to one deal, route, offer and departure, the party and rooms it was asked
   for, and the need's window; `pricing.validity` is the one rule. Only a departure of the
   deal's route is priced.
 - The advisor can take a chosen route back (`DELETE /api/deals/{id}/route`): the deal returns
-  to choosing and the route's departure, sheets and prices are void.
+  to choosing and the route's departure, sheets and prices are void. Sold deals reject this
+  action and route replacement; their financial and confirmation records remain intact.
 - `GET /api/routes/{id}/page` is the whole published route drawn by the route kit's own page
   (`route_kit.render.page`) in its customer view, with the route's cover picture.
 - A route is taken only through `closing.settle_route` and a sheet confirmed only through
@@ -82,6 +93,7 @@ departures, offers and quotes.
 | `routes.py` | Search funnel, route cards, departures |
 | `pricing.py` | Warehouse price checks, per-bed child lines, the one validity rule, margin |
 | `turns.py` | The turn pipeline |
+| `queries.py` | Durable temporary conditions, explicit adoption, viewed-route context and read intent |
 | `memory.py` | Concerns, things to avoid, salutation, the question book, sent statements |
 | `selling.py` | Compare, plans, the customer's plan page |
 | `suppliers.py` | The advisor's own supplier notes (常用 / 慎用 and a line of their own) |

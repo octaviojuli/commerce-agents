@@ -76,8 +76,9 @@ def test_holiday_names_are_not_money():
 
 def test_saying_what_is_not_known_is_kept_and_a_disguised_claim_is_not():
     facts = [fact("全程3-4星酒店")]
-    kept = check("购物店资料里没写明，我去跟供应商确认后回您。", facts)
+    kept = check("购物店资料里没写明，仍待核实。", facts)
     assert kept["removed"] == []
+    assert check("购物店资料里没写明，我去跟供应商确认后回您。", facts)["removed"]
     cut = check("购物店已经安排好了，含3次免费购物。", facts)
     assert cut["removed"]
 

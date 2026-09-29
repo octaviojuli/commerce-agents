@@ -20,6 +20,12 @@ uses as they are.
 
 From 1024 px the deal list and the deal's memory stay beside the current screen.
 
+The conversation starts in advisor-instruction mode. Its explicit customer-message entry
+and mode buttons choose the source; ordinary typing and pasting do not change it.
+`QueryBar` shows persistent temporary conditions with explicit adoption and undo. Route
+overview cards show live departure dates and publication status without selecting a route.
+The search page's relaxation buttons update temporary conditions and immediately rerun search.
+
 ## Run
 
 ```bash

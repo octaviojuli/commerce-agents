@@ -12,6 +12,7 @@ from datetime import date
 from cloud_warehouse import advisor_holidays, destinations, travel_requirements
 
 from . import need as needs
+from .grounding import chinese_numbers
 from .need import Need
 
 PUNCT = str.maketrans("，。；：！？（）", ",.;:!?()")
@@ -80,6 +81,17 @@ def window(message: str, value, today: date):
         )
     if not value:
         return None, "", ""
+    from .queries import DATE
+
+    exact = list(DATE.finditer(message))
+    if len(exact) == 1 and not re.search(r"前后|左右|放宽|附近|不限|至|到\s*\d", message):
+        m = exact[0]
+        try:
+            year = int(m[1]) if m[1] else int(str(value.get("start", today.isoformat()))[:4])
+            day = date(year, int(m[2]), int(m[3])).isoformat()
+            value = {"start": day, "end": day, "label": m[0]}
+        except (ValueError, TypeError):
+            pass
     hint = ""
     if not re.search(r"20\d{2}\s*年", message):
         hint = "原话没说年份，按最近的日期推断"
@@ -111,6 +123,8 @@ def couple(value: dict, elderly: bool) -> dict:
 def merge_party(saved: needs.Party | None, change: dict) -> dict:
     """Merge a partial party. Children are matched by age, then by position."""
     base = (saved or needs.Party()).model_dump(mode="json")
+    if change.get("total_count") is not None:
+        base["total_count"] = change["total_count"]
     if "adults" in change and change["adults"] is not None:
         base["adults"] = change["adults"]
     if "seniors" in change and change["seniors"] is not None:
@@ -167,6 +181,18 @@ def changes(need: Need, understanding, message: str, today: date, *, turn=None):
     elif "destinations" in by_field and travel_requirements.route_question(message):
         by_field.pop("destinations")
     candidates = []
+    total_match = re.search(
+        r"(?<!\d)(\d{1,2})\s*(?:个|位|名)?(?:客人|人)(?![民币])", chinese_numbers(message)
+    )
+    adult_evidence = bool(
+        re.search(r"成人|大人|\d+大(?:\d|$)|全是大人|都是大人", chinese_numbers(message))
+    )
+    if total_match and "party" not in by_field:
+        from .model import Change
+
+        by_field["party"] = Change(
+            field="party", value={"total_count": int(total_match[1])}, evidence=message[:200]
+        )
     if parsed_places is not None:
         candidates.append(("destinations", parsed_places, "said", place_evidence, ""))
     holiday_value, holiday_evidence, holiday_hint = window(message, None, today)
@@ -178,10 +204,21 @@ def changes(need: Need, understanding, message: str, today: date, *, turn=None):
         source, hint = change.source, change.hint
         evidence = grounded(message, change.evidence)
         if field == "window":
+            from .queries import DATES
+
+            if DATES.search(message) and not re.search(r"改成|改为|改到|放宽|确定.*出发", message):
+                continue
             value, _, window_hint = window(message, value, today)
             if window_hint:
                 source, hint = "inferred", hint or window_hint
         if field == "party" and isinstance(value, dict):
+            value = dict(value)
+            if total_match:
+                value["total_count"] = int(total_match[1])
+                if not adult_evidence and not COUPLE.search(message):
+                    value.pop("adults", None)
+                if not re.search(r"孩子|儿童|小孩|宝宝|小朋友|全是大人|都是大人", message):
+                    value.pop("children", None)
             if (
                 need.get("party") is None
                 and COUPLE.search(message)
@@ -261,6 +298,8 @@ def _only_adds(old: needs.Party, new: needs.Party) -> bool:
 
     Adding or removing a traveller, or changing a known age or bed, is a change.
     """
+    if old.total_count is not None and new.total_count != old.total_count:
+        return False
     if old.adults is not None and new.adults != old.adults:
         return False
     if len(new.seniors) != len(old.seniors):

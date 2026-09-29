@@ -172,6 +172,7 @@ function FieldEditor({ field, onSave }: { field: NeedField; onSave: (v: unknown)
     switch (field.field) {
       case "party":
         return {
+          total_count: v.total_count ?? "",
           adults: v.adults ?? "",
           children: (v.children ?? []).map((c: any) => `${c.age ?? ""}${c.bed === true ? "占" : c.bed === false ? "不占" : ""}`).join(" "),
           seniors: (v.seniors ?? []).map((s: any) => s.age ?? "").join(" "),
@@ -201,10 +202,11 @@ function FieldEditor({ field, onSave }: { field: NeedField; onSave: (v: unknown)
         return { min: Number(state.min), max: Number(state.max) };
       case "party":
         return {
-          adults: Number(state.adults),
+          total_count: state.total_count === "" ? null : Number(state.total_count),
+          adults: state.adults === "" ? null : Number(state.adults),
           children: state.noKids
             ? []
-            : words(state.children).map((c) => ({ age: Number(c.replace(/\D/g, "")) || null, bed: c.includes("不占") ? false : c.includes("占") ? true : null })),
+            : state.children.trim() ? words(state.children).map((c) => ({ age: Number(c.replace(/\D/g, "")) || null, bed: c.includes("不占") ? false : c.includes("占") ? true : null })) : null,
           seniors: words(state.seniors).map((a) => ({ age: Number(a) || null })),
         };
       case "rooms":
@@ -225,10 +227,12 @@ function FieldEditor({ field, onSave }: { field: NeedField; onSave: (v: unknown)
       {field.field === "window" && [input("start", "最早出发", "date"), input("end", "最晚出发", "date"), input("label", "说法（如 元旦前后）")]}
       {field.field === "days" && [input("min", "最少天数", "number"), input("max", "最多天数", "number")]}
       {field.field === "party" && [
+        input("total_count", "总人数（不知道可留空）", "number"),
         input("adults", "成人", "number"),
         input("children", "孩子（每个写年龄，占床写“占”，如：8占 5不占）"),
         input("seniors", "长辈年龄（空格分隔）"),
       ]}
+      {field.field === "party" && <label className="field"><span><input type="checkbox" checked={Boolean(state.noKids)} onChange={(e) => setState({ ...state, noKids: e.target.checked })} /> 已确认没有儿童</span></label>}
       {field.field === "rooms" && [input("doubles", "大床房", "number"), input("twins", "双床房", "number"), input("singles", "单间", "number"), input("note", "说明")]}
       {field.field === "budget" && input("per_person", "每人预算（元）", "number")}
       {field.field === "depart_city" && input("text", "出发城市")}

@@ -51,6 +51,8 @@ export type RouteCard = {
 };
 
 export type Search = {
+  query_context?: QueryContext | null;
+  nearby?: RouteRead[];
   id?: string;
   query: string;
   must: string[];
@@ -75,6 +77,8 @@ export type Answer = {
 };
 
 export type Card =
+  | { type: "route_reads"; items: RouteRead[] }
+  | { type: "tasks"; items: { id: string; text: string; status: string }[] }
   | { type: "read"; items: ChangeItem[]; version: number }
   | { type: "change"; proposal_id: string; from: number; items: ChangeItem[]; impact: Impact[] }
   | ({ type: "routes"; search_id: string } & Search)
@@ -149,6 +153,7 @@ export type Confirmation = {
 };
 
 export type Deal = {
+  query: QueryContext | null;
   id: string;
   title: string;
   status: string;
@@ -205,3 +210,11 @@ export type DealCard = {
 };
 
 export const STAGES = ["需求", "选线", "定团", "报价", "成交", "出行"];
+
+export type QueryContext = { id: string; base_version: number; conditions: string[]; notice: string };
+export type RouteRead = {
+  product_id: string;
+  title: string;
+  dates: { status: "available" | "nearby" | "none" | "partial" | "error"; requested?: string; message?: string; partial: boolean; around_days?: number; items: { date: string; departure_id: string; availability: string; in_window: boolean }[] };
+  itinerary: { status: "published" | "unpublished" | "error"; summary: string[]; notice: string; message: string };
+};

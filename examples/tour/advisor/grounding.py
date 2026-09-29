@@ -15,12 +15,13 @@ PRIVATE = re.compile(
 # A request to send documents separately ("之后单独发我，方便登记") is what a reply should say.
 KEPT_PERSONAL = re.compile(
     r"(?:手机|电话|护照|证件|身份证)[号码信息]*.{0,8}"
-    r"(?:(?:已|都|也)(?:帮您|给您)?(?:登记|留|记|保存|存)|登记好|留好|记下了|记好了|保存好|存好)"
+    r"(?:(?:已经|已|都|也)(?:帮您|给您)?(?:登记|留|记|保存|存)|登记好|留好|记下了|记好了|保存好|存好)"
 )
 # Guarantees, and holds or bookings: the advisor app neither holds seats nor books in phase one.
 PROMISE = re.compile(
     r"(?<!不)(?<!无法)(?<!不能)(?:保证|一定|肯定|确保|包退|绝对|百分百"
     r"|锁定|锁位|占位|留位|保留名额|帮您订|给您订|订好了|已预订)"
+    r"|(?:马上|稍后|随后|确认后|核实后).{0,6}(?:回复|回您|回你)|已(?:经)?联系.{0,6}供应商"
 )
 # Clauses that state something checkable. Wishes, questions and connectives do not.
 FACTUAL = re.compile(

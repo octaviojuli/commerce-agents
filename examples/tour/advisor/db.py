@@ -24,7 +24,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 metadata = MetaData(schema="advisor")
 J = JSON().with_variant(JSONB(), "postgresql")
 
@@ -92,6 +92,7 @@ deals = Table(
     Column("status", String(20), nullable=False, server_default="open"),
     Column("need_version", Integer, nullable=False, server_default="0"),
     Column("need", J, nullable=False, server_default=text("'{}'")),
+    Column("query_context", J, nullable=False, server_default=text("'{}'")),
     Column("route", J, nullable=True),
     Column("departure", J, nullable=True),
     Column("waiting_reply", Boolean, nullable=False, server_default="false"),
@@ -340,7 +341,7 @@ def migrate(engine):
         if current is None:
             conn.execute(versions.insert().values(version=SCHEMA_VERSION))
             current = SCHEMA_VERSION
-        for version, steps in STEPS.items():
+        for version, steps in sorted(STEPS.items()):
             if current < version:
                 for step in steps:
                     conn.execute(text(step))
@@ -360,6 +361,10 @@ def migrate(engine):
 
 
 STEPS = {
+    4: [
+        "ALTER TABLE advisor.deal ADD COLUMN IF NOT EXISTS query_context jsonb"
+        " NOT NULL DEFAULT '{}'::jsonb",
+    ],
     2: [
         "ALTER TABLE advisor.session ADD COLUMN IF NOT EXISTS checked_at timestamptz"
         " NOT NULL DEFAULT now()",

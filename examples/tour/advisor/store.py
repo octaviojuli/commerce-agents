@@ -2,12 +2,12 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import and_, func, insert, select, update
 
 from . import db
-from .need import Need
+from .need import SEARCH_FIELDS, Need
 
 
 class NotFound(Exception):
@@ -116,8 +116,15 @@ def save_need(conn, owner: Owner, deal_row, need: Need, fields, reason, turn=Non
             turn=turn,
         )
     )
-    update_deal(conn, owner, deal_row["id"], need=body, need_version=version)
-    deal_row.update(need=body, need_version=version)
+    scope = deal_row.get("query_context") or {}
+    if scope.get("base_version") == deal_row["need_version"] and not set(fields) & (
+        SEARCH_FIELDS | set(scope.get("fields", {}))
+    ):
+        scope = {**scope, "base_version": version, "id": str(uuid4())}
+    else:
+        scope = {}
+    update_deal(conn, owner, deal_row["id"], need=body, need_version=version, query_context=scope)
+    deal_row.update(need=body, need_version=version, query_context=scope)
     return version
 
 

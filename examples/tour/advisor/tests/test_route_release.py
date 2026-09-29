@@ -1,10 +1,14 @@
 """A chosen route can be taken back, and the whole route reads as the customer will read it."""
 
 import base64
+import json
+import re
 import secrets
+import subprocess
 
 import httpx
 from fastapi.testclient import TestClient
+from route_kit.render import page as render_page
 
 from tour.advisor import db
 from tour.advisor.api import Settings, create_app
@@ -76,3 +80,34 @@ def test_the_whole_route_is_the_route_kit_page_in_its_customer_view(tmp_path, mo
     assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
     assert "ACME 小镇慢游 12 天" in page.text and '"audience": "customer"' in page.text
     assert "data:image/jpeg;base64," in page.text
+
+
+def test_full_customer_page_keeps_publication_notice_visible():
+    notice = "测试自动发布 · 未人工审核，仅供开发测试"
+    body = {
+        "schema": "route-kit/1",
+        "title": "ACME 示例线路",
+        "publication_notice": notice,
+        "days": [],
+        "highlights": [],
+        "inclusions": [],
+        "exclusions": [],
+        "notices": [],
+        "policies": {},
+        "shopping": [],
+        "optional_items": [],
+        "prices": [],
+        "cover_facts": [],
+    }
+    rendered = render_page(body, audience="customer")
+    script = re.search(r"<script>\s*(.*?)</script>", rendered, re.S).group(1)
+    data = re.search(r'<script\b[^>]*\bid="data"[^>]*>(.*?)</script>', rendered, re.S).group(1)
+    harness = """
+const elements=new Map();
+function el(key){if(!elements.has(key))elements.set(key,{innerHTML:'',textContent:'',dataset:{},scrollTop:0,classList:{add(){},contains(){return false;}},addEventListener(){},setAttribute(){},querySelector(){return el('nested');}});return elements.get(key);}
+const document={documentElement:el('html'),body:el('body'),getElementById:id=>el('#'+id),querySelector:el,querySelectorAll:()=>[]};
+"""
+    harness += 'el("#data").textContent=' + json.dumps(data) + ";\n" + script
+    harness += '\nconsole.log(JSON.stringify(el("#col").innerHTML));'
+    result = subprocess.run(["node", "-e", harness], capture_output=True, text=True, check=True)
+    assert notice in json.loads(result.stdout)

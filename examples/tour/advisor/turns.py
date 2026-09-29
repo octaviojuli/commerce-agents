@@ -12,9 +12,11 @@ import re
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import select
+
 from cloud_warehouse import destinations
 
-from . import closing, db, grounding, memory, pricing, privacy, routes, store
+from . import closing, db, grounding, memory, pricing, privacy, queries, routes, store
 from . import need as needs
 from . import suppliers as supplier_notes
 from .facts import Route
@@ -40,6 +42,7 @@ ASK_ORDER = (
     "child_ages",
     "child_beds",
     "senior_ages",
+    "party_total",
     "rooms",
 )
 CHOICE = {
@@ -155,10 +158,10 @@ def requirement_facts(need: Need) -> list:
     return out
 
 
-def ask_next(need: Need, asked_recently=()) -> tuple[str, str]:
+def ask_next(need: Need, asked_recently=(), *, quoting=False) -> tuple[str, str]:
     """The one thing worth asking now: what blocks search first, then what blocks a quote."""
     gates = needs.gates(need)
-    missing = gates["search"]["missing"] or gates["quote"]["missing"]
+    missing = gates["quote"]["missing"] if quoting else gates["search"]["missing"]
     for key in ASK_ORDER:
         if key in missing and key not in asked_recently:
             party = need.get("party")
@@ -209,11 +212,13 @@ class Turns:
             result["notes"].append(
                 "已隐藏" + "、".join(hidden) + "，没有保存也没有交给助手；证件请在证件页上传"
             )
+        if kind == "advisor":
+            return await self.command(owner, wh, deal, seq, text, context, result)
 
         async def understand():
             try:
                 return await self.model.call(
-                    "understand", self._understand_input(deal, need, context, text)
+                    "understand", self._understand_input(deal, need, context, text, kind)
                 )
             except ModelUnavailable:
                 return None
@@ -228,7 +233,7 @@ class Turns:
         step = step if self.judge.applies else None
         tags = self._tags(understanding, text)
         result["tags"] = tags
-        _, _, rejected = read_changes(need, understanding, text, today(), turn=seq)
+        _, _, rejected = read_requirements(need, understanding, text, context, seq)
         if rejected:
             LOG.info(
                 json.dumps(
@@ -254,7 +259,7 @@ class Turns:
             need = Need.model_validate(deal["need"])
             # Decided again on the need as it is now: an edit saved while the model was reading
             # turns a fill into a proposal instead of being overwritten.
-            fills, proposals, _ = read_changes(need, understanding, text, today(), turn=seq)
+            fills, proposals, _ = read_requirements(need, understanding, text, context, seq)
             if fills:
                 for field, item in fills.items():
                     need = needs.set_field(
@@ -297,10 +302,10 @@ class Turns:
                     memory.salutation(conn, owner, deal, understanding.salutation)
         with self.engine.connect() as conn:
             context = self._context(conn, owner, deal)
-        if understanding and understanding.selection.route and not proposals:
+        if queries.explicit_selection(text) and not proposals:
             # A route chosen this turn is settled before any fact or price is gathered, so the
             # reply is written for the deal as it stands after the choice.
-            chosen = routes_named(understanding.selection.route, context["visible"])
+            chosen = referenced_route(text, context, deal)
             if chosen and chosen["product_id"] != (deal.get("route") or {}).get("product_id"):
                 with self.engine.begin() as conn:
                     closing.settle_route(
@@ -328,6 +333,10 @@ class Turns:
             or RESEARCH.search(text)
             or (step is not None and step[0] == "search" and step[1] >= SURE)
         ) and not NO_RESEARCH.search(text)
+        named = routes_named(text, context["visible"])
+        action = queries.action(text, understanding, named)
+        if action in {"view", "departures", "select"}:
+            research = False
         if not gates["search"]["ready"]:
             asked = context["recent_asks"]
             result["cards"].append(
@@ -376,6 +385,21 @@ class Turns:
                 f"{c['title']}（{c['days']}天，{c['depart_city']}出发）"
                 for c in found["body"]["cards"][:3]
             ]
+            if found["body"].get("nearby"):
+                result["cards"].append({"type": "route_reads", "items": found["body"]["nearby"]})
+                draft_extra["live_reads"] = found["body"]["nearby"]
+            if not found["body"]["cards"]:
+                draft_extra["no_matches"] = True
+        if action in {"view", "departures"} and not proposals:
+            inspected = await self.inspect(owner, wh, deal, context, text)
+            result["cards"].append({"type": "route_reads", "items": inspected})
+            draft_extra["live_reads"] = inspected
+            if not inspected:
+                result["notes"].append("没有明确的候选线路，请先找线或指定线路名称")
+        if "为什么" in text and re.search(r"孩子|儿童", text):
+            draft_extra["process_note"] = (
+                "找线路不需要先确认儿童构成；核价前再确认成人、儿童人数及房间信息即可。"
+            )
         # price facts come only from a price that still holds
         quote, reason = context["quote"], ""
         if quote:
@@ -419,7 +443,11 @@ class Turns:
             else:
                 result["notes"].append("价格没有进入回复：" + reason)
         # questions are answered from the route they are about
-        questions = understanding.questions if understanding else []
+        questions = (
+            understanding.questions
+            if understanding and action not in {"view", "departures"}
+            else []
+        )
         price_facts = [f for f in facts if f.get("section") == "报价"]
         answered, used = (
             (await self.answer(owner, wh, deal, need, context, questions, price_facts, reason))
@@ -435,6 +463,9 @@ class Turns:
             ]
             with self.engine.begin() as conn:
                 memory.book(conn, owner, deal_id, answered, seq)
+                tasks = self.pending_tasks(conn, owner, deal_id, answered)
+                if tasks:
+                    result["cards"].append({"type": "tasks", "items": tasks})
         if understanding and "confirm" in tags and context.get("confirmation"):
             confirmed = understanding.confirms and not understanding.disputes
             if confirmed and self.judge.applies:
@@ -469,24 +500,42 @@ class Turns:
             ask_need = need
             for p in proposals:
                 ask_need = needs.set_field(ask_need, p["field"], p["new"], p["source"])
-            key, question = ask_next(ask_need, [] if proposals else context["recent_asks"])
+            key, question = ask_next(
+                ask_need,
+                context["recent_asks"],
+                quoting=bool(deal.get("departure")) or action == "quote",
+            )
             draft_extra["ask_next"] = question
             result["asked"] = key
-        result["draft"] = await self.draft(
-            owner,
-            deal,
-            need,
-            context,
-            text,
-            understanding,
-            facts,
-            conflicts,
-            draft_extra,
-            bool(proposals),
-        )
+        if "live_reads" in draft_extra or draft_extra.get("no_matches"):
+            result["asked"] = ""
+            reply = "\n".join(routes.overview_text(v) for v in draft_extra.get("live_reads", []))
+            if not reply:
+                reply = (
+                    "按当前条件未查到匹配线路，出发要求没有改动。可以查看邻近日期或调整查询条件。"
+                )
+            if draft_extra.get("process_note"):
+                reply += "\n" + draft_extra["process_note"]
+            for name in supplier_names(context, deal):
+                reply = reply.replace(name, "")
+            result["draft"] = {"text": reply, "removed": [], "claims": [], "simplified": False}
+        else:
+            result["draft"] = await self.draft(
+                owner,
+                deal,
+                need,
+                context,
+                text,
+                understanding,
+                facts,
+                conflicts,
+                draft_extra,
+                bool(proposals),
+            )
         result["chips"] = chips(deal, need, gates, bool(proposals), result)
         result["to_advisor"] = result["draft"].pop("to_advisor", "") or summary_line(result)
         result["may_ask"] = result["draft"].pop("may_ask", [])
+        result["query"] = queries.view(deal)
         with self.engine.begin() as conn:
             store.set_turn_result(conn, owner, deal_id, seq, result)
             store.update_deal(
@@ -511,14 +560,170 @@ class Turns:
 
     # ------------------------------------------------------------ pieces
 
+    async def command(self, owner, wh, deal, seq, text, context, result):
+        need = queries.effective(deal)
+        original_version = deal["need_version"]
+        original_query = queries.context(deal).get("id")
+        try:
+            reading = await self.model.call(
+                "understand", self._understand_input(deal, need, context, text, "advisor")
+            )
+        except ModelUnavailable:
+            reading = None
+        with self.engine.begin() as conn:
+            deal = store.deal(conn, owner, deal["id"], lock=True)
+            if (
+                deal["need_version"] != original_version
+                or queries.context(deal).get("id") != original_query
+            ):
+                raise store.Conflict("需求或查询条件已变化，请按最新状态重试")
+            fills, proposals, rejected = read_requirements(need, reading, text, context, seq)
+            items = [*fills.values(), *proposals]
+            widen = queries.RELAX.search(grounding.chinese_numbers(text))
+            if widen and int(widen[1]) <= 60:
+                field = "days" if "天数" in text else "window"
+                items = [i for i in items if i["field"] != field]
+                items.append(queries.relaxed(need, field, int(widen[1])))
+            if items:
+                queries.save(conn, owner, deal, items)
+                need = queries.effective(deal)
+            context = self._context(conn, owner, deal)
+        if rejected:
+            result["notes"].append("部分查询条件未读准，请核对本次查询条件")
+        named = routes_named(text, context["visible"])
+        action = queries.action(text, reading, named)
+        if items and action == "auto":
+            action = "search"
+        result["tags"] = [action]
+        if action == "select":
+            target = referenced_route(text, context, deal)
+            if target:
+                with self.engine.begin() as conn:
+                    closing.settle_route(
+                        conn,
+                        owner,
+                        deal["id"],
+                        target["product_id"],
+                        target["title"],
+                        target.get("supplier"),
+                    )
+                    deal = store.deal(conn, owner, deal["id"])
+                result["cards"].append(
+                    {"type": "chosen", "title": target["title"], "product_id": target["product_id"]}
+                )
+                result["to_advisor"] = "已选定线路，可以继续查看团期。"
+            else:
+                result["to_advisor"] = "还不能确定是哪条线路，请说线路名称或点击选定。"
+        elif action in {"departures", "view"}:
+            inspected = await self.inspect(owner, wh, deal, context, text)
+            result["cards"].append({"type": "route_reads", "items": inspected})
+            result["to_advisor"] = (
+                "已读取云仓，查看与团期查询不会选定线路。"
+                if inspected
+                else "没有明确的候选线路，请先给出目的地或指定线路名称。"
+            )
+        elif action == "search" or (RESEARCH.search(text) and not NO_RESEARCH.search(text)):
+            if needs.gates(need)["search"]["ready"]:
+                found = await self.search(owner, wh, deal["id"])
+                result["cards"].append(
+                    {"type": "routes", "search_id": found["id"], **found["body"]}
+                )
+                if found["body"].get("nearby"):
+                    result["cards"].append(
+                        {"type": "route_reads", "items": found["body"]["nearby"]}
+                    )
+                result["to_advisor"] = f"本次查询找到 {len(found['body']['cards'])} 条线路。"
+            else:
+                result["to_advisor"] = "查询还需要：" + "、".join(
+                    needs.MISSING_TEXT[k] for k in needs.gates(need)["search"]["missing"]
+                )
+        elif reading and reading.questions:
+            answered, _ = await self.answer(owner, wh, deal, need, context, reading.questions)
+            result["cards"].append({"type": "answers", "items": answered})
+            with self.engine.begin() as conn:
+                tasks = self.pending_tasks(conn, owner, deal["id"], answered)
+                if tasks:
+                    result["cards"].append({"type": "tasks", "items": tasks})
+            result["to_advisor"] = "已按已发布资料整理回答。"
+        else:
+            result["to_advisor"] = "可以让我找线路、查团期、查看线路或准备核价。"
+        if action == "quote":
+            missing = needs.gates(Need.model_validate(deal["need"]))["quote"]["missing"]
+            result["to_advisor"] = (
+                "核价前请集中确认：" + "、".join(needs.MISSING_TEXT[k] for k in missing)
+                if missing
+                else "需求已齐，请选择团期后核价。"
+            )
+        if "为什么" in text and re.search(r"孩子|儿童", text):
+            result["notes"].append(
+                "找线路不需要先确认儿童构成；核价前再确认成人、儿童人数及房间信息即可。"
+            )
+        with self.engine.begin() as conn:
+            deal = store.deal(conn, owner, deal["id"], lock=True)
+            result["query"] = queries.view(deal)
+            formal = Need.model_validate(deal["need"])
+            result["gates"] = needs.gates(formal)
+            result["chips"] = chips(deal, formal, result["gates"], False, result)
+            result["chips"] = [c for c in result["chips"] if c["action"] != "copy_draft"]
+            store.set_turn_result(conn, owner, deal["id"], seq, result)
+            store.update_deal(
+                conn,
+                owner,
+                deal["id"],
+                next_step=result["chips"][0]["label"] if result["chips"] else "",
+            )
+        return result
+
+    async def inspect(self, owner, wh, deal, context, text):
+        need = queries.dated_need(queries.effective(deal), text, today())
+        target = referenced_route(text, context, deal)
+        if target:
+            targets = [target]
+        else:
+            targets = context["visible"][:3]
+            if not targets and needs.gates(need)["search"]["ready"]:
+                found = await routes.search(wh, need, limit=3)
+                targets = found["cards"]
+                if not targets:
+                    inspected = await routes.nearby_candidates(wh, need)
+                    return inspected
+        items = await asyncio.gather(*(routes.overview(wh, t, need) for t in targets))
+        if target:
+            with self.engine.begin() as conn:
+                current = store.deal(conn, owner, deal["id"], lock=True)
+                if current["need_version"] == deal["need_version"] and queries.context(current).get(
+                    "id"
+                ) == queries.context(deal).get("id"):
+                    queries.focus(conn, owner, current, target)
+        return items
+
+    def pending_tasks(self, conn, owner, deal_id, answers):
+        existing = store.rows(conn, owner, db.tasks, deal_id, where=[db.tasks.c.status == "open"])
+        out = []
+        for answer in answers:
+            if answer["kind"] != "unknown":
+                continue
+            text = ("待向供应商确认：" + answer["question"])[:300]
+            row = next((r for r in existing if r["text"] == text), None)
+            if row is None:
+                row = store.add(
+                    conn, owner, db.tasks, deal_id=deal_id, kind="supplier_check", text=text
+                )
+                existing.append(row)
+            out.append({"id": str(row["id"]), "text": text, "status": "open"})
+        return out
+
     def _context(self, conn, owner, deal):
         deal_id = deal["id"]
         latest = store.rows(
             conn, owner, db.searches, deal_id, order=db.searches.c.created_at.desc()
         )
-        visible = latest[0]["body"]["cards"] if latest else []
+        latest = [r for r in latest if queries.matches_search(deal, r)]
+        visible = list(latest[0]["body"]["cards"]) if latest else []
+        if latest:
+            visible += latest[0]["body"].get("nearby", [])
         plans = store.rows(conn, owner, db.plans, deal_id, order=db.plans.c.version.desc())
-        if plans:
+        if plans and plans[0]["need_version"] == deal["need_version"]:
             visible += [
                 r
                 for r in plans[0]["body"].get("routes", [])
@@ -535,12 +740,15 @@ class Turns:
         confirms = store.rows(
             conn, owner, db.confirmations, deal_id, order=db.confirmations.c.created_at.desc()
         )
-        recent = store.turns(conn, owner, deal_id, limit=3)
-        asks = [
-            t["result"].get("asked")
-            for t in recent[:-1]
-            if t.get("result") and t["result"].get("asked")
-        ]
+        asks = list(
+            conn.execute(
+                select(db.turns.c.result["asked"].as_string()).where(
+                    owner.where(db.turns),
+                    db.turns.c.deal_id == deal_id,
+                    db.turns.c.result["asked"].as_string().is_not(None),
+                )
+            ).scalars()
+        )
         return {
             "visible": visible,
             "supplier_notes": supplier_notes.notes(conn, owner),
@@ -552,8 +760,9 @@ class Turns:
             "recent_asks": asks,
         }
 
-    def _understand_input(self, deal, need, context, text):
+    def _understand_input(self, deal, need, context, text, kind="customer"):
         return {
+            "input_kind": kind,
             "today": today().isoformat(),
             "saved": {f: needs.show(f, need.get(f)) for f in needs.FIELDS if need.get(f)},
             "saved_party": need.get("party").model_dump(mode="json") if need.get("party") else None,
@@ -670,12 +879,22 @@ class Turns:
             deal = store.deal(conn, owner, deal_id)
             prices = prices_by_route(conn, owner, deal)
             notes = supplier_notes.notes(conn, owner)
-        need = Need.model_validate(deal["need"])
+        need = queries.effective(deal)
+        if queries.view(deal):
+            prices = {}
         body = await routes.search(
             wh, need, prices=prices, cache={}, suppliers=suppliers, notes=notes
         )
         body["version"] = deal["need_version"]
+        body["query_context"] = queries.view(deal)
+        if not body["cards"] and need.get("window"):
+            body["nearby"] = await routes.nearby_candidates(wh, need, suppliers=suppliers)
         with self.engine.begin() as conn:
+            current = store.deal(conn, owner, deal_id, lock=True)
+            if current["need_version"] != deal["need_version"] or queries.context(current).get(
+                "id"
+            ) != queries.context(deal).get("id"):
+                raise store.Conflict("查询期间需求或条件已变化，请重新找线")
             row = store.add(
                 conn,
                 owner,
@@ -871,7 +1090,7 @@ class Turns:
             # Supplier names are the advisor's to know, never the customer's to read.
             forbidden=forbidden,
             conflicts=conflicts,
-            max_questions=3 if not needs.gates(need)["search"]["ready"] else 2,
+            max_questions=1 if extra.get("ask_next") else 0,
         )
         said = [text, needs.summary(need)]
         verdicts = await self.judge.check_draft(
@@ -944,20 +1163,22 @@ def pending_line(answers):
         if q and q not in topics:
             topics.append(q)
     asked = "、".join(topics[:4])
-    return f"您问的{asked}，我去跟供应商确认后回您。"
+    return f"您问的{asked}，现有资料尚未写明，仍待核实。"
 
 
 def fallback(extra, *, forbidden=()):
     parts = []
     for a in extra.get("answers", []):
-        parts.append(a["a"] if a["kind"] != "unknown" else f"“{a['q']}”我去跟供应商确认一下。")
+        parts.append(
+            a["a"] if a["kind"] != "unknown" else f"“{a['q']}”现有资料尚未写明，仍待核实。"
+        )
     if extra.get("routes"):
         parts.append("先给您挑了几条：" + "；".join(extra["routes"]) + "。")
     if extra.get("ask_next"):
         parts.append(extra["ask_next"])
     # A source title or repeated question can carry a supplier name even without a model.
     parts = [part for part in parts if not any(name in part for name in forbidden)]
-    return "\n".join(parts) or "收到，我整理一下马上回复您。"
+    return "\n".join(parts) or "收到。"
 
 
 def salute(text, name):
@@ -972,7 +1193,11 @@ def summary_line(result):
         if card["type"] == "change":
             return f"客人改了 {len(card['items'])} 项，变更单已备好。"
         if card["type"] == "routes":
+            if not card["cards"] and card.get("nearby"):
+                return "指定日期未匹配，已列出邻近团期；原出发要求保持不变。"
             return f"按需求找到 {len(card['cards'])} 条。"
+        if card["type"] == "route_reads":
+            return "已读取线路和团期，查看不会选定线路。"
     return "已整理这一轮。"
 
 
@@ -1090,6 +1315,30 @@ def routes_named(name: str, visible: list):
     return None
 
 
+def referenced_route(text, context, deal):
+    visible = context["visible"]
+    named = routes_named(text, visible)
+    if named:
+        return named
+    ordinal = re.search(r"第\s*([123一二三])\s*条", text)
+    if ordinal:
+        n = {"一": 1, "二": 2, "三": 3}.get(ordinal[1]) or int(ordinal[1])
+        return visible[n - 1] if n <= len(visible) else None
+    if re.search(r"这条|这个|它|该线", text):
+        focus = queries.context(deal).get("viewed")
+        return focus or deal.get("route") or (visible[0] if len(visible) == 1 else None)
+    return deal.get("route")
+
+
+def read_requirements(need, reading, text, context, seq):
+    action = queries.action(text, reading, routes_named(text, context["visible"]))
+    if action in {"view", "select"} and not re.search(
+        r"改成|改为|改到|改去|改人数|改房间|增加|减少|没有孩子", text
+    ):
+        return {}, [], []
+    return read_changes(need, reading, text, today(), turn=seq)
+
+
 def prices_by_route(conn, owner, deal):
     need = Need.model_validate(deal["need"])
     out = {}
@@ -1136,7 +1385,7 @@ def chips(deal, need, gates, pending, result):
         out.append(
             {
                 "label": relax[0]["text"] if relax else "改需求再找",
-                "action": "edit_need",
+                "action": "relax:" + relax[0]["field"] if relax else "edit_need",
                 "primary": True,
             }
         )
@@ -1144,12 +1393,13 @@ def chips(deal, need, gates, pending, result):
         out.append({"label": f"按 v{v} 找线", "action": "search", "primary": True})
     if deal.get("route") and not deal.get("departure"):
         out.append({"label": "看团期", "action": "dates", "primary": not out})
-        out.append({"label": "换一条线", "action": "release_route"})
+        if deal["status"] != "won":
+            out.append({"label": "换一条线", "action": "release_route"})
     if deal.get("departure"):
         out.append({"label": "去确认单", "action": "confirm", "primary": not out})
     if "answers" in types:
         out.append({"label": "看问答簿", "action": "qa"})
-    if not gates["quote"]["ready"] and gates["search"]["ready"]:
+    if not gates["quote"]["ready"] and deal.get("departure"):
         out.append({"label": "补全房型", "action": "edit_need"})
     return out[:3]
 

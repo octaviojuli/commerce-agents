@@ -481,6 +481,16 @@ html,body{height:100%}
 .composer textarea::placeholder{color:var(--faint)}
 .composer .p{min-height:44px;height:auto;border:0;cursor:pointer}
 .composer .p[disabled]{opacity:.45}
+.composer{flex-wrap:wrap}
+.input-modes{flex-basis:100%;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.input-modes button{border:1px solid var(--line);border-radius:12px;padding:7px 10px;background:var(--well);color:var(--ink);cursor:pointer;font:inherit;font-size:13px}
+.input-modes button[aria-pressed=true]{background:var(--ink);color:#fff}
+.input-modes span{font-size:11px;color:var(--faint)}
+.query-bar{flex:0 0 auto;display:flex;flex-direction:column;gap:5px;padding:8px 12px;background:var(--well);border-top:1px solid var(--line);font-size:12px}
+.query-bar small{color:var(--faint)}
+.route-read{display:flex;flex-direction:column;gap:7px;margin-bottom:10px}
+.route-read p{margin:0;font-size:13px}
+.route-read small{color:var(--muted);line-height:1.6}
 .b,.chip{cursor:pointer;border:0;font:inherit}
 .b[disabled],.chip[disabled]{opacity:.45;cursor:default}
 .chip{min-height:44px}
