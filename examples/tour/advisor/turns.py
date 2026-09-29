@@ -521,7 +521,9 @@ class Turns:
         elif kind == "customer" and draft_extra.get("live_reads"):
             # Departures read this turn are facts for the reply, worded for the customer; the
             # rest of the customer's message is still answered in the same reply.
-            lines = [line for line in map(routes.date_line, draft_extra["live_reads"]) if line]
+            lines = [
+                line for item in draft_extra["live_reads"] for line in routes.reply_lines(item)
+            ]
             # A source title can carry the supplier's name; the customer never reads it.
             read_context = {
                 **context,

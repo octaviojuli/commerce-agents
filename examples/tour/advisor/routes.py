@@ -660,6 +660,23 @@ def date_line(item) -> str | None:
     return None
 
 
+def reply_lines(item) -> list:
+    """What a customer reply may say from one route read: its dates, a failed query, and the
+    published itinerary's outline. Publication status stays with the advisor."""
+    title = display(item["title"])
+    lines = []
+    if item["dates"]["status"] == "error":
+        lines.append(f"{title}：团期这次没有查询成功（查询失败），暂时不能判断有没有团，稍后重新查")
+    else:
+        line = date_line(item)
+        if line:
+            lines.append(line)
+    itinerary = item["itinerary"]
+    if itinerary["status"] == "published" and itinerary["summary"]:
+        lines.append(f"{title}：行程概要 " + "；".join(itinerary["summary"]))
+    return lines
+
+
 def overview_text(item):
     dates, itinerary = item["dates"], item["itinerary"]
     lines = [item["title"]]

@@ -164,16 +164,32 @@ def test_an_unknown_label_does_not_lose_the_customers_changes():
 
 
 def test_a_senior_is_not_counted_again_as_an_adult():
-    party = needs.parse(
-        "party",
-        {
-            "total_count": 5,
-            "adults": 3,
-            "seniors": [{"age": 70}],
-            "children": [{"age": 8, "bed": True}, {"age": 5, "bed": False}],
-        },
-    )
+    reading = {
+        "total_count": 5,
+        "adults": 3,
+        "seniors": [{"age": 70}],
+        "children": [{"age": 8, "bed": True}, {"age": 5, "bed": False}],
+    }
+    party = party_from("2个大人2个小孩，我妈也去，一共5人", reading)
     assert (party.adults, len(party.seniors), len(party.children), party.total) == (2, 1, 2, 5)
+
+
+def test_an_added_adult_is_kept_and_an_old_total_gives_way():
+    need = needs.set_field(
+        Need(),
+        "party",
+        {"total_count": 3, "adults": 2, "children": [{"age": 8, "bed": True}], "seniors": []},
+        "said",
+    )
+    message = "再加一位成人，成人改成3位"
+    fills, proposals, _ = changes(
+        need,
+        reading({"field": "party", "value": {"adults": 3}, "evidence": message}),
+        message,
+        TODAY,
+    )
+    new = needs.parse("party", proposals[0]["new"])
+    assert (new.adults, new.total_count, new.total) == (3, None, 4)
 
 
 def test_an_unpublished_route_says_which_day_counts_disagree():

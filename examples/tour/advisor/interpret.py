@@ -121,9 +121,17 @@ def couple(value: dict, elderly: bool) -> dict:
 
 
 def merge_party(saved: needs.Party | None, change: dict) -> dict:
-    """Merge a partial party. Children are matched by age, then by position."""
+    """Merge a partial party. Children are matched by age, then by position.
+
+    A reading that states a total and also counts a senior among the adults ("一家四口加我妈，
+    共5人" as 3 adults and a senior) is corrected in that reading only. A composition that no
+    longer adds up to a total said earlier drops that total, so the change is kept and the
+    change sheet shows the new count to check.
+    """
+    change = counted_once(change)
     base = (saved or needs.Party()).model_dump(mode="json")
-    if change.get("total_count") is not None:
+    stated = change.get("total_count") is not None
+    if stated:
         base["total_count"] = change["total_count"]
     if "adults" in change and change["adults"] is not None:
         base["adults"] = change["adults"]
@@ -168,7 +176,26 @@ def merge_party(saved: needs.Party | None, change: dict) -> dict:
             base["children"] = merged
         else:
             base["children"] = [{"age": c.get("age"), "bed": c.get("bed")} for c in new]
+    if not stated and base.get("total_count") is not None and base.get("adults") is not None:
+        composed = base["adults"] + len(base.get("children") or []) + len(base.get("seniors") or [])
+        if composed != base["total_count"]:
+            base["total_count"] = None
     return base
+
+
+def counted_once(change: dict) -> dict:
+    total, adults = change.get("total_count"), change.get("adults")
+    seniors = [s for s in change.get("seniors") or [] if isinstance(s, dict)]
+    children = [c for c in change.get("children") or [] if isinstance(c, dict)]
+    if (
+        total is not None
+        and adults is not None
+        and seniors
+        and adults + len(children) + len(seniors) > total
+        and adults + len(children) == total
+    ):
+        return {**change, "adults": max(0, adults - len(seniors))}
+    return change
 
 
 def changes(need: Need, understanding, message: str, today: date, *, turn=None):

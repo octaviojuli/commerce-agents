@@ -290,8 +290,9 @@ async def price_departure(engine, owner, wh, deal_id, departure_id, offer_id=Non
     route = deal.get("route") or {}
     if not route:
         raise store.Conflict("先选定一条线路")
-    # A price is stamped with this deal's route, so the departure must be one of its own.
-    own = await routes.departures(wh, route["product_id"], need)
+    # A price is stamped with this deal's route, so the departure must be one of its own. It is
+    # looked for over the dates the list shows, which follow the conditions being explored.
+    own = await routes.departures(wh, route["product_id"], queries.effective(deal))
     if departure_id not in {d["departure_id"] for d in own}:
         raise store.Conflict("这个团期不属于当前线路，请在团期页重新选择")
     if not offer_id:

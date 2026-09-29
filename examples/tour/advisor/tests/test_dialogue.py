@@ -481,3 +481,48 @@ def test_schema_three_upgrade_keeps_existing_need_and_quote(env):
             assert conn.execute(db.versions.select().where(db.versions.c.version == 4)).one()
     finally:
         db.migrate(engine)
+
+
+# Reproductions from the review of 53f55b9.
+def test_customer_route_view_preserves_published_itinerary(dialogue):
+    client, deal, state, model = dialogue
+    first(client, deal)
+    state["published"] = True
+    result = say(client, deal, "我想看这条线路", "customer")
+    read = next(c for c in result["cards"] if c["type"] == "route_reads")["items"][0]
+    assert read["itinerary"]["status"] == "published" and read["itinerary"]["summary"]
+    assert "行程概要" in result["draft"]["text"], result["draft"]["text"]
+
+
+def test_customer_date_error_is_not_just_acknowledged(dialogue):
+    client, deal, state, model = dialogue
+    first(client, deal)
+    state["error"] = True
+    result = say(client, deal, "10月30日有没有团期", "customer")
+    read = next(c for c in result["cards"] if c["type"] == "route_reads")["items"][0]
+    assert read["dates"]["status"] == "error"
+    assert "查询失败" in result["draft"]["text"] or "重试" in result["draft"]["text"], result[
+        "draft"
+    ]["text"]
+
+
+def test_visible_trial_departure_does_not_claim_wrong_route(dialogue):
+    client, deal, state, model = dialogue
+    first(client, deal)
+    state["dates"] = ["2026-10-20"]
+    for field, value in {
+        "party": {"adults": 3, "children": [], "seniors": []},
+        "rooms": {"twins": 2},
+    }.items():
+        client.put(f"/api/deals/{deal}/need/{field}", json={"value": value}).raise_for_status()
+    client.post(
+        f"/api/deals/{deal}/route", json={"product_id": SLOW, "title": TITLE}
+    ).raise_for_status()
+    client.post(
+        f"/api/deals/{deal}/query/relax", json={"field": "window", "amount": 10}
+    ).raise_for_status()
+    dates = client.get(f"/api/deals/{deal}/dates").json()
+    assert dates["items"]
+    dep = dates["items"][0]["departure_id"]
+    price = client.post(f"/api/deals/{deal}/dates/{dep}/price")
+    assert "不属于当前线路" not in price.text, price.json()

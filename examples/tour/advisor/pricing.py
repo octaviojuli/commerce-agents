@@ -215,7 +215,7 @@ def validity(row, deal, need) -> tuple[bool, str]:
             <= start
             <= window.end + timedelta(days=WINDOW_SLACK)
         ):
-            return False, "团期不在当前出行时间内，需要重新核价"
+            return False, "团期不在客人需求的出行时间内；如客人认可，先把临时时间记入需求"
     if row["snapshot"].get("terms") != terms(need):
         return False, "人数或房间已变，需要重新核价"
     until = row.get("valid_until")
