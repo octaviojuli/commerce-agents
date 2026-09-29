@@ -74,6 +74,34 @@ def response(data):
     return httpx.Response(200, json={"code": 200, "message": "ok", "data": data})
 
 
+async def test_goods_stock_registry_is_explicit_and_does_not_require_erp_credentials(tmp_path):
+    from tour.api.warehouse_connector import connector_registry
+
+    identifier = uuid4()
+    path = tmp_path / "connections.json"
+    row = {
+        "connection_id": str(identifier),
+        "env_prefix": "ACME",
+        "adapter": "goods_stock",
+        "supplier_company_id": 10,
+    }
+    path.write_text(json.dumps([row]))
+    environment = {
+        "ACME_BASE_URL": "https://acme.example",
+        "ACME_QUERY_COMPANY_ID": "2",
+        "ACME_START_DATE": "2030-10-01",
+        "ACME_END_DATE": "2030-10-07",
+    }
+    registry = connector_registry(str(path), environment)
+    async with registry[identifier]() as adapter:
+        assert adapter.query_company == 2 and adapter.supplier_company == 10
+        assert not hasattr(adapter, "create_order")
+    del row["supplier_company_id"]
+    path.write_text(json.dumps([row]))
+    with pytest.raises(ValueError, match="供应商连接绑定无效"):
+        connector_registry(str(path), environment)
+
+
 def client(handler):
     return HttpErpClient.with_token(
         BASE,

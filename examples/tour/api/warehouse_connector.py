@@ -3,10 +3,11 @@
 import json
 import os
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from functools import wraps
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -23,6 +24,8 @@ class ConnectionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     connection_id: UUID
     env_prefix: str = Field(pattern=r"^[A-Z][A-Z0-9_]{0,60}$")
+    adapter: Literal["tour_b2b", "goods_stock"] = "tour_b2b"
+    supplier_company_id: int | None = Field(default=None, gt=0)
 
 
 def connector_registry(
@@ -51,6 +54,29 @@ def connector_registry(
         for row in rows:
             if connection_id is not None and row.connection_id != connection_id:
                 continue
+            if row.adapter == "goods_stock":
+                from cloud_warehouse.goods_stock import connect as stock_connect
+                from cloud_warehouse.goods_stock import settings as stock_settings
+
+                prefix = row.env_prefix
+                stock_config = (
+                    environment[prefix + "_BASE_URL"],
+                    int(environment[prefix + "_QUERY_COMPANY_ID"]),
+                    row.supplier_company_id,
+                    date.fromisoformat(environment[prefix + "_START_DATE"]),
+                    date.fromisoformat(environment[prefix + "_END_DATE"]),
+                )
+                if row.supplier_company_id is None:
+                    raise ValueError
+                stock_settings(stock_config[0], stock_config[1], stock_config[3], stock_config[4])
+
+                def stock_factory(settings=stock_config):
+                    return stock_connect(*settings)
+
+                registry[row.connection_id] = stock_factory
+                continue
+            if row.supplier_company_id is not None:
+                raise ValueError
             config = {
                 "TOUR_ERP_" + suffix: environment[row.env_prefix + "_" + suffix]
                 for suffix in ("BASE_URL", "MOBILE", "PASSWORD")

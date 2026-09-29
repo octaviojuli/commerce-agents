@@ -24,6 +24,14 @@ class Scope:
 _scope: ContextVar[Scope | None] = ContextVar("warehouse_source_scope", default=None)
 
 
+def current_scope() -> Scope:
+    """Server-bound identity for adapters reading fresh, RLS-protected source snapshots."""
+    scope = _scope.get()
+    if scope is None:
+        raise SourceError("SOURCE_LIMIT_CONTEXT_MISSING", retryable=False)
+    return scope
+
+
 @asynccontextmanager
 async def open_connector(engine, actor, connection_id, factory):
     token = _scope.set(Scope(engine, actor, connection_id))
