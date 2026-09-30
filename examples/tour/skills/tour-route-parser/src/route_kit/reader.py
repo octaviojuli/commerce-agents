@@ -27,6 +27,11 @@ MIN_PDF_CHARS = 300
 MIN_PICTURE_BYTES = 30_000
 MAX_PICTURES = 30
 RENDER_DPI = 110
+# A text layer whose font maps glyphs to the wrong characters reads as Chinese but is not. Real
+# itineraries keep almost every character inside the 3,755 commonest ones (GB2312 level 1, or
+# Big5 level 1 for traditional text); a wrong mapping lands on rare characters instead.
+GARBLED_MIN_HAN = 100
+GARBLED_RARE_SHARE = 0.04
 
 
 class ReadError(ValueError):
@@ -63,6 +68,7 @@ class Document:
     removed: list[dict] = field(default_factory=list)  # lines dropped by cleaning, with reason
     pictures: list[Picture] = field(default_factory=list)  # only when read with pictures=True
     scanned: bool = False  # a PDF with no text layer, read only through its page pictures
+    garbled_pages: list[int] = field(default_factory=list)  # text layer unusable, read as pictures
     transcribed: list[dict] = field(default_factory=list)  # one record per picture, see vision
     pictures_unread: int = 0  # DOCX pictures that may hold words but were not kept (see read)
 
@@ -170,6 +176,24 @@ def _pdftotext(path: Path, layout: bool) -> str:
     return result.stdout.decode("utf-8", "replace")
 
 
+def _common_han(char: str) -> bool:
+    for codec, low, high in (("gb2312", 0xB0, 0xD7), ("big5", 0xA4, 0xC5)):
+        try:
+            if low <= char.encode(codec)[0] <= high:
+                return True
+        except UnicodeEncodeError:
+            continue
+    return False
+
+
+def garbled(page_text: str) -> bool:
+    """True when a page's Chinese text is dominated by rare characters (a broken font mapping)."""
+    han = [c for c in page_text if "\u4e00" <= c <= "\u9fff"]
+    if len(han) < GARBLED_MIN_HAN:
+        return False
+    return sum(1 for c in han if not _common_han(c)) / len(han) > GARBLED_RARE_SHARE
+
+
 def _image_pages(path: Path, pages: int) -> list[int]:
     """Pages that carry images but little text: their words are not read."""
     try:
@@ -232,21 +256,34 @@ def _read_pdf_file(data: bytes, pictures: bool):
         scanned = len(re.sub(r"\s", "", text)) < MIN_PDF_CHARS
         if scanned and not pictures:
             raise ReadError("PDF_TEXT_MISSING")
-        # A scanned file is read through all its pages; otherwise only the image pages.
-        image_pages = list(range(1, pages + 1)) if scanned else _image_pages(path, pages)
+        page_texts = text.split("\f")
+        bad = [] if scanned else [n for n, t in enumerate(page_texts, start=1) if garbled(t)]
+        if bad and not pictures:
+            raise ReadError("PDF_TEXT_GARBLED")
+        # A scanned file is read through all its pages; otherwise the image pages and the pages
+        # whose text layer is garbled.
+        image_pages = (
+            list(range(1, pages + 1))
+            if scanned
+            else sorted(set(_image_pages(path, pages)) | set(bad))
+        )
         rendered: dict[int, bytes] = {}
         if pictures:
             for page_no in image_pages[:MAX_PICTURES]:
                 image = _render_page(path, page_no)
                 if image:
                     rendered[page_no] = image
+        if any(n not in rendered for n in bad):
+            raise ReadError("PDF_TEXT_GARBLED")  # no picture to read the page from
         out = []
-        for page_no, page in enumerate(text.split("\f"), start=1):
+        for page_no, page in enumerate(page_texts, start=1):
             if page_no in rendered:
                 out.append(("picture", "", page_no))
+            if page_no in bad:
+                continue  # the picture replaces the page's text
             for raw in page.splitlines():
                 out.append(("pdf", raw, page_no))
-        return out, pages, image_pages, rendered, scanned
+        return out, pages, image_pages, rendered, scanned, bad
 
 
 # A repeated line that names meals, stays or money is content (a daily 午餐 line), not a header.
@@ -301,8 +338,15 @@ def read(path: Path, pictures: bool = False) -> Document:
         raise ReadError("FILE_UNREADABLE") from error
     found: list[Picture] = []
     if data.startswith(b"%PDF-"):
-        raw, pages, image_pages, rendered, scanned = _read_pdf(data, pictures)
-        doc = Document(path.name, "pdf", pages=pages, image_pages=image_pages, scanned=scanned)
+        raw, pages, image_pages, rendered, scanned, bad = _read_pdf(data, pictures)
+        doc = Document(
+            path.name,
+            "pdf",
+            pages=pages,
+            image_pages=image_pages,
+            scanned=scanned,
+            garbled_pages=bad,
+        )
         lines = []
         for kind, text, page in raw:
             if kind == "picture":

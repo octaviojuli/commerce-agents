@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-import statistics
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -28,6 +27,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from . import prompts
+from .confidence import assess
 from .llm import Model, ModelError
 from .models import (
     ChildNode,
@@ -43,7 +43,7 @@ from .models import (
     Source,
 )
 from .reader import Document
-from .segment import Layout
+from .segment import DayBlock, Layout
 
 PARSER = "route-kit-1"
 # Blank form fields and table headers: not itinerary content, never "risky".
@@ -52,6 +52,10 @@ FORM_WORDS = re.compile(
 )
 SHORT_ROW = re.compile(r"^[^|]{0,8}(\|\s*[^|]{0,12}){2,}$")
 MONEY = re.compile(r"\d|欧|元|美金|美元|镑|€|\$|￥")
+
+
+# A quoted "no shopping" carries a zero or a negation; a line that only names shops does not.
+NEGATION = re.compile(r"[无零0不没]")
 
 
 def is_form(text: str) -> bool:
@@ -205,6 +209,57 @@ def refine_pdf_days(layout: Layout, model: Model, issues: list[dict]) -> None:
     layout.outside = [u.id for u in layout.units if u.id not in inside]
     if firsts != [b.header_unit for b in blocks]:
         issues.append({"code": "PDF_DAY_BOUNDARIES_ADJUSTED", "path": "days", "detail": ""})
+
+
+def split_days_by_model(
+    layout: Layout, model: Model, expected: int | None, issues: list[dict]
+) -> None:
+    """No day label the rules can read (a drawn or vertical label, dates, a table): the model
+    places each day's first unit. The answer is used only when it is a clean 1..N sequence that
+    matches the registered day count; otherwise the layout stays as the rules left it."""
+    units = layout.units
+    if len(units) < 6:
+        return
+    try:
+        answer = model.ask(
+            prompts.DAY_SPLIT,
+            {
+                "expected_days": expected,
+                "units": [{"id": u.id, "text": u.text[:60]} for u in units[:900]],
+            },
+            DayStarts,
+            max_tokens=2000,
+        )
+    except ModelError as error:
+        issues.append({"code": "DAY_SPLIT_UNCHECKED", "path": "days", "detail": str(error)[:160]})
+        return
+    starts = sorted(answer.starts, key=lambda s: s.day)
+    days = [s.day for s in starts]
+    firsts = [s.first_unit for s in starts]
+    known = {u.id for u in units}
+    ok = len(days) >= 2 and days == list(range(1, len(days) + 1))
+    ok = (
+        ok
+        and all(f in known for f in firsts)
+        and all(a < b for a, b in zip(firsts, firsts[1:], strict=False))
+    )
+    ok = ok and (not expected or len(days) == expected)
+    if not ok:
+        issues.append({"code": "DAY_SPLIT_REJECTED", "path": "days", "detail": str(firsts)[:160]})
+        return
+    layout.days = [
+        DayBlock(
+            day,
+            None,
+            first,
+            list(range(first, (firsts[i + 1] if i + 1 < len(days) else units[-1].id + 1))),
+        )
+        for i, (day, first) in enumerate(zip(days, firsts, strict=True))
+    ]
+    layout.outside = [u.id for u in units if u.id < firsts[0]]
+    layout.method = "model"
+    issues[:] = [i for i in issues if i["code"] != "NO_DAY_HEADERS"]
+    issues.append({"code": "DAYS_SPLIT_BY_MODEL", "path": "days", "detail": f"{len(days)} 天"})
 
 
 def norm(text: str) -> str:
@@ -858,6 +913,14 @@ def check_route(
                 if verify(x, f"policies.{field}[{i}]")
             ],
         )
+    for key in ("inclusions", "exclusions"):
+        seen: set[str] = set()
+        kept = []
+        for item in getattr(out, key):
+            if norm(item.text) not in seen:
+                seen.add(norm(item.text))
+                kept.append(item)
+        setattr(out, key, kept)
     for group in out.notices:
         group.items = [
             x for i, x in enumerate(group.items) if verify(x, f"notices.{group.category}[{i}]")
@@ -902,11 +965,20 @@ def check_route(
         validate_fact(x, f"cancellation_tiers.{i}") for i, x in enumerate(out.cancellation_tiers)
     ]
     out.shopping_cite = [c for c in out.shopping_cite if c in allowed_set]
-    if out.shopping_status == "none" and not re.search(
-        r"(?:无购物|不进购物店|零购物|0购物|无指定购物)", source(out.shopping_cite)
-    ):
-        issue("ATTRIBUTE_UNSUPPORTED", "shopping_status", "原文未明确无购物")
-        out.shopping_status = "unknown"
+    if out.shopping_status == "none":
+        # The model judges what counts as "no shopping"; the code only checks that the words it
+        # quotes are in the cited line and say "none" (a zero or a negation), not just name shops.
+        quote = norm(out.shopping_quote)
+        if not (
+            quote
+            and quote in norm(source(out.shopping_cite))
+            and NEGATION.search(out.shopping_quote)
+        ):
+            issue("ATTRIBUTE_UNSUPPORTED", "shopping_status", "原文未明确无购物")
+            out.shopping_status = "unknown"
+    if out.shopping_status != "none":
+        out.shopping_quote = ""
+    out.meal_counts = validate_fact(out.meal_counts, "meal_counts")
     if out.shopping:
         out.shopping_status = "present"
     cited.update(out.title_cite, out.departure_dates_cite, out.shopping_cite)
@@ -917,25 +989,27 @@ def extract(
     doc: Document, layout: Layout, model: Model, meta: dict, pool: ThreadPoolExecutor, sha256: str
 ) -> RouteContent:
     units = {u.id: u.text for u in layout.units}
-    blocks = layout.days
     issues: list[dict] = [{"code": p, "path": "days", "detail": ""} for p in layout.problems]
 
-    if doc.media == "pdf":
+    if not layout.days:
+        split_days_by_model(layout, model, meta.get("days"), issues)
+    blocks = layout.days
+    if doc.media == "pdf" and layout.method != "model":
         refine_pdf_days(layout, model, issues)
-    # A last day that swallowed the terms is trimmed by asking where the day ends.
+    # Where the last day ends is a reading question, not a layout rule: the terms (接待标准, fee
+    # lists, notices) follow it under headings that vary by supplier, so the model is asked once.
     if blocks:
-        sizes = [len(b.units) for b in blocks[:-1]] or [len(blocks[-1].units)]
         last = blocks[-1]
-        if len(last.units) > max(15, 3 * statistics.median(sizes)):
-            try:
-                answer = model.ask(
-                    prompts.LAST_DAY_END,
-                    {"units": [{"id": i, "text": units[i][:80]} for i in last.units[:80]]},
-                    LastDayEnd,
-                    max_tokens=200,
-                )
-                if answer.last_unit in last.units:
-                    cut = last.units.index(answer.last_unit) + 1
+        try:
+            answer = model.ask(
+                prompts.LAST_DAY_END,
+                {"units": [{"id": i, "text": units[i][:80]} for i in last.units[:120]]},
+                LastDayEnd,
+                max_tokens=200,
+            )
+            if answer.last_unit in last.units:
+                cut = last.units.index(answer.last_unit) + 1
+                if cut < len(last.units):
                     layout.outside.extend(last.units[cut:])
                     last.units = last.units[:cut]
                     issues.append(
@@ -945,8 +1019,8 @@ def extract(
                             "detail": "",
                         }
                     )
-            except ModelError as error:
-                issues.append({"code": "LAST_DAY_UNCHECKED", "path": "days", "detail": str(error)})
+        except ModelError as error:
+            issues.append({"code": "LAST_DAY_UNCHECKED", "path": "days", "detail": str(error)})
     outside = sorted(set(layout.outside))
     pictured = {u.id for u in layout.units if u.origin == "image"}
     day_titles = [{"day": b.day, "header": units[b.header_unit][:60]} for b in blocks]
@@ -1148,6 +1222,16 @@ def extract(
                 "detail": "第 " + "、".join(map(str, unread)) + " 页为图片，其中文字未读取",
             }
         )
+    if doc.garbled_pages:
+        issues.append(
+            {
+                "code": "PDF_TEXT_GARBLED",
+                "path": "source",
+                "detail": "第 "
+                + "、".join(map(str, doc.garbled_pages))
+                + " 页文字层乱码，已改用图片转写",
+            }
+        )
     if doc.pictures_unread:
         issues.append(
             {
@@ -1185,6 +1269,7 @@ def extract(
         removed=doc.removed,
         image_units=sum(1 for u in layout.units if u.origin == "image"),
     )
+    content.quality.confidence, content.quality.review_reasons = assess(content)
     return content
 
 

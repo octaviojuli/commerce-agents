@@ -327,6 +327,13 @@ class CancellationTier(CitedFact):
     penalty_money: Money | None = None
 
 
+class MealCounts(CitedFact):
+    """The meals the attachment says the whole trip includes ("4 早 7 正餐"), as written."""
+
+    breakfast: int | None = None
+    main: int | None = None
+
+
 class Meeting(CitedFact):
     location: str = ""
     time: str = ""
@@ -360,6 +367,8 @@ class RouteOut(_M):
     meeting: Meeting = Field(default_factory=Meeting)
     shopping_status: Literal["present", "none", "unknown"] = "unknown"
     shopping_cite: Cite = Field(default_factory=list)
+    shopping_quote: str = ""  # the words of the cited line that say there is no shopping
+    meal_counts: MealCounts = Field(default_factory=MealCounts)
     notices: list[NoticeGroup] = Field(default_factory=list)
 
 
@@ -392,6 +401,8 @@ class Quality(_M):
     issues: list[dict] = Field(default_factory=list)
     removed: list[dict] = Field(default_factory=list)
     image_units: int = 0  # evidence units transcribed from pictures
+    confidence: float | None = None  # 0-100 triage score, see confidence.py
+    review_reasons: list[str] = Field(default_factory=list)  # why a person should look first
 
 
 class RouteContent(RouteOut):

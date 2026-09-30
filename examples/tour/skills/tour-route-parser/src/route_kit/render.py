@@ -48,6 +48,15 @@ def write_missing(path: Path, entry: dict) -> None:
     )
 
 
+def conf(s: dict) -> str:
+    """The triage score, with the reasons a person should look first."""
+    if s.get("confidence") is None:
+        return ""
+    reasons = "；".join(s.get("review_reasons") or [])
+    note = f"<div class='c w'>{html.escape(reasons)}</div>" if reasons else ""
+    return f"{s['confidence']:.0f}{note}"
+
+
 def write_index(path: Path, summaries: list[dict]) -> None:
     rows = []
     for s in summaries:
@@ -66,7 +75,7 @@ def write_index(path: Path, summaries: list[dict]) -> None:
             rows.append(
                 f"<tr><td><a href='{link}'>{html.escape(s.get('title') or s.get('name', ''))}</a><div class='c'>{html.escape(s['code'])} · {html.escape(s.get('file', ''))}</div></td>"
                 f"<td>{days}{flag}</td><td>{cov}%<div class='c'>含推断 {total}%</div></td>"
-                f"<td>{s['issues']}</td><td>{s.get('auto_attached') or ''}</td>"
+                f"<td>{conf(s)}</td><td>{s['issues']}</td><td>{s.get('auto_attached') or ''}</td>"
                 f"<td>{s['risky_unmapped'] or ''}</td></tr>"
             )
         else:
@@ -75,7 +84,7 @@ def write_index(path: Path, summaries: list[dict]) -> None:
             title = f"<a href='{link}'>{name}</a>" if s.get("status") == "no_attachment" else name
             rows.append(
                 f"<tr><td>{title}<div class='c'>{html.escape(s['code'])}</div></td>"
-                f"<td colspan='5' class='w'>{'缺少附件' if s.get('status') == 'no_attachment' else html.escape(s.get('error', '无法读取'))}</td></tr>"
+                f"<td colspan='6' class='w'>{'缺少附件' if s.get('status') == 'no_attachment' else html.escape(s.get('error', '无法读取'))}</td></tr>"
             )
     ok = [s for s in summaries if s.get("status") == "ok"]
     total_units = sum(s["units"] for s in ok) or 1
@@ -96,4 +105,4 @@ th{{text-align:left;font-weight:500;color:var(--soft);font-size:12px;padding:10p
 td{{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top;font-variant-numeric:tabular-nums}}a{{color:var(--accent);text-decoration:none;font-weight:600}}
 .c{{font-size:12px;color:var(--soft)}}.w{{color:var(--warn);font-size:12px;display:block}}
 </style></head><body><main><h1>线路详情案例</h1><p>{stats}。页面由供应商附件自动整理，仅供内部评审，发布前须人工核对。</p>
-<div class="tw"><table><tr><th>线路</th><th>整理天数</th><th>原文直接引用</th><th>问题项</th><th>原样挂入待审</th><th>高风险未归入</th></tr>{"".join(rows)}</table></div></main></body></html>""")
+<div class="tw"><table><tr><th>线路</th><th>整理天数</th><th>原文直接引用</th><th>待审分</th><th>问题项</th><th>原样挂入待审</th><th>高风险未归入</th></tr>{"".join(rows)}</table></div></main></body></html>""")

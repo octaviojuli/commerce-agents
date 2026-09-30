@@ -145,6 +145,8 @@ def main():
                     "direct": q.get("direct_units", q["mapped_units"]),
                     "auto_attached": q.get("auto_attached", 0),
                     "risky_unmapped": sum(1 for u in q["unmapped"] if u["risky"]),
+                    "confidence": q.get("confidence"),
+                    "review_reasons": q.get("review_reasons", []),
                     "issues": len(q["issues"]),
                 }
             )

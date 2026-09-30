@@ -599,6 +599,49 @@
    "title": "Meal",
    "type": "object"
   },
+  "MealCounts": {
+   "description": "The meals the attachment says the whole trip includes (\"4 早 7 正餐\"), as written.",
+   "properties": {
+    "raw": {
+     "default": "",
+     "title": "Raw",
+     "type": "string"
+    },
+    "cite": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Cite",
+     "type": "array"
+    },
+    "breakfast": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Breakfast"
+    },
+    "main": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Main"
+    }
+   },
+   "title": "MealCounts",
+   "type": "object"
+  },
   "Meals": {
    "properties": {
     "breakfast": {
@@ -1307,6 +1350,25 @@
      "default": 0,
      "title": "Image Units",
      "type": "integer"
+    },
+    "confidence": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Confidence"
+    },
+    "review_reasons": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Review Reasons",
+     "type": "array"
     }
    },
    "title": "Quality",
@@ -1844,6 +1906,14 @@
    },
    "title": "Shopping Cite",
    "type": "array"
+  },
+  "shopping_quote": {
+   "default": "",
+   "title": "Shopping Quote",
+   "type": "string"
+  },
+  "meal_counts": {
+   "$ref": "#/$defs/MealCounts"
   },
   "notices": {
    "items": {
