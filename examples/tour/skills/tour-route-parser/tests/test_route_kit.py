@@ -546,3 +546,170 @@ def test_display_tidy_keeps_ranges_and_routes(tmp_path):
     probe = source + f"console.log(JSON.stringify({list(cases)}.map(tidy)))"
     out = subprocess.run([node, "-e", probe], capture_output=True, text=True, check=True)
     assert json.loads(out.stdout) == list(cases.values())
+
+
+def test_a_text_layer_of_rare_characters_is_garbled_and_ordinary_text_is_not():
+    from route_kit.reader import garbled
+
+    ordinary = "早餐后前往景区参观游览，午餐后乘车返回酒店休息，晚上自由活动。" * 8
+    # A font that maps 的、不、于 onto look-alike rare glyphs still reads as Chinese.
+    broken = ordinary.replace("的", "癿").replace("不", "丌").replace("于", "亍") + "癿丌亍" * 40
+    traditional = "早餐後前往景區參觀遊覽，午餐後乘車返回飯店休息，晚上自由活動。" * 8
+    assert not garbled(ordinary)
+    assert garbled(broken)
+    assert not garbled(traditional)
+    assert not garbled("癿丌亍" * 10)  # too short to judge
+
+
+def test_no_shopping_needs_a_quote_from_the_cited_line_that_says_none():
+    from route_kit.extract import NEGATION, norm
+
+    def accepted(quote, line):
+        return bool(norm(quote) and norm(quote) in norm(line) and NEGATION.search(quote))
+
+    assert accepted("0 购物", "购物安排：全程 0 购物店安排")
+    assert accepted("6无产品", "6无产品(无自费、无景交、无超市、无苗寨)")
+    assert accepted("不进购物店", "全程不进购物店，品质游")
+    assert not accepted(
+        "特产超市", "购物：特产超市：哈尔滨游客服务中心"
+    )  # names a shop, says nothing
+    assert not accepted("0购物", "购物店：3个")  # not in the cited line
+
+
+class _Fake:
+    """A model that returns a fixed structured answer."""
+
+    name = "fake"
+
+    def __init__(self, answer):
+        self.answer = answer
+
+    def ask(self, prompt, data, schema, max_tokens=0):
+        return self.answer
+
+
+def _layout_of(texts):
+    from route_kit.segment import Layout, Unit
+
+    units = [Unit(i, i, t) for i, t in enumerate(texts, start=1)]
+    return Layout(units, [], [u.id for u in units], "none", ["NO_DAY_HEADERS"])
+
+
+def test_model_day_split_is_used_only_for_a_clean_sequence_of_the_registered_length():
+    from route_kit.extract import DayStarts, split_days_by_model
+
+    texts = [
+        "封面",
+        "特色",
+        "厦门-重庆",
+        "住宿：重庆",
+        "重庆-武隆",
+        "住宿：武隆",
+        "武隆-厦门",
+        "费用包含",
+    ]
+
+    def starts(*pairs):
+        return DayStarts.model_validate({"starts": [{"day": d, "first_unit": u} for d, u in pairs]})
+
+    layout, issues = _layout_of(texts), [{"code": "NO_DAY_HEADERS", "path": "days", "detail": ""}]
+    split_days_by_model(layout, _Fake(starts((1, 3), (2, 5), (3, 7))), 3, issues)
+    assert [b.day for b in layout.days] == [1, 2, 3]
+    assert layout.days[0].units == [3, 4] and layout.days[2].units == [7, 8]
+    assert layout.outside == [1, 2] and layout.method == "model"
+    assert [i["code"] for i in issues] == ["DAYS_SPLIT_BY_MODEL"]
+
+    for wrong in (
+        starts((1, 3), (2, 5)),  # registered 3 days
+        starts((1, 3), (2, 3), (3, 7)),  # not increasing
+        starts((1, 3), (3, 5), (4, 7)),  # not 1..N
+        starts((1, 3), (2, 99), (3, 100)),  # units that do not exist
+    ):
+        layout = _layout_of(texts)
+        issues = []
+        split_days_by_model(layout, _Fake(wrong), 3, issues)
+        assert layout.days == [] and issues[0]["code"] == "DAY_SPLIT_REJECTED"
+
+
+def test_meal_counts_are_compared_with_the_days_and_no_days_is_a_reason():
+    from route_kit.confidence import assess
+    from route_kit.models import Day, Item, Meal, MealCounts, Meals, Quality, RouteContent, Source
+
+    def day(n, b, l_, d):
+        return Day(
+            day=n,
+            meals=Meals(breakfast=Meal(status=b), lunch=Meal(status=l_), dinner=Meal(status=d)),
+        )
+
+    content = RouteContent(
+        source=Source(file_name="a.pdf", media="pdf", sha256="x", parser="p"),
+        days=[day(1, "unknown", "included", "self"), day(2, "included", "included", "included")],
+        inclusions=[Item(text="用餐：4 早 7 正")],
+        exclusions=[Item(text="单房差")],
+        meal_counts=MealCounts(breakfast=4, main=7, raw="4 早 7 正", cite=[1]),
+        quality=Quality(days_found=2, days_extracted=2, units=10, direct_units=9),
+    )
+    score, reasons = assess(content)
+    assert any("早餐 4 餐，逐日为 1 餐" in r for r in reasons)
+    assert any("正餐 7 餐，逐日为 3 餐" in r for r in reasons)
+    assert score > 80
+    content.days = []
+    content.quality.days_found = content.quality.days_extracted = 0
+    assert "没有识别出逐日行程" in assess(content)[1]
+
+
+def test_page_labels_out_of_order_are_told_from_a_restart():
+    from route_kit.reader import out_of_order
+
+    assert out_of_order("第二天\n第三天\n第一天\n第四天\n第五天")  # a table read cell by cell
+    assert out_of_order("第一天\n第三天\n第四天\n第二天\n第五天")
+    assert not out_of_order(
+        "第一天\n第二天\n第三天\n第一天\n第二天\n第三天"
+    )  # overview, then programme
+    assert not out_of_order("第一天\n第二天")  # too few labels to judge
+    assert not out_of_order("D1\nD2\nD3\nD4")
+
+
+def test_one_day_split_is_taken_only_when_the_registered_length_is_one_day():
+    from route_kit.extract import DayStarts, split_days_by_model
+
+    texts = [
+        "封面",
+        "特色",
+        "集合：8:00 厦门",
+        "游览云水谣古镇",
+        "午餐",
+        "返回厦门",
+        "费用包含",
+        "不含门票",
+    ]
+    one = DayStarts.model_validate({"starts": [{"day": 1, "first_unit": 3}]})
+
+    layout, issues = _layout_of(texts), []
+    split_days_by_model(layout, _Fake(one), 1, issues)
+    assert [b.day for b in layout.days] == [1] and layout.days[0].units[0] == 3
+
+    for registered in (None, 2):  # a single day is no answer for a trip of unknown or longer length
+        layout, issues = _layout_of(texts), []
+        split_days_by_model(layout, _Fake(one), registered, issues)
+        assert layout.days == [] and issues[0]["code"] == "DAY_SPLIT_REJECTED"
+
+
+def test_a_file_that_is_not_an_itinerary_stops_and_a_doubt_does_not():
+    import pytest
+    from route_kit.extract import DocumentKind, require_itinerary
+    from route_kit.llm import ModelError
+    from route_kit.reader import NotItinerary, ReadError
+
+    layout = _layout_of(["凯撒定制手持小风扇（充电款）", "规格：USB 充电", "包装：彩盒"])
+    with pytest.raises(NotItinerary) as stopped:
+        require_itinerary(layout, _Fake(DocumentKind(kind="not_itinerary")), "定制小风扇")
+    assert isinstance(stopped.value, ReadError) and stopped.value.code == "NOT_ITINERARY"
+
+    require_itinerary(layout, _Fake(DocumentKind(kind="itinerary")), "云水谣一日游")
+
+    class Failing(_Fake):
+        def ask(self, *args, **kwargs):
+            raise ModelError("MODEL_FAILED")
+
+    require_itinerary(layout, Failing(None), "任何名称")  # a failed call never stops the parse

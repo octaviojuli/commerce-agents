@@ -15,6 +15,7 @@ from pathlib import Path
 from cloud_warehouse.documents import DocumentParseError
 
 MAX_WIRE = 64_000_000
+NOT_ITINERARY_EXIT = 3  # the model stage found the file is not a tour itinerary
 
 
 def _child(stage, data, settings, timeout):
@@ -55,6 +56,9 @@ def _child(stage, data, settings, timeout):
             os.killpg(process.pid, signal.SIGKILL)
             process.wait()
             raise DocumentParseError("DOCUMENT_PARSE_TIMEOUT") from None
+        if process.returncode == NOT_ITINERARY_EXIT and stage == "model":
+            # Not a route (a product sheet, a form): the merchant is asked to check the file.
+            raise DocumentParseError("DOCUMENT_TEXT_INSUFFICIENT")
         if process.returncode:
             raise DocumentParseError(
                 "DOCUMENT_PARSE_OPEN_FAILED" if stage == "read" else "DOCUMENT_PARSE_DAYS_FAILED"
@@ -129,6 +133,7 @@ def main():
     else:
         from route_kit.extract import extract
         from route_kit.llm import Model
+        from route_kit.reader import NotItinerary
 
         from cloud_warehouse.route_kit_content import dump, prepare
 
@@ -171,6 +176,8 @@ def main():
                         ensure_ascii=False,
                     )
                 )
+        except NotItinerary:
+            sys.exit(NOT_ITINERARY_EXIT)
         finally:
             model.client.close()
 

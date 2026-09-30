@@ -202,7 +202,12 @@ def issues(doc, *, resolutions=(), listing=None):
                 "RISKY_UNMAPPED",
                 "风险原文未整理，须补入对应条款并保留引用",
             )
-    informative = {"PDF_DAY_BOUNDARIES_ADJUSTED", "LAST_DAY_TRIMMED", "RETRIED"}
+    informative = {
+        "PDF_DAY_BOUNDARIES_ADJUSTED",
+        "LAST_DAY_TRIMMED",
+        "RETRIED",
+        "PDF_PAGE_REORDERED",
+    }
     for issue in doc.quality.issues:
         code = issue.get("code", "PARSE_REVIEW")
         if code in informative or code in {
