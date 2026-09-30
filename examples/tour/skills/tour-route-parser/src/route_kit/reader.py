@@ -44,6 +44,13 @@ class ReadError(ValueError):
         self.code = code
 
 
+class NotItinerary(ReadError):
+    """The file is not a tour itinerary (a product sheet, a form, ...): there is no route to show."""
+
+    def __init__(self):
+        super().__init__("NOT_ITINERARY")
+
+
 @dataclass
 class Line:
     id: int

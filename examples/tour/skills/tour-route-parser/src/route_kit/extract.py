@@ -23,6 +23,7 @@ import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -42,7 +43,7 @@ from .models import (
     RouteOut,
     Source,
 )
-from .reader import Document
+from .reader import Document, NotItinerary
 from .segment import DayBlock, Layout
 
 PARSER = "route-kit-1"
@@ -151,6 +152,10 @@ SECTION_TITLE = re.compile(
 LABEL_WORDS = re.compile(r"提示|注意|备注|说明|须知|推荐|自费|购物|温馨")
 
 
+class DocumentKind(BaseModel):
+    kind: Literal["itinerary", "not_itinerary"] = "itinerary"
+
+
 class LastDayEnd(BaseModel):
     last_unit: int
 
@@ -211,6 +216,27 @@ def refine_pdf_days(layout: Layout, model: Model, issues: list[dict]) -> None:
         issues.append({"code": "PDF_DAY_BOUNDARIES_ADJUSTED", "path": "days", "detail": ""})
 
 
+def require_itinerary(layout: Layout, model: Model, name: str) -> None:
+    """A file with no readable day labels may not be a route at all: ask before reading it as one.
+
+    Only a clear "not an itinerary" stops the parse; a failed call or any doubt lets it go on.
+    """
+    try:
+        answer = model.ask(
+            prompts.KIND,
+            {
+                "listed_name": name,
+                "units": [{"id": u.id, "text": u.text[:80]} for u in layout.units[:60]],
+            },
+            DocumentKind,
+            max_tokens=100,
+        )
+    except ModelError:
+        return
+    if answer.kind == "not_itinerary":
+        raise NotItinerary()
+
+
 def split_days_by_model(
     layout: Layout, model: Model, expected: int | None, issues: list[dict]
 ) -> None:
@@ -237,7 +263,10 @@ def split_days_by_model(
     days = [s.day for s in starts]
     firsts = [s.first_unit for s in starts]
     known = {u.id for u in units}
-    ok = len(days) >= 2 and days == list(range(1, len(days) + 1))
+    # One day is a whole trip only when the registered length says so.
+    ok = (len(days) >= 2 or (len(days) == 1 and expected == 1)) and days == list(
+        range(1, len(days) + 1)
+    )
     ok = (
         ok
         and all(f in known for f in firsts)
@@ -992,6 +1021,7 @@ def extract(
     issues: list[dict] = [{"code": p, "path": "days", "detail": ""} for p in layout.problems]
 
     if not layout.days:
+        require_itinerary(layout, model, meta.get("name", ""))
         split_days_by_model(layout, model, meta.get("days"), issues)
     blocks = layout.days
     if doc.media == "pdf" and layout.method != "model":

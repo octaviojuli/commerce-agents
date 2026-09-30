@@ -48,6 +48,9 @@ def write_missing(path: Path, entry: dict) -> None:
     )
 
 
+ERRORS = {"NOT_ITINERARY": "不是线路文件（商品或其他资料），没有生成详情页"}
+
+
 def conf(s: dict) -> str:
     """The triage score, with the reasons a person should look first."""
     if s.get("confidence") is None:
@@ -84,7 +87,7 @@ def write_index(path: Path, summaries: list[dict]) -> None:
             title = f"<a href='{link}'>{name}</a>" if s.get("status") == "no_attachment" else name
             rows.append(
                 f"<tr><td>{title}<div class='c'>{html.escape(s['code'])}</div></td>"
-                f"<td colspan='6' class='w'>{'缺少附件' if s.get('status') == 'no_attachment' else html.escape(s.get('error', '无法读取'))}</td></tr>"
+                f"<td colspan='6' class='w'>{'缺少附件' if s.get('status') == 'no_attachment' else html.escape(ERRORS.get(s.get('error'), s.get('error', '无法读取')))}</td></tr>"
             )
     ok = [s for s in summaries if s.get("status") == "ok"]
     total_units = sum(s["units"] for s in ok) or 1

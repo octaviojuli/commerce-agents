@@ -61,7 +61,7 @@
 | `PDF_PAGE_REORDERED` | 表格被读乱的页（天标签不递增），已按版式重读 |
 | `PDF_PAGE_UNORDERED` | 版式重读后顺序仍然错乱，这一页改用图片转写 |
 | `DAYS_SPLIT_BY_MODEL` | 规则找不到天数标签（标签是图形、竖排，或只有日期行），由模型按内容分天 |
-| `DAY_SPLIT_REJECTED` | 模型给出的分天结果不是完整的 1..N 递增序列，或与登记天数不符，未采用 |
+| `DAY_SPLIT_REJECTED` | 模型给出的分天结果不是完整的 1..N 递增序列，或与登记天数不符，未采用；只有 1 天的结果，只在登记天数为 1 时采用 |
 | `DAY_SPLIT_UNCHECKED` | 分天调用失败，沿用规则结果 |
 | `DAY_SEQUENCE_GAP` | 天数序号不连续 |
 | `DAYS_DIFFER_FROM_LISTING` | 附件天数与业务系统登记天数不一致 |
@@ -94,6 +94,7 @@
 | `DOCX_UNREADABLE` | DOCX 已损坏 |
 | `PDF_UNREADABLE` | `pdftotext` 读取失败 |
 | `PDF_TOOLS_FAILED` | 缺少 Poppler，或 Poppler 超时 |
+| `NOT_ITINERARY` | 文件没有可识别的天标签，模型判断它不是线路（商品、合同等），不生成详情页 |
 | `PDF_TEXT_GARBLED` | PDF 文字层乱码（字体映射错误）；不加 `--vision` 时拒绝读取，加 `--vision` 时这些页改为整页转写，并记入质量提示 |
 | `PDF_TEXT_MISSING` | PDF 没有文字层（扫描件）；用 `--vision` 可以逐页转写 |
 | `FAILED: <异常类型>` | 处理过程出错，旧的输出已删除 |

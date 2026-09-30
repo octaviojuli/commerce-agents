@@ -668,3 +668,48 @@ def test_page_labels_out_of_order_are_told_from_a_restart():
     )  # overview, then programme
     assert not out_of_order("第一天\n第二天")  # too few labels to judge
     assert not out_of_order("D1\nD2\nD3\nD4")
+
+
+def test_one_day_split_is_taken_only_when_the_registered_length_is_one_day():
+    from route_kit.extract import DayStarts, split_days_by_model
+
+    texts = [
+        "封面",
+        "特色",
+        "集合：8:00 厦门",
+        "游览云水谣古镇",
+        "午餐",
+        "返回厦门",
+        "费用包含",
+        "不含门票",
+    ]
+    one = DayStarts.model_validate({"starts": [{"day": 1, "first_unit": 3}]})
+
+    layout, issues = _layout_of(texts), []
+    split_days_by_model(layout, _Fake(one), 1, issues)
+    assert [b.day for b in layout.days] == [1] and layout.days[0].units[0] == 3
+
+    for registered in (None, 2):  # a single day is no answer for a trip of unknown or longer length
+        layout, issues = _layout_of(texts), []
+        split_days_by_model(layout, _Fake(one), registered, issues)
+        assert layout.days == [] and issues[0]["code"] == "DAY_SPLIT_REJECTED"
+
+
+def test_a_file_that_is_not_an_itinerary_stops_and_a_doubt_does_not():
+    import pytest
+    from route_kit.extract import DocumentKind, require_itinerary
+    from route_kit.llm import ModelError
+    from route_kit.reader import NotItinerary, ReadError
+
+    layout = _layout_of(["凯撒定制手持小风扇（充电款）", "规格：USB 充电", "包装：彩盒"])
+    with pytest.raises(NotItinerary) as stopped:
+        require_itinerary(layout, _Fake(DocumentKind(kind="not_itinerary")), "定制小风扇")
+    assert isinstance(stopped.value, ReadError) and stopped.value.code == "NOT_ITINERARY"
+
+    require_itinerary(layout, _Fake(DocumentKind(kind="itinerary")), "云水谣一日游")
+
+    class Failing(_Fake):
+        def ask(self, *args, **kwargs):
+            raise ModelError("MODEL_FAILED")
+
+    require_itinerary(layout, Failing(None), "任何名称")  # a failed call never stops the parse
