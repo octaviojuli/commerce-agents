@@ -77,6 +77,13 @@ def acknowledgements(doc):
     ]
 
 
+def test_a_deterministic_layout_reread_needs_no_confirmation_but_a_model_day_split_does():
+    doc = content()
+    for code, needs in (("PDF_PAGE_REORDERED", False), ("DAYS_SPLIT_BY_MODEL", True)):
+        doc.quality.issues = [{"code": code, "path": "source", "detail": ""}]
+        assert any(x["code"] == code for x in kit.issues(doc)) is needs
+
+
 def test_stable_identifiers_and_strict_schema():
     doc = content()
     wire = kit.dump(doc)

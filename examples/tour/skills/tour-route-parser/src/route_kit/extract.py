@@ -46,7 +46,7 @@ from .models import (
 from .reader import Document, NotItinerary
 from .segment import DayBlock, Layout
 
-PARSER = "route-kit-1"
+PARSER = "route-kit-2"
 # Blank form fields and table headers: not itinerary content, never "risky".
 FORM_WORDS = re.compile(
     r"签名|签字|按手印|盖章|填写|身份证号|联系电话[:：]?\s*$|日期[:：]\s*$|^名称\s*\|\s*价格|合计\(小写\)"
