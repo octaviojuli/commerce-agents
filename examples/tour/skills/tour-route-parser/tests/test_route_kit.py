@@ -656,3 +656,15 @@ def test_meal_counts_are_compared_with_the_days_and_no_days_is_a_reason():
     content.days = []
     content.quality.days_found = content.quality.days_extracted = 0
     assert "没有识别出逐日行程" in assess(content)[1]
+
+
+def test_page_labels_out_of_order_are_told_from_a_restart():
+    from route_kit.reader import out_of_order
+
+    assert out_of_order("第二天\n第三天\n第一天\n第四天\n第五天")  # a table read cell by cell
+    assert out_of_order("第一天\n第三天\n第四天\n第二天\n第五天")
+    assert not out_of_order(
+        "第一天\n第二天\n第三天\n第一天\n第二天\n第三天"
+    )  # overview, then programme
+    assert not out_of_order("第一天\n第二天")  # too few labels to judge
+    assert not out_of_order("D1\nD2\nD3\nD4")

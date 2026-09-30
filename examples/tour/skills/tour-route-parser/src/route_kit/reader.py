@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from .daylabel import day_label
+
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 REL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
@@ -31,6 +33,8 @@ RENDER_DPI = 110
 # itineraries keep almost every character inside the 3,755 commonest ones (GB2312 level 1, or
 # Big5 level 1 for traditional text); a wrong mapping lands on rare characters instead.
 GARBLED_MIN_HAN = 100
+# A table cell read out of order shows up as day labels that do not count up on a page.
+MIN_LABELS = 3
 GARBLED_RARE_SHARE = 0.04
 
 
@@ -69,6 +73,8 @@ class Document:
     pictures: list[Picture] = field(default_factory=list)  # only when read with pictures=True
     scanned: bool = False  # a PDF with no text layer, read only through its page pictures
     garbled_pages: list[int] = field(default_factory=list)  # text layer unusable, read as pictures
+    reordered_pages: list[int] = field(default_factory=list)  # table read in layout mode instead
+    unordered_pages: list[int] = field(default_factory=list)  # table order lost, read as pictures
     transcribed: list[dict] = field(default_factory=list)  # one record per picture, see vision
     pictures_unread: int = 0  # DOCX pictures that may hold words but were not kept (see read)
 
@@ -194,6 +200,43 @@ def garbled(page_text: str) -> bool:
     return sum(1 for c in han if not _common_han(c)) / len(han) > GARBLED_RARE_SHARE
 
 
+def _day_labels(text: str) -> list[int]:
+    labels = []
+    for line in text.splitlines():
+        found = day_label(normalize(line))
+        if found:
+            labels.append(found[0])
+    return labels
+
+
+def out_of_order(text: str) -> bool:
+    """True when a page's day labels do not count up: a table read cell by cell in the wrong order.
+
+    A drop is fine only as a restart (an overview table, then the programme): the label after it
+    must be its successor.
+    """
+    labels = _day_labels(text)
+    if len(labels) < MIN_LABELS:
+        return False
+    for i in range(len(labels) - 1):
+        if labels[i + 1] < labels[i]:
+            follow = labels[i + 2] if i + 2 < len(labels) else None
+            if follow is None:
+                if labels[i + 1] != 1:
+                    return True
+            elif follow != labels[i + 1] + 1:
+                return True
+    return False
+
+
+def _page_text(path: Path, page: int, layout: bool) -> str:
+    args = ["pdftotext", "-enc", "UTF-8", "-f", str(page), "-l", str(page)]
+    result = subprocess.run(
+        args + (["-layout"] if layout else []) + [str(path), "-"], capture_output=True, timeout=60
+    )
+    return result.stdout.decode("utf-8", "replace") if result.returncode == 0 else ""
+
+
 def _image_pages(path: Path, pages: int) -> list[int]:
     """Pages that carry images but little text: their words are not read."""
     try:
@@ -260,12 +303,31 @@ def _read_pdf_file(data: bytes, pictures: bool):
         bad = [] if scanned else [n for n, t in enumerate(page_texts, start=1) if garbled(t)]
         if bad and not pictures:
             raise ReadError("PDF_TEXT_GARBLED")
+        # A table read cell by cell comes out in the wrong order; the layout reading keeps its
+        # rows. Only a page whose labels are out of order is re-read, and the layout reading is
+        # used only when it puts the labels in order; otherwise the page is read as a picture.
+        reordered: list[int] = []
+        unordered: list[int] = []
+        if not scanned:
+            for n, t in enumerate(page_texts, start=1):
+                if n in bad or not out_of_order(t):
+                    continue
+                alt = _page_text(path, n, layout=True)
+                if (
+                    alt
+                    and not out_of_order(alt)
+                    and len(_day_labels(alt)) >= len(_day_labels(t)) - 1
+                ):
+                    page_texts[n - 1] = alt
+                    reordered.append(n)
+                elif pictures:
+                    unordered.append(n)
         # A scanned file is read through all its pages; otherwise the image pages and the pages
         # whose text layer is garbled.
         image_pages = (
             list(range(1, pages + 1))
             if scanned
-            else sorted(set(_image_pages(path, pages)) | set(bad))
+            else sorted(set(_image_pages(path, pages)) | set(bad) | set(unordered))
         )
         rendered: dict[int, bytes] = {}
         if pictures:
@@ -275,15 +337,17 @@ def _read_pdf_file(data: bytes, pictures: bool):
                     rendered[page_no] = image
         if any(n not in rendered for n in bad):
             raise ReadError("PDF_TEXT_GARBLED")  # no picture to read the page from
+        unordered = [n for n in unordered if n in rendered]  # else the text stays, out of order
+        replaced = set(bad) | set(unordered)
         out = []
         for page_no, page in enumerate(page_texts, start=1):
             if page_no in rendered:
                 out.append(("picture", "", page_no))
-            if page_no in bad:
+            if page_no in replaced:
                 continue  # the picture replaces the page's text
             for raw in page.splitlines():
                 out.append(("pdf", raw, page_no))
-        return out, pages, image_pages, rendered, scanned, bad
+        return out, pages, image_pages, rendered, scanned, bad, reordered, unordered
 
 
 # A repeated line that names meals, stays or money is content (a daily 午餐 line), not a header.
@@ -338,7 +402,9 @@ def read(path: Path, pictures: bool = False) -> Document:
         raise ReadError("FILE_UNREADABLE") from error
     found: list[Picture] = []
     if data.startswith(b"%PDF-"):
-        raw, pages, image_pages, rendered, scanned, bad = _read_pdf(data, pictures)
+        raw, pages, image_pages, rendered, scanned, bad, reordered, unordered = _read_pdf(
+            data, pictures
+        )
         doc = Document(
             path.name,
             "pdf",
@@ -346,6 +412,8 @@ def read(path: Path, pictures: bool = False) -> Document:
             image_pages=image_pages,
             scanned=scanned,
             garbled_pages=bad,
+            reordered_pages=reordered,
+            unordered_pages=unordered,
         )
         lines = []
         for kind, text, page in raw:

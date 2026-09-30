@@ -14,51 +14,16 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from .daylabel import DATE_PREFIX  # noqa: F401
+from .daylabel import day_label as _header
 from .reader import Document
 
-CN = {
-    "一": 1,
-    "二": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-    "十": 10,
-    "两": 2,
-}
-
-
-def cn_number(text: str) -> int | None:
-    if text.isdigit():
-        return int(text)
-    if not text or any(ch not in CN and ch != "十" for ch in text):
-        return None
-    if text == "十":
-        return 10
-    if "十" in text:
-        tens, _, ones = text.partition("十")
-        return (CN.get(tens, 1) if tens else 1) * 10 + (CN.get(ones, 0) if ones else 0)
-    return CN.get(text)
-
-
-NUM = r"([0-9]{1,2}|[一二三四五六七八九十两]{1,3})"
-HEADER = re.compile(
-    r"^\s*(?:"
-    rf"第\s*{NUM}\s*(?:天\s*)?(?:[-~至到–—]\s*(?:第\s*)?{NUM}\s*)?天"
-    rf"|(?:DAY|Day|day|D)\s*[-_ ]?\s*{NUM}(?!\d)(?:\s*[-~至–—]\s*{NUM})?"
-    r")"
-    r"(?P<rest>.*)$"
-)
 TERMS = re.compile(
     r"^(?:[一二三四五六七八九十]+[、.])?(?:"
     r"(?:费用|报价|服务所?|团费|价格)(?:所)?(?:包含|不含|不包含|说明|标准)|(?:不)?包含项目|服务标准"
     r"|(?:预定|报名|出行|旅游|旅行团|行前)须知|注意事项|温馨提示|特别(?:说明|提示)|重要提示"
     r"|购物(?:店|场所|说明|安排)|自费(?:项目|说明)|签证(?:说明|资料|须知)|退改|取消条款)"
 )
-DATE_PREFIX = re.compile(r"^\s*\d{1,2}[./月]\d{1,2}日?\s+")
 
 
 @dataclass
@@ -153,20 +118,6 @@ def to_units(doc: Document, max_len: int = 110) -> list[Unit]:
         for piece in pieces:
             units.append(Unit(len(units) + 1, line_id, piece, page, source))
     return units
-
-
-def _header(text: str):
-    text = DATE_PREFIX.sub("", text)
-    match = HEADER.match(text)
-    if not match:
-        return None
-    numbers = [cn_number(g) for g in match.groups()[:-1] if g]
-    numbers = [n for n in numbers if n]
-    if not numbers or numbers[0] > 60:
-        return None
-    start = numbers[0]
-    end = numbers[1] if len(numbers) > 1 and numbers[1] > start else None
-    return start, end
 
 
 def _sequences(

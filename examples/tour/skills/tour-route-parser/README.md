@@ -6,7 +6,8 @@
 
 | 路径 | 内容 |
 |---|---|
-| `src/route_kit/reader.py` | DOCX、PDF 读取，页眉页脚清理，图片页识别 |
+| `src/route_kit/reader.py` | DOCX、PDF 读取，页眉页脚清理，图片页识别，乱码页和表格错乱页的重读 |
+| `src/route_kit/daylabel.py` | 天标签识别（"第三天""DAY-3""D3"），读取和切分共用 |
 | `src/route_kit/vision.py` | 图片转写：PDF 图片页、扫描 PDF、DOCX 图片，封面图 |
 | `src/route_kit/segment.py` | 证据单元切分，天数识别，概览表与详细行程区分 |
 | `src/route_kit/prompts.py` | 模型指令：逐日、封面条款、PDF 天数边界、最后一天结尾、图片转写 |
@@ -57,6 +58,8 @@
 | `TYPE_FROM_SECTION` | 节点位于"自费推荐行程："这类标题下，已改为自费项目，请核对 |
 | `TEXT_NOT_IN_SOURCE` | 条款、提示、备注、替代安排、标题、国家等文字在原文中找不到，已删除 |
 | `NO_DAY_HEADERS` | 没有识别出天数标题，页面只显示原文 |
+| `PDF_PAGE_REORDERED` | 表格被读乱的页（天标签不递增），已按版式重读 |
+| `PDF_PAGE_UNORDERED` | 版式重读后顺序仍然错乱，这一页改用图片转写 |
 | `DAYS_SPLIT_BY_MODEL` | 规则找不到天数标签（标签是图形、竖排，或只有日期行），由模型按内容分天 |
 | `DAY_SPLIT_REJECTED` | 模型给出的分天结果不是完整的 1..N 递增序列，或与登记天数不符，未采用 |
 | `DAY_SPLIT_UNCHECKED` | 分天调用失败，沿用规则结果 |

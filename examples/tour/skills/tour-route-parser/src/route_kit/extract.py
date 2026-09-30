@@ -1232,6 +1232,26 @@ def extract(
                 + " 页文字层乱码，已改用图片转写",
             }
         )
+    if doc.reordered_pages:
+        issues.append(
+            {
+                "code": "PDF_PAGE_REORDERED",
+                "path": "source",
+                "detail": "第 "
+                + "、".join(map(str, doc.reordered_pages))
+                + " 页表格读取顺序错乱，已按版式重读",
+            }
+        )
+    if doc.unordered_pages:
+        issues.append(
+            {
+                "code": "PDF_PAGE_UNORDERED",
+                "path": "source",
+                "detail": "第 "
+                + "、".join(map(str, doc.unordered_pages))
+                + " 页表格顺序错乱，已改用图片转写",
+            }
+        )
     if doc.pictures_unread:
         issues.append(
             {
