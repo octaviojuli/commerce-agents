@@ -140,7 +140,8 @@ body[data-view="raw"] .node{cursor:pointer}
 .note{font-size:12px;color:var(--ink-soft)}
 .side{border-left:1px solid var(--line);padding:12px 14px;display:flex;flex-direction:column;gap:12px;font-size:14px}
 .side h4{margin:0;font-size:12px;color:var(--ink-soft);font-weight:600}
-.meal{display:grid;grid-template-columns:22px 1fr;gap:4px}
+.meals{display:flex;flex-wrap:wrap;gap:4px 18px}
+.meal{display:flex;gap:6px;align-items:baseline}
 .meal i{font-style:normal;color:var(--ink-soft);font-size:12px;padding-top:1px}
 .meal .off{color:var(--ink-faint)}
 .dnotes{margin:0 18px 16px;padding:9px 12px 9px 14px;border-radius:10px;background:var(--well);font-size:13px;color:var(--ink-2);display:flex;flex-direction:column;gap:3px}
@@ -175,7 +176,7 @@ body[data-view="raw"] .raw-only{display:revert}
 .mw{margin-left:6px;font-size:11px;padding:1px 6px;border-radius:6px;background:var(--line);color:var(--ink-soft);white-space:nowrap}
 .mtabs{display:none}
 .missing{max-width:560px;margin:60px auto;text-align:center}
-@media (max-width:1180px){.cols{grid-template-columns:220px minmax(0,1fr) 320px}.dbody{grid-template-columns:1fr}.side{border-left:0;border-top:1px solid var(--line);flex-direction:row;flex-wrap:wrap;gap:18px}}
+@media (max-width:1180px){.cols{grid-template-columns:220px minmax(0,1fr) 320px}.dbody{grid-template-columns:1fr}.side{border-left:0;border-top:1px solid var(--line);gap:10px}}
 @media (max-width:1023px){
   html,body{height:auto}.app{display:block;height:auto}
   .cols{display:block}.nav{display:none}.panel{border-left:0;border-top:1px solid var(--line);overflow:visible;padding-bottom:calc(24px + env(safe-area-inset-bottom,0px))}
@@ -348,7 +349,7 @@ function renderCenter(){
      ${d.port_call?`<div class="port">${[["港口",d.port_call.port],["到港",d.port_call.arrive_text],["离港",d.port_call.depart_text],["返船",d.port_call.all_aboard_text]].filter(x=>x[1]).map(x=>`<span>${x[0]} <b>${esc(x[1])}</b></span>`).join("")}</div>`:""}
      ${d.services&&d.services.note?`<div class="service">${esc(d.services.note)}</div>`:""}</div>
     <div class="dbody"><ol class="timeline">${d.status==="source_only"?d.units.map(u=>`<li class="note">${esc(U[u]?.text)}</li>`).join(""):items(d,i)}</ol>
-     <div class="side"><div><h4>用餐</h4>${[["早","breakfast"],["午","lunch"],["晚","dinner"]].map(([k,m])=>`<div class="meal"><i>${k}</i><span class="${d.meals[m].status==="included"?"":"off"}">${esc(mealText(d.meals[m]))}</span></div>`).join("")}</div>
+     <div class="side"><div><h4>用餐</h4><div class="meals">${[["早","breakfast"],["午","lunch"],["晚","dinner"]].map(([k,m])=>`<div class="meal"><i>${k}</i><span class="${d.meals[m].status==="included"?"":"off"}">${esc(mealText(d.meals[m]))}</span></div>`).join("")}</div></div>
      <div><h4>住宿</h4><div>${esc(stayText(d.stay))}</div></div></div></div>
     ${d.notes.length?`<div class="dnotes"><b>当日提示</b>${d.notes.map(n=>`<p>${T(n.text)}${n.auto?`<span class="review-only mw">原样挂入，待审</span>`:""}</p>`).join("")}</div>`:""}
    </article>`).join("");
